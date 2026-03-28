@@ -30,6 +30,8 @@ import {
   Sun,
   PanelLeft,
   PanelRight,
+  Wand2,
+  Image as ImageIcon,
   HelpCircle as QuizIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -69,6 +71,18 @@ const StudioTool = ({ icon: Icon, label }) => (
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
+// Mirror of backend IMAGE_INTENT_KEYWORDS
+const IMAGE_INTENT_KEYWORDS = [
+  'generate an image', 'generate image', 'create an image', 'create image',
+  'draw an image', 'draw a picture', 'draw the', 'draw a ',
+  'make an image', 'make a picture', 'make a drawing',
+  'show me an image', 'show me a picture', 'visualize this',
+  'illustrate this', 'explain with an image', 'explain with image',
+  'with a diagram', 'with a picture', 'generate a picture',
+  'create a picture', 'generate a photo', 'create a photo',
+];
+const isImageRequest = (text) => IMAGE_INTENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+
 export default function App() {
   const { isSignedIn, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -84,6 +98,7 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
   const [showSettings, setShowSettings] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Apply dark mode class on mount and toggle
   useEffect(() => {
@@ -277,6 +292,8 @@ export default function App() {
     const currentImage = attachedImage;
     setAttachedImage(null);
     setIsStreaming(true);
+    // If this looks like an image generation request, show crafting indicator
+    if (isImageRequest(userText) && !attachedImage) setIsGeneratingImage(true);
 
     try {
       const token = await getToken();
@@ -337,6 +354,7 @@ export default function App() {
       ]);
     } finally {
       setIsStreaming(false);
+      setIsGeneratingImage(false);
     }
   };
 
@@ -676,8 +694,8 @@ export default function App() {
                 )
               ))}
 
-              {/* Thinking animation — shown while loading history OR waiting for first AI token (but not when an image just loaded) */}
-              {(historyLoading || (isStreaming && chatHistory[chatHistory.length - 1]?.content === '' && chatHistory[chatHistory.length - 1]?.type !== 'image')) && (
+              {/* Thinking animation — text responses only, not while generating images */}
+              {(historyLoading || (isStreaming && !isGeneratingImage && chatHistory[chatHistory.length - 1]?.content === '' && chatHistory[chatHistory.length - 1]?.type !== 'image')) && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -716,26 +734,65 @@ export default function App() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <motion.div
-                          animate={{ opacity: [0.3, 0.7, 0.3] }}
-                          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4"
-                        />
-                        <motion.div
-                          animate={{ opacity: [0.3, 0.7, 0.3] }}
-                          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
-                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2"
-                        />
-                        <motion.div
-                          animate={{ opacity: [0.3, 0.7, 0.3] }}
-                          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-2/3"
-                        />
+                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4" />
+                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2" />
+                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-2/3" />
                       </div>
                     </div>
                   </div>
                 </motion.div>
               )}
+
+              {/* Crafting image animation — shown while NVIDIA Stable Diffusion generates */}
+              {isGeneratingImage && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex gap-6"
+                >
+                  <motion.div
+                    animate={{ scale: [1, 1.12, 1], opacity: [1, 0.7, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
+                  >
+                    <Wand2 className="w-5 h-5 text-white" />
+                  </motion.div>
+                  <div className="flex-1 space-y-2">
+                    <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2">
+                        <motion.span
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                          className="text-xs font-semibold text-primary/70 font-display tracking-wide"
+                        >
+                          Crafting image
+                        </motion.span>
+                        <div className="flex gap-1">
+                          {[0, 0.2, 0.4].map((delay, i) => (
+                            <motion.span key={i} animate={{ opacity: [0, 1, 0] }} transition={{ duration: 1.2, repeat: Infinity, delay }} className="text-primary/70 text-sm font-bold leading-none">.</motion.span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Shimmering image canvas placeholder */}
+                      <div className="w-full aspect-video rounded-xl bg-slate-200 dark:bg-slate-700 overflow-hidden relative">
+                        <motion.div
+                          animate={{ x: ['-100%', '200%'] }}
+                          transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
+                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent w-1/3"
+                        />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-30">
+                          <ImageIcon className="w-8 h-8 text-slate-500 dark:text-slate-400" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Stable Diffusion 3</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500">This may take up to 60 seconds…</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
 
               <div ref={chatEndRef} />
             </div>

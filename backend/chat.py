@@ -270,7 +270,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             # Save a text record so the notebook history reflects it
             async def _save_img_record():
                 record = [{"role": m.role, "content": m.content} for m in messages]
-                record.append({"role": "assistant", "content": f"[Image generated for: {last_user_text}]"})
+                record.append({"role": "assistant", "content": f"<p><em>🖼️ An image was generated for: <strong>{last_user_text}</strong> — images are not stored in history.</em></p>"})
                 try:
                     await notebooks_col.update_one(
                         {"_id": oid, "user_id": user_id},
