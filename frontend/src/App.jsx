@@ -677,7 +677,7 @@ export default function App() {
                         {msg.type === 'image' ? (
                           <div className="space-y-3">
                             <img
-                              src={`data:image/png;base64,${msg.base64}`}
+                              src={`data:image/jpeg;base64,${msg.base64}`}
                               alt={msg.prompt || 'Generated image'}
                               className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700 object-cover"
                             />
