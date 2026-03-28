@@ -87,16 +87,33 @@ export default function App() {
 
   const loadHistory = async () => {
     setHistoryLoading(true);
+
+    // Safety net — never stay stuck for more than 10s
+    const safetyTimer = setTimeout(() => setHistoryLoading(false), 10000);
+
     try {
       const token = await getToken();
+      if (!token) return; // Not signed in yet
+
+      const controller = new AbortController();
+      const fetchTimer = setTimeout(() => controller.abort(), 8000); // 8s fetch timeout
+
       const resp = await fetch(`${BACKEND_URL}/history`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       });
+      clearTimeout(fetchTimer);
+
+      if (!resp.ok) {
+        console.warn(`History fetch failed: ${resp.status}`);
+        return;
+      }
       const data = await resp.json();
       setChatHistory(data.messages || []);
     } catch (err) {
       console.error('Failed to load chat history:', err);
     } finally {
+      clearTimeout(safetyTimer);
       setHistoryLoading(false);
     }
   };
