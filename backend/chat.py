@@ -1,11 +1,14 @@
 import os
 import asyncio
+import base64 as b64_lib
+import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 from groq import AsyncGroq
 from dotenv import load_dotenv
@@ -15,6 +18,10 @@ from bson import ObjectId
 import httpx
 
 load_dotenv()
+
+# ── Generated images storage ────────────────────────────────────────────────
+IMAGES_DIR = Path(__file__).parent / "generated_images"
+IMAGES_DIR.mkdir(exist_ok=True)
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
@@ -79,7 +86,7 @@ def is_image_request(text: str) -> bool:
     return any(kw in lower for kw in IMAGE_INTENT_KEYWORDS)
 
 async def generate_image_nvidia(prompt: str) -> str:
-    """Call NVIDIA Stable Diffusion 3 Medium API. Returns base64-encoded PNG string."""
+    """Call NVIDIA Stable Diffusion 3 Medium. Saves JPEG to disk and returns filename."""
     headers = {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
         "Accept": "application/json",
@@ -93,23 +100,60 @@ async def generate_image_nvidia(prompt: str) -> str:
         "steps": 50,
         "negative_prompt": "",
     }
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    print(f"[NVIDIA] Sending request with prompt: {prompt[:80]}...")
+    async with httpx.AsyncClient(timeout=180.0) as client:
         resp = await client.post(
             "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-medium",
             headers=headers,
             json=payload,
         )
-        resp.raise_for_status()
+        print(f"[NVIDIA] Response status: {resp.status_code}")
+        if not resp.is_success:
+            error_body = resp.text
+            print(f"[NVIDIA] Error body: {error_body}")
+            resp.raise_for_status()
         data = resp.json()
-    # Handle different possible response shapes from NVIDIA
-    if "artifacts" in data and data["artifacts"]:
-        return data["artifacts"][0]["base64"]
+        print(f"[NVIDIA] Response keys: {list(data.keys())}")
+
+    # Extract base64 from response (handle multiple possible keys)
+    img_b64: str = ""
     if "image" in data:
-        return data["image"]
-    if "images" in data and data["images"]:
-        img = data["images"][0]
-        return img.get("base64") or img.get("blob") or ""
-    raise ValueError(f"Unrecognised NVIDIA response keys: {list(data.keys())}")
+        img_b64 = data["image"]
+    elif "artifacts" in data and data["artifacts"]:
+        img_b64 = data["artifacts"][0].get("base64", "")
+    elif "images" in data and data["images"]:
+        img_b64 = data["images"][0].get("base64") or data["images"][0].get("blob", "")
+    if not img_b64:
+        raise ValueError(f"No image data in NVIDIA response: {list(data.keys())}")
+
+    # Save to disk
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = IMAGES_DIR / filename
+    await asyncio.to_thread(filepath.write_bytes, b64_lib.b64decode(img_b64))
+    print(f"[Image saved] {filepath} ({len(img_b64)} b64 chars)")
+    return filename
+
+
+@app.get("/test-nvidia")
+async def test_nvidia():
+    """Debug endpoint: test NVIDIA image generation with a fixed prompt."""
+    try:
+        filename = await generate_image_nvidia("a beautiful sunset over the ocean, photorealistic")
+        return {"status": "ok", "filename": filename, "url": f"/images/{filename}"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+# ── Image file endpoint ────────────────────────────────────────────────
+@app.get("/images/{filename}")
+async def serve_image(filename: str):
+    """Serve a previously generated image by filename."""
+    # Sanitize filename to prevent path traversal
+    safe_name = Path(filename).name
+    filepath = IMAGES_DIR / safe_name
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(str(filepath), media_type="image/jpeg")
+
 
 # ── JWT / Clerk Auth ───────────────────────────────────────────────────────────
 _jwks_cache: Optional[dict] = None
@@ -266,11 +310,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     last_user_text = next((m.content for m in reversed(messages) if m.role == "user"), "")
     if is_image_request(last_user_text) and not request.image_base64:
         try:
-            img_b64 = await generate_image_nvidia(last_user_text)
-            # Save a text record so the notebook history reflects it
+            filename = await generate_image_nvidia(last_user_text)
+            img_url = f"/images/{filename}"  # relative path — frontend prepends BACKEND_URL
+
+            # Save the image URL to MongoDB so it loads on history reload
             async def _save_img_record():
                 record = [{"role": m.role, "content": m.content} for m in messages]
-                record.append({"role": "assistant", "content": f"<p><em>🖼️ An image was generated for: <strong>{last_user_text}</strong> — images are not stored in history.</em></p>"})
+                record.append({"role": "assistant", "content": f"__IMG__{img_url}"})
                 try:
                     await notebooks_col.update_one(
                         {"_id": oid, "user_id": user_id},
@@ -279,10 +325,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 except Exception as e:
                     print(f"[DB save error] {e}")
             asyncio.create_task(_save_img_record())
-            return JSONResponse({"type": "image", "base64": img_b64, "prompt": last_user_text})
+            return JSONResponse({"type": "image", "url": img_url, "prompt": last_user_text})
         except Exception as e:
             print(f"[Image gen failed, falling back to text] {e}")
-            # Fall through to text streaming if NVIDIA call fails
+            # Fall through to text streaming — signal fallback to frontend via header
+            # We set a flag so stream_response can attach it
+            image_gen_failed = True
+    else:
+        image_gen_failed = False
 
     async def save_to_db(all_messages: list):
         """Runs as an independent task — survives client disconnect."""
@@ -355,7 +405,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         save_messages.append({"role": "assistant", "content": full_response})
         asyncio.create_task(save_to_db(save_messages))
 
-    return StreamingResponse(stream_response(), media_type="text/plain")
+    headers_out = {}
+    if image_gen_failed:
+        headers_out["X-Image-Fallback"] = "1"
+    return StreamingResponse(stream_response(), media_type="text/plain", headers=headers_out)
 
 
 if __name__ == "__main__":

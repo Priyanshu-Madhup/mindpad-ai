@@ -313,6 +313,7 @@ export default function App() {
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       const contentType = response.headers.get('content-type') || '';
+      const imageFallback = response.headers.get('x-image-fallback') === '1';
 
       if (contentType.includes('application/json')) {
         // Image generation response
@@ -322,12 +323,13 @@ export default function App() {
             role: 'assistant',
             type: 'image',
             content: '',
-            base64: data.base64,
+            src: `${BACKEND_URL}${data.url}`,
             prompt: data.prompt,
           }]);
         }
       } else {
-        // Streaming text response
+        // Streaming text response (or image-gen fallback)
+        if (imageFallback) setIsGeneratingImage(false);
         setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
 
         const reader = response.body.getReader();
@@ -629,8 +631,8 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* Dynamic chat history — skip empty assistant placeholders to prevent ghost bubbles */}
-              {chatHistory.filter(msg => !(msg.role === 'assistant' && msg.content === '')).map((msg, idx) => (
+              {/* Dynamic chat history — skip empty assistant placeholders to prevent ghost bubbles (but keep image messages which intentionally have empty content) */}
+              {chatHistory.filter(msg => !(msg.role === 'assistant' && msg.content === '' && msg.type !== 'image')).map((msg, idx) => (
                 msg.role === 'user' ? (
                   <motion.div
                     key={idx}
@@ -677,9 +679,10 @@ export default function App() {
                         {msg.type === 'image' ? (
                           <div className="space-y-3">
                             <img
-                              src={`data:image/jpeg;base64,${msg.base64}`}
+                              src={msg.src}
                               alt={msg.prompt || 'Generated image'}
-                              className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700 object-cover"
+                              className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700"
+                              onError={(e) => { e.target.style.opacity = '0.4'; }}
                             />
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 italic font-medium tracking-wide">
                               Generated with Stable Diffusion 3 · NVIDIA
