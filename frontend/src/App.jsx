@@ -98,6 +98,9 @@ export default function App() {
   const [editingName, setEditingName] = useState('');
 
   const chatEndRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
+
+  const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, base64, mimeType, name }
 
   // Load notebooks when workspace opens
   useEffect(() => {
@@ -261,12 +264,18 @@ export default function App() {
 
   const sendMessage = async () => {
     const userText = message.trim();
-    if (!userText || isStreaming || !activeNotebookId) return;
+    if ((!userText && !attachedImage) || isStreaming || !activeNotebookId) return;
 
-    const userMsg = { role: 'user', content: userText };
+    const userMsg = {
+      role: 'user',
+      content: userText || '(image attached)',
+      ...(attachedImage ? { imageUrl: attachedImage.dataUrl } : {}),
+    };
     const newHistory = [...chatHistory, userMsg];
     setChatHistory(newHistory);
     setMessage('');
+    const currentImage = attachedImage;
+    setAttachedImage(null);
     setIsStreaming(true);
 
     try {
@@ -277,7 +286,11 @@ export default function App() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ messages: newHistory, notebook_id: activeNotebookId }),
+        body: JSON.stringify({
+          messages: newHistory.map(m => ({ role: m.role, content: m.content })),
+          notebook_id: activeNotebookId,
+          ...(currentImage ? { image_base64: currentImage.base64, image_mime_type: currentImage.mimeType } : {}),
+        }),
       });
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -599,7 +612,16 @@ export default function App() {
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">You</span>
                       </header>
                       <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 text-slate-800 dark:text-slate-200 leading-relaxed inline-block text-left border-r-4 border-primary shadow-sm">
-                        <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+                        {msg.imageUrl && (
+                          <img
+                            src={msg.imageUrl}
+                            alt="attached"
+                            className="max-h-52 rounded-xl object-contain mb-3 border border-slate-200 dark:border-slate-700"
+                          />
+                        )}
+                        {msg.content !== '(image attached)' && (
+                          <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -692,9 +714,59 @@ export default function App() {
 
           {/* Input Area */}
           <div className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
+            {/* Hidden file input — images only */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                  const dataUrl = ev.target.result;
+                  setAttachedImage({
+                    dataUrl,
+                    base64: dataUrl.split(',')[1],
+                    mimeType: file.type,
+                    name: file.name,
+                  });
+                };
+                reader.readAsDataURL(file);
+                e.target.value = '';
+              }}
+            />
             <div className="w-full relative group">
+              {/* Image preview above the input */}
+              {attachedImage && (
+                <div className="mb-2 flex items-center gap-2 px-1">
+                  <div className="relative inline-block">
+                    <img
+                      src={attachedImage.dataUrl}
+                      alt="preview"
+                      className="h-16 w-24 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
+                    />
+                    <button
+                      onClick={() => setAttachedImage(null)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-slate-700 dark:bg-slate-600 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]">{attachedImage.name}</span>
+                </div>
+              )}
               <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-700">
-                <button className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-3 rounded-xl transition-all ${
+                    attachedImage
+                      ? 'text-primary bg-primary/10'
+                      : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                  title="Attach image"
+                >
                   <Paperclip className="w-5 h-5" />
                 </button>
                 <textarea

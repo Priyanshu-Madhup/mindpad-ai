@@ -101,6 +101,8 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Message]
     notebook_id: str
+    image_base64: Optional[str] = None
+    image_mime_type: Optional[str] = "image/jpeg"
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -227,20 +229,48 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             print(f"[DB save error] {e}")
 
     async def stream_response():
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
-            {"role": m.role, "content": m.content} for m in messages
-        ]
+        # Build base message list
+        chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
 
-        completion = await groq_client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=full_messages,
-            temperature=1,
-            max_completion_tokens=8192,
-            top_p=1,
-            reasoning_effort="medium",
-            stream=True,
-            stop=None,
-        )
+        # If image attached, convert the last user message to multimodal format
+        if request.image_base64:
+            for i in range(len(chat_msgs) - 1, -1, -1):
+                if chat_msgs[i]["role"] == "user":
+                    chat_msgs[i]["content"] = [
+                        {"type": "text", "text": chat_msgs[i]["content"]},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{request.image_mime_type or 'image/jpeg'};base64,{request.image_base64}"
+                            },
+                        },
+                    ]
+                    break
+
+        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_msgs
+
+        # Vision model for images, reasoning model for text-only
+        if request.image_base64:
+            completion = await groq_client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                messages=full_messages,
+                temperature=1,
+                max_completion_tokens=8192,
+                top_p=1,
+                stream=True,
+                stop=None,
+            )
+        else:
+            completion = await groq_client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=full_messages,
+                temperature=1,
+                max_completion_tokens=8192,
+                top_p=1,
+                reasoning_effort="medium",
+                stream=True,
+                stop=None,
+            )
 
         full_response = ""
         async for chunk in completion:
@@ -249,10 +279,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 full_response += content
                 yield content
 
-        # Fire-and-forget save — asyncio.create_task survives client disconnect
-        all_messages = [{"role": m.role, "content": m.content} for m in messages]
-        all_messages.append({"role": "assistant", "content": full_response})
-        asyncio.create_task(save_to_db(all_messages))
+        # Save only text messages — images are NOT stored in MongoDB
+        save_messages = [{"role": m.role, "content": m.content} for m in messages]
+        save_messages.append({"role": "assistant", "content": full_response})
+        asyncio.create_task(save_to_db(save_messages))
 
     return StreamingResponse(stream_response(), media_type="text/plain")
 
