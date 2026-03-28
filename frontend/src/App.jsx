@@ -61,7 +61,7 @@ const StudioTool = ({ icon: Icon, label }) => (
   </button>
 );
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export default function App() {
   const { isSignedIn, isLoaded } = useUser();
