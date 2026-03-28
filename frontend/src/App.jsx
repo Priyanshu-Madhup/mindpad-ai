@@ -26,6 +26,8 @@ import {
   Trash2,
   Pencil,
   Check,
+  Moon,
+  Sun,
   HelpCircle as QuizIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -40,22 +42,23 @@ import {
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
 
-const SidebarItem = ({ icon: Icon, label, active = false }) => (
-  <a
-    href="#"
-    className={`flex items-center gap-3 px-3 py-2.5 transition-colors rounded-lg group ${active
-        ? 'text-slate-900 font-bold border-r-2 border-slate-900 bg-slate-200/50'
-        : 'text-slate-500 font-medium hover:bg-slate-200/50'
-      }`}
+const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center gap-3 px-3 py-2.5 transition-colors rounded-lg group w-full text-left ${
+      active
+        ? 'text-slate-900 dark:text-slate-100 font-bold bg-slate-200/50 dark:bg-white/5'
+        : 'text-slate-500 dark:text-slate-500 font-medium hover:bg-slate-200/50 dark:hover:bg-white/5'
+    }`}
   >
-    <Icon className={`w-5 h-5 ${active ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`} />
+    <Icon className={`w-5 h-5 ${active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'}`} />
     <span className="text-sm truncate">{label}</span>
-  </a>
+  </button>
 );
 
 const StudioTool = ({ icon: Icon, label }) => (
-  <button className="aspect-square bg-white rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 group">
-    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-primary/5 transition-colors">
+  <button className="aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group">
+    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700 flex items-center justify-center group-hover:bg-primary/5 transition-colors">
       <Icon className="w-6 h-6 text-primary" />
     </div>
     <span className="text-[10px] font-bold font-display text-primary uppercase tracking-tight">{label}</span>
@@ -75,6 +78,14 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
+
+  // Apply dark mode class on mount and toggle
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('mindpad_dark', isDarkMode);
+  }, [isDarkMode]);
 
   // Notebooks state
   const [notebooks, setNotebooks] = useState([]);
@@ -330,9 +341,9 @@ export default function App() {
 
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-white dark:bg-slate-950 overflow-hidden">
       {/* Top Navigation Bar */}
-      <header className="w-full sticky top-0 z-50 bg-white/70 backdrop-blur-xl border-b border-slate-100">
+      <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
           <div className="flex items-center gap-3 md:gap-10">
             {/* Mobile hamburger */}
@@ -344,14 +355,14 @@ export default function App() {
             </button>
             <span
               onClick={() => setView('landing')}
-              className="text-lg font-black text-slate-900 font-display uppercase tracking-widest cursor-pointer"
+              className="text-lg font-black text-slate-900 dark:text-slate-100 font-display uppercase tracking-widest cursor-pointer"
             >
               Mindpad AI
             </span>
             <nav className="hidden md:flex gap-8">
-              <a className="text-slate-900 border-b-2 border-slate-900 pb-1 font-display text-sm font-semibold tracking-tight" href="#">Workspace</a>
-              <a className="text-slate-500 hover:text-slate-900 transition-colors font-display text-sm font-semibold tracking-tight" href="#">AI Studio</a>
-              <a className="text-slate-500 hover:text-slate-900 transition-colors font-display text-sm font-semibold tracking-tight" href="#">Analytics</a>
+              <a className="text-slate-900 dark:text-slate-100 border-b-2 border-slate-900 dark:border-slate-100 pb-1 font-display text-sm font-semibold tracking-tight" href="#">Workspace</a>
+              <a className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors font-display text-sm font-semibold tracking-tight" href="#">AI Studio</a>
+              <a className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors font-display text-sm font-semibold tracking-tight" href="#">Analytics</a>
             </nav>
           </div>
 
@@ -359,7 +370,7 @@ export default function App() {
             <div className="relative hidden md:flex items-center">
               <Search className="absolute left-3 w-4 h-4 text-slate-400" />
               <input
-                className="bg-slate-100 border-none rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary/10 w-64 outline-none"
+                className="bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 border-none rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary/10 w-64 outline-none"
                 placeholder="Search knowledge base..."
                 type="text"
               />
@@ -398,15 +409,15 @@ export default function App() {
         {/* Left Column: Notebooks Sidebar */}
         <aside className={`
           fixed md:relative inset-y-0 left-0 z-50
-          w-72 md:w-64 flex flex-col bg-slate-50 border-r border-slate-100 flex-shrink-0
+          w-72 md:w-64 flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex-shrink-0
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
         `}>
           <div className="flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-between mb-8 px-2">
               <div>
-                <h2 className="text-lg font-bold font-display text-slate-900 mb-1">The Scholar</h2>
-                <p className="text-xs font-medium text-slate-500">Digital Curator</p>
+                <h2 className="text-lg font-bold font-display text-slate-900 dark:text-slate-100 mb-1">The Scholar</h2>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Digital Curator</p>
               </div>
               <button
                 className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
@@ -426,7 +437,7 @@ export default function App() {
 
             <nav className="flex-1 overflow-y-auto">
               <div className="px-2 py-3">
-                <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-3 block">Notebooks</span>
+                <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-600 mb-3 block">Notebooks</span>
                 <div className="space-y-1">
                   {notebooks.map(nb => {
                     const isActive = activeNotebookId === nb.id;
@@ -490,15 +501,47 @@ export default function App() {
               </div>
             </nav>
 
-            <div className="mt-auto pt-4 border-t border-slate-200 space-y-1">
+            <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1 relative">
               <SidebarItem icon={HelpCircle} label="Help" />
-              <SidebarItem icon={Settings} label="Settings" />
+
+              {/* Settings with dark mode popover */}
+              <div className="relative">
+                {showSettings && (
+                  <div className="absolute bottom-full mb-2 left-0 right-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-xl">
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {isDarkMode
+                          ? <Moon className="w-4 h-4 text-slate-400" />
+                          : <Sun className="w-4 h-4 text-slate-500" />}
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Dark Mode</span>
+                      </div>
+                      <button
+                        onClick={() => setIsDarkMode(prev => !prev)}
+                        className={`relative w-10 h-5 rounded-full transition-colors duration-300 focus:outline-none ${
+                          isDarkMode ? 'bg-primary' : 'bg-slate-200'
+                        }`}
+                      >
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${
+                          isDarkMode ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <SidebarItem
+                  icon={Settings}
+                  label="Settings"
+                  active={showSettings}
+                  onClick={() => setShowSettings(prev => !prev)}
+                />
+              </div>
             </div>
           </div>
         </aside>
 
         {/* Center Column: AI Chat Interface */}
-        <section className="flex-1 flex flex-col bg-white relative min-w-0 overflow-hidden">
+        <section className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full space-y-8">
               {/* Welcome message — only when not loading and history is empty */}
@@ -515,7 +558,7 @@ export default function App() {
                     <header className="flex items-center justify-between">
                       <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                     </header>
-                    <div className="bg-slate-50 rounded-2xl p-6 text-slate-800 leading-relaxed shadow-sm border border-slate-100">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
                       <p>Hello! I'm Midy AI, your research curator. Ask me anything — I can help you synthesize research, explain concepts, generate study aids, and more.</p>
                     </div>
                   </div>
@@ -531,14 +574,14 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     className="flex gap-6 flex-row-reverse group"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
-                      <User className="w-5 h-5 text-slate-600" />
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
+                      <User className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                     </div>
                     <div className="flex-1 space-y-2 text-right">
                       <header className="flex items-center justify-between flex-row-reverse">
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">You</span>
                       </header>
-                      <div className="bg-white border border-slate-100 rounded-2xl p-5 text-slate-800 leading-relaxed inline-block text-left border-r-4 border-primary shadow-sm">
+                      <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 text-slate-800 dark:text-slate-200 leading-relaxed inline-block text-left border-r-4 border-primary shadow-sm">
                         <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
                       </div>
                     </div>
@@ -557,7 +600,7 @@ export default function App() {
                       <header className="flex items-center justify-between">
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                       </header>
-                      <div className="bg-slate-50 rounded-2xl p-6 text-slate-800 leading-relaxed shadow-sm border border-slate-100">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
                         <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
                       </div>
                     </div>
@@ -582,7 +625,7 @@ export default function App() {
                   </motion.div>
                   <div className="flex-1 space-y-2">
                     <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
-                    <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 shadow-sm space-y-3">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-3">
                       <div className="flex items-center gap-2">
                         <motion.span
                           animate={{ opacity: [0.4, 1, 0.4] }}
@@ -608,17 +651,17 @@ export default function App() {
                         <motion.div
                           animate={{ opacity: [0.3, 0.7, 0.3] }}
                           transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-                          className="h-2.5 bg-slate-200 rounded-full w-3/4"
+                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4"
                         />
                         <motion.div
                           animate={{ opacity: [0.3, 0.7, 0.3] }}
                           transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
-                          className="h-2.5 bg-slate-200 rounded-full w-1/2"
+                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2"
                         />
                         <motion.div
                           animate={{ opacity: [0.3, 0.7, 0.3] }}
                           transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-                          className="h-2.5 bg-slate-200 rounded-full w-2/3"
+                          className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-2/3"
                         />
                       </div>
                     </div>
@@ -631,14 +674,14 @@ export default function App() {
           </div>
 
           {/* Input Area */}
-          <div className="p-3 md:p-8 md:pb-12 border-t border-slate-100 md:border-none bg-white">
+          <div className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
             <div className="w-full relative group">
-              <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200">
-                <button className="p-3 text-slate-400 hover:bg-slate-100 rounded-xl transition-all">
+              <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-700">
+                <button className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                   <Paperclip className="w-5 h-5" />
                 </button>
                 <textarea
-                  className="flex-1 bg-transparent border-none focus:ring-0 py-3 text-sm resize-none max-h-48 scrollbar-hide outline-none"
+                  className="flex-1 bg-transparent border-none focus:ring-0 py-3 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
                   placeholder="Ask Midy AI..."
                   rows={1}
                   value={message}
@@ -647,7 +690,7 @@ export default function App() {
                   disabled={isStreaming}
                 />
                 <div className="flex items-center gap-2 pb-1 pr-1">
-                  <button className="p-3 text-slate-400 hover:bg-slate-100 rounded-xl transition-all">
+                  <button className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                     <Mic className="w-5 h-5" />
                   </button>
                   <button
@@ -664,13 +707,13 @@ export default function App() {
         </section>
 
         {/* Right Column: AI Studio Panel — hidden on mobile */}
-        <aside className="hidden lg:flex w-80 h-full bg-slate-50 border-l border-slate-100 flex-shrink-0 flex-col">
-          <div className="p-6 border-b border-slate-200">
+        <aside className="hidden lg:flex w-80 h-full bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 flex-shrink-0 flex-col">
+          <div className="p-6 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-display font-bold text-lg text-primary tracking-tight">AI Studio</h3>
               <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
             </div>
-            <p className="text-[10px] text-slate-500 font-medium">Transform your research into media assets.</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
           </div>
 
           <div className="p-6 overflow-y-auto flex-1">
@@ -687,7 +730,7 @@ export default function App() {
               <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Contextual Reference</h4>
               <motion.div
                 whileHover={{ y: -2 }}
-                className="bg-white p-4 rounded-xl border-l-4 border-primary shadow-sm border border-slate-100"
+                className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-primary shadow-sm border border-slate-100 dark:border-slate-700"
               >
                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
                 <p className="text-xs text-slate-600 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
