@@ -17,6 +17,7 @@ load_dotenv()
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
+
 # CORS — restrict to your frontend origin in production via ALLOWED_ORIGINS env var
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 _origins = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
@@ -71,6 +72,14 @@ async def get_jwks() -> dict:
             resp.raise_for_status()
             _jwks_cache = resp.json()
     return _jwks_cache
+
+@app.on_event("startup")
+async def startup_event():
+    """Pre-warm JWKS cache on boot to cut first-request latency."""
+    try:
+        await get_jwks()
+    except Exception:
+        pass  # Non-fatal — will retry on first real request
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
