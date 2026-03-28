@@ -11,13 +11,13 @@ from groq import AsyncGroq
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from jose import jwt as jose_jwt, JWTError
+from bson import ObjectId
 import httpx
 
 load_dotenv()
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
-
 
 # CORS — restrict to your frontend origin in production via ALLOWED_ORIGINS env var
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
@@ -36,7 +36,7 @@ groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 db = mongo_client["mindpad_ai"]
-chats_col = db["chats"]
+notebooks_col = db["notebooks"]   # each doc = one notebook + its chat history
 
 CLERK_FRONTEND_API = os.environ.get("CLERK_FRONTEND_API", "").rstrip("/")
 
@@ -100,6 +100,22 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
+    notebook_id: str
+
+class NotebookCreate(BaseModel):
+    name: str = "Untitled Notebook"
+
+class NotebookUpdate(BaseModel):
+    name: str
+
+# ── Helper ─────────────────────────────────────────────────────────────────────
+def fmt_notebook(doc: dict) -> dict:
+    updated = doc.get("updated_at")
+    return {
+        "id": str(doc["_id"]),
+        "name": doc.get("name", "Untitled Notebook"),
+        "updated_at": updated.isoformat() if updated else "",
+    }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 @app.get("/")
@@ -109,35 +125,103 @@ async def health():
     return {"status": "ok", "service": "mindpad-ai-backend"}
 
 
-@app.get("/history")
-async def get_history(authorization: Optional[str] = Header(None)):
-    """Return the full chat history for the authenticated user."""
+# ─── Notebooks CRUD ────────────────────────────────────────────────────────────
+
+@app.get("/notebooks")
+async def list_notebooks(authorization: Optional[str] = Header(None)):
+    """Return all notebooks for the authenticated user, sorted by most recent."""
     user_id = await get_current_user(authorization)
-    doc = await chats_col.find_one({"user_id": user_id})
+    cursor = notebooks_col.find(
+        {"user_id": user_id},
+        {"_id": 1, "name": 1, "updated_at": 1}
+    ).sort("updated_at", -1)
+    docs = await cursor.to_list(length=100)
+    return {"notebooks": [fmt_notebook(d) for d in docs]}
+
+
+@app.post("/notebooks")
+async def create_notebook(body: NotebookCreate, authorization: Optional[str] = Header(None)):
+    """Create a new notebook and return its ID."""
+    user_id = await get_current_user(authorization)
+    now = datetime.now(timezone.utc)
+    result = await notebooks_col.insert_one({
+        "user_id": user_id,
+        "name": body.name,
+        "messages": [],
+        "created_at": now,
+        "updated_at": now,
+    })
+    return {"id": str(result.inserted_id), "name": body.name}
+
+
+@app.patch("/notebooks/{notebook_id}")
+async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization: Optional[str] = Header(None)):
+    """Rename a notebook."""
+    user_id = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.update_one(
+        {"_id": oid, "user_id": user_id},
+        {"$set": {"name": body.name, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"status": "ok"}
+
+
+@app.delete("/notebooks/{notebook_id}")
+async def delete_notebook(notebook_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a notebook and its chat history."""
+    user_id = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.delete_one({"_id": oid, "user_id": user_id})
+    return {"status": "deleted"}
+
+
+# ─── Chat History per Notebook ────────────────────────────────────────────────
+
+@app.get("/history/{notebook_id}")
+async def get_history(notebook_id: str, authorization: Optional[str] = Header(None)):
+    """Return chat history for a specific notebook."""
+    user_id = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    doc = await notebooks_col.find_one({"_id": oid, "user_id": user_id})
     if doc:
         return {"messages": doc.get("messages", [])}
     return {"messages": []}
 
 
+# ─── Streaming Chat ───────────────────────────────────────────────────────────
+
 @app.post("/chat")
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
-    """Stream AI response and persist full history to MongoDB."""
+    """Stream AI response and persist full history to the notebook."""
     user_id = await get_current_user(authorization)
     messages = request.messages
+    notebook_id = request.notebook_id
+
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
 
     async def save_to_db(all_messages: list):
         """Runs as an independent task — survives client disconnect."""
         try:
-            await chats_col.update_one(
-                {"user_id": user_id},
+            await notebooks_col.update_one(
+                {"_id": oid, "user_id": user_id},
                 {
                     "$set": {
-                        "user_id": user_id,
                         "messages": all_messages,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
-                upsert=True,
             )
         except Exception as e:
             print(f"[DB save error] {e}")
@@ -171,14 +255,6 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         asyncio.create_task(save_to_db(all_messages))
 
     return StreamingResponse(stream_response(), media_type="text/plain")
-
-
-@app.delete("/history")
-async def clear_history(authorization: Optional[str] = Header(None)):
-    """Clear chat history for the authenticated user."""
-    user_id = await get_current_user(authorization)
-    await chats_col.delete_one({"user_id": user_id})
-    return {"status": "cleared"}
 
 
 if __name__ == "__main__":
