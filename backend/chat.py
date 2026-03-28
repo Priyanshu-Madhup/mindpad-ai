@@ -85,8 +85,8 @@ def is_image_request(text: str) -> bool:
     lower = text.lower()
     return any(kw in lower for kw in IMAGE_INTENT_KEYWORDS)
 
-async def generate_image_nvidia(prompt: str) -> str:
-    """Call NVIDIA Stable Diffusion 3 Medium. Saves JPEG to disk and returns filename."""
+async def generate_image_nvidia(prompt: str) -> tuple:
+    """Call NVIDIA Stable Diffusion 3 Medium. Returns (filename, base64_data_url)."""
     headers = {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
         "Accept": "application/json",
@@ -126,20 +126,25 @@ async def generate_image_nvidia(prompt: str) -> str:
     if not img_b64:
         raise ValueError(f"No image data in NVIDIA response: {list(data.keys())}")
 
-    # Save to disk
+    # Save to disk (best-effort — may not persist in production)
     filename = f"{uuid.uuid4().hex}.jpg"
     filepath = IMAGES_DIR / filename
-    await asyncio.to_thread(filepath.write_bytes, b64_lib.b64decode(img_b64))
-    print(f"[Image saved] {filepath} ({len(img_b64)} b64 chars)")
-    return filename
+    try:
+        await asyncio.to_thread(filepath.write_bytes, b64_lib.b64decode(img_b64))
+        print(f"[Image saved] {filepath} ({len(img_b64)} b64 chars)")
+    except Exception as e:
+        print(f"[Image save skipped] {e}")
+
+    data_url = f"data:image/jpeg;base64,{img_b64}"
+    return filename, data_url
 
 
 @app.get("/test-nvidia")
 async def test_nvidia():
     """Debug endpoint: test NVIDIA image generation with a fixed prompt."""
     try:
-        filename = await generate_image_nvidia("a beautiful sunset over the ocean, photorealistic")
-        return {"status": "ok", "filename": filename, "url": f"/images/{filename}"}
+        filename, data_url = await generate_image_nvidia("a beautiful sunset over the ocean, photorealistic")
+        return {"status": "ok", "filename": filename, "data_url_length": len(data_url)}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
@@ -310,13 +315,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     last_user_text = next((m.content for m in reversed(messages) if m.role == "user"), "")
     if is_image_request(last_user_text) and not request.image_base64:
         try:
-            filename = await generate_image_nvidia(last_user_text)
-            img_url = f"/images/{filename}"  # relative path — frontend prepends BACKEND_URL
+            filename, data_url = await generate_image_nvidia(last_user_text)
+            img_url = f"/images/{filename}"
 
             # Save the image URL to MongoDB so it loads on history reload
             async def _save_img_record():
                 record = [{"role": m.role, "content": m.content} for m in messages]
-                record.append({"role": "assistant", "content": f"__IMG__{img_url}"})
+                record.append({"role": "assistant", "content": f"__IMG__{data_url}"})
                 try:
                     await notebooks_col.update_one(
                         {"_id": oid, "user_id": user_id},
@@ -325,11 +330,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 except Exception as e:
                     print(f"[DB save error] {e}")
             asyncio.create_task(_save_img_record())
-            return JSONResponse({"type": "image", "url": img_url, "prompt": last_user_text})
+            # Return the base64 data URL directly — no server URL dependency
+            return JSONResponse({"type": "image", "url": data_url, "prompt": last_user_text})
         except Exception as e:
             print(f"[Image gen failed, falling back to text] {e}")
-            # Fall through to text streaming — signal fallback to frontend via header
-            # We set a flag so stream_response can attach it
             image_gen_failed = True
     else:
         image_gen_failed = False

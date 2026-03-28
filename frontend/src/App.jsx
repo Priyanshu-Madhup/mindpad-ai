@@ -252,7 +252,14 @@ export default function App() {
         return;
       }
       const data = await resp.json();
-      setChatHistory(data.messages || []);
+      // Restore image messages stored as __IMG__<data_url> in DB
+      const restored = (data.messages || []).map(msg => {
+        if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.startsWith('__IMG__')) {
+          return { role: 'assistant', type: 'image', content: '', src: msg.content.slice(7), prompt: '' };
+        }
+        return msg;
+      });
+      setChatHistory(restored);
     } catch (err) {
       console.error('Failed to load chat history:', err);
     } finally {
@@ -323,7 +330,8 @@ export default function App() {
             role: 'assistant',
             type: 'image',
             content: '',
-            src: `${BACKEND_URL}${data.url}`,
+            // data.url is a base64 data URL — works in any environment without BACKEND_URL
+            src: data.url,
             prompt: data.prompt,
           }]);
         }
