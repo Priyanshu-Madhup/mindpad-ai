@@ -58,10 +58,10 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
 
 const StudioTool = ({ icon: Icon, label }) => (
   <button className="aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group">
-    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700 flex items-center justify-center group-hover:bg-primary/5 transition-colors">
-      <Icon className="w-6 h-6 text-primary" />
+    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700/60 flex items-center justify-center group-hover:bg-primary/5 dark:group-hover:bg-slate-600/60 transition-colors">
+      <Icon className="w-6 h-6 text-primary dark:text-slate-300" />
     </div>
-    <span className="text-[10px] font-bold font-display text-primary uppercase tracking-tight">{label}</span>
+    <span className="text-[10px] font-bold font-display text-primary dark:text-slate-300 uppercase tracking-tight">{label}</span>
   </button>
 );
 
@@ -518,12 +518,12 @@ export default function App() {
                       </div>
                       <button
                         onClick={() => setIsDarkMode(prev => !prev)}
-                        className={`relative w-10 h-5 rounded-full transition-colors duration-300 focus:outline-none ${
-                          isDarkMode ? 'bg-primary' : 'bg-slate-200'
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
+                          isDarkMode ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
                         }`}
                       >
-                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-                          isDarkMode ? 'translate-x-5' : 'translate-x-0.5'
+                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
+                          isDarkMode ? 'translate-x-5' : 'translate-x-0'
                         }`} />
                       </button>
                     </div>
@@ -710,7 +710,7 @@ export default function App() {
         <aside className="hidden lg:flex w-80 h-full bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 flex-shrink-0 flex-col">
           <div className="p-6 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-display font-bold text-lg text-primary tracking-tight">AI Studio</h3>
+              <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
               <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
             </div>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
@@ -727,13 +727,13 @@ export default function App() {
             </div>
 
             <div className="mt-8 space-y-4">
-              <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Contextual Reference</h4>
+              <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500">Contextual Reference</h4>
               <motion.div
                 whileHover={{ y: -2 }}
                 className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-primary shadow-sm border border-slate-100 dark:border-slate-700"
               >
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
-                <p className="text-xs text-slate-600 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
                 <img
                   className="mt-3 rounded-lg w-full h-24 object-cover"
                   alt="Quantum particles"
