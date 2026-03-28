@@ -1,5 +1,4 @@
 import os
-import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -18,9 +17,13 @@ load_dotenv()
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
+# CORS — restrict to your frontend origin in production via ALLOWED_ORIGINS env var
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
+_origins = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,6 +92,13 @@ class ChatRequest(BaseModel):
     messages: List[Message]
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+@app.get("/")
+@app.get("/health")
+async def health():
+    """Health check — used by deployment platforms to verify the service is running."""
+    return {"status": "ok", "service": "mindpad-ai-backend"}
+
+
 @app.get("/history")
 async def get_history(authorization: Optional[str] = Header(None)):
     """Return the full chat history for the authenticated user."""
