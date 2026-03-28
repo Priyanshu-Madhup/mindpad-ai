@@ -1,4 +1,5 @@
 import os
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -124,7 +125,24 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     user_id = await get_current_user(authorization)
     messages = request.messages
 
-    async def stream_and_save():
+    async def save_to_db(all_messages: list):
+        """Runs as an independent task — survives client disconnect."""
+        try:
+            await chats_col.update_one(
+                {"user_id": user_id},
+                {
+                    "$set": {
+                        "user_id": user_id,
+                        "messages": all_messages,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as e:
+            print(f"[DB save error] {e}")
+
+    async def stream_response():
         full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
             {"role": m.role, "content": m.content} for m in messages
         ]
@@ -147,23 +165,12 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 full_response += content
                 yield content
 
-        # Persist complete conversation after streaming finishes
+        # Fire-and-forget save — asyncio.create_task survives client disconnect
         all_messages = [{"role": m.role, "content": m.content} for m in messages]
         all_messages.append({"role": "assistant", "content": full_response})
+        asyncio.create_task(save_to_db(all_messages))
 
-        await chats_col.update_one(
-            {"user_id": user_id},
-            {
-                "$set": {
-                    "user_id": user_id,
-                    "messages": all_messages,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-            upsert=True,
-        )
-
-    return StreamingResponse(stream_and_save(), media_type="text/plain")
+    return StreamingResponse(stream_response(), media_type="text/plain")
 
 
 @app.delete("/history")
