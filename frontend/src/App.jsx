@@ -25,6 +25,8 @@ import {
   Video,
   Film,
   Layers,
+  Menu,
+  X,
   HelpCircle as QuizIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -73,6 +75,7 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const chatEndRef = React.useRef(null);
 
   // Load chat history from MongoDB when workspace is opened
@@ -202,8 +205,15 @@ export default function App() {
     <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/70 backdrop-blur-xl border-b border-slate-100">
-        <div className="flex justify-between items-center px-8 py-4 w-full">
-          <div className="flex items-center gap-10">
+        <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
+          <div className="flex items-center gap-3 md:gap-10">
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <span
               onClick={() => setView('landing')}
               className="text-lg font-black text-slate-900 font-display uppercase tracking-widest cursor-pointer"
@@ -217,8 +227,8 @@ export default function App() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="relative flex items-center">
+          <div className="flex items-center gap-2 md:gap-4">
+            <div className="relative hidden md:flex items-center">
               <Search className="absolute left-3 w-4 h-4 text-slate-400" />
               <input
                 className="bg-slate-100 border-none rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary/10 w-64 outline-none"
@@ -231,12 +241,12 @@ export default function App() {
             </button>
             <Show when="signed-out">
               <SignInButton mode="modal">
-                <button className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors rounded-xl border border-slate-200">
+                <button className="px-3 md:px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors rounded-xl border border-slate-200">
                   Sign In
                 </button>
               </SignInButton>
               <SignUpButton mode="modal">
-                <button className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:opacity-90 transition-all rounded-xl shadow-md shadow-primary/20">
+                <button className="hidden md:block px-4 py-2 text-sm font-semibold text-white bg-primary hover:opacity-90 transition-all rounded-xl shadow-md shadow-primary/20">
                   Sign Up
                 </button>
               </SignUpButton>
@@ -248,13 +258,34 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
+      <main className="flex flex-1 overflow-hidden relative">
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Left Column: Notebooks Sidebar */}
-        <aside className="w-64 flex flex-col bg-slate-50 border-r border-slate-100 flex-shrink-0">
+        <aside className={`
+          fixed md:relative inset-y-0 left-0 z-50
+          w-72 md:w-64 flex flex-col bg-slate-50 border-r border-slate-100 flex-shrink-0
+          transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+        `}>
           <div className="flex flex-col h-full py-6 px-4">
-            <div className="mb-8 px-2">
-              <h2 className="text-lg font-bold font-display text-slate-900 mb-1">The Scholar</h2>
-              <p className="text-xs font-medium text-slate-500">Digital Curator</p>
+            <div className="flex items-center justify-between mb-8 px-2">
+              <div>
+                <h2 className="text-lg font-bold font-display text-slate-900 mb-1">The Scholar</h2>
+                <p className="text-xs font-medium text-slate-500">Digital Curator</p>
+              </div>
+              <button
+                className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <button className="mb-8 w-full py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]">
@@ -283,8 +314,8 @@ export default function App() {
         </aside>
 
         {/* Center Column: AI Chat Interface */}
-        <section className="flex-1 flex flex-col bg-white relative min-w-0">
-          <div className="flex-1 overflow-y-auto px-8 py-10">
+        <section className="flex-1 flex flex-col bg-white relative min-w-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full space-y-8">
               {/* Welcome message — only when not loading and history is empty */}
               {!historyLoading && chatHistory.length === 0 && (
@@ -415,8 +446,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Floating Input Area */}
-          <div className="p-8 pb-12">
+          {/* Input Area */}
+          <div className="p-3 md:p-8 md:pb-12 border-t border-slate-100 md:border-none bg-white">
             <div className="w-full relative group">
               <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200">
                 <button className="p-3 text-slate-400 hover:bg-slate-100 rounded-xl transition-all">
@@ -448,8 +479,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right Column: AI Studio Panel */}
-        <aside className="w-80 h-full bg-slate-50 border-l border-slate-100 flex flex-shrink-0 flex-col">
+        {/* Right Column: AI Studio Panel — hidden on mobile */}
+        <aside className="hidden lg:flex w-80 h-full bg-slate-50 border-l border-slate-100 flex-shrink-0 flex-col">
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-display font-bold text-lg text-primary tracking-tight">AI Studio</h3>
