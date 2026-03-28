@@ -28,6 +28,8 @@ import {
   Check,
   Moon,
   Sun,
+  PanelLeft,
+  PanelRight,
   HelpCircle as QuizIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -77,7 +79,9 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [leftOpen, setLeftOpen] = useState(true);         // desktop left sidebar
+  const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
   const [showSettings, setShowSettings] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
 
@@ -348,10 +352,18 @@ export default function App() {
           <div className="flex items-center gap-3 md:gap-10">
             {/* Mobile hamburger */}
             <button
-              className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
-              onClick={() => setSidebarOpen(true)}
+              className="md:hidden p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              onClick={() => setSidebarOpen(prev => !prev)}
             >
               <Menu className="w-5 h-5" />
+            </button>
+            {/* Desktop left sidebar toggle */}
+            <button
+              className="hidden md:flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              onClick={() => setLeftOpen(prev => !prev)}
+              title={leftOpen ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              <PanelLeft className="w-5 h-5" />
             </button>
             <span
               onClick={() => setView('landing')}
@@ -390,6 +402,14 @@ export default function App() {
                 </button>
               </SignUpButton>
             </Show>
+            {/* Right sidebar toggle — desktop only */}
+            <button
+              className="hidden lg:flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              onClick={() => setRightOpen(prev => !prev)}
+              title={rightOpen ? 'Hide studio' : 'Show studio'}
+            >
+              <PanelRight className="w-5 h-5" />
+            </button>
             <Show when="signed-in">
               <UserButton afterSignOutUrl="/" />
             </Show>
@@ -398,22 +418,19 @@ export default function App() {
       </header>
 
       <main className="flex flex-1 overflow-hidden relative">
-        {/* Mobile sidebar overlay */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 md:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
         {/* Left Column: Notebooks Sidebar */}
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
         <aside className={`
-          fixed md:relative inset-y-0 left-0 z-50
-          w-72 md:w-64 flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex-shrink-0
-          transform transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+          fixed md:relative inset-y-0 left-0 z-50 flex-shrink-0
+          flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800
+          overflow-hidden transition-all duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72'}
+          ${leftOpen ? 'md:translate-x-0 md:w-64' : 'md:translate-x-0 md:w-0'}
         `}>
-          <div className="flex flex-col h-full py-6 px-4">
+          <div className="w-72 md:w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-between mb-8 px-2">
               <div>
                 <h2 className="text-lg font-bold font-display text-slate-900 dark:text-slate-100 mb-1">The Scholar</h2>
@@ -706,8 +723,9 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right Column: AI Studio Panel — hidden on mobile */}
-        <aside className="hidden lg:flex w-80 h-full bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 flex-shrink-0 flex-col">
+        {/* Right Column: AI Studio Panel — hidden on mobile, collapses on toggle */}
+        <aside className={`hidden lg:flex flex-shrink-0 flex-col bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden transition-[width] duration-300 ease-in-out ${rightOpen ? 'w-80' : 'w-0'}`}>
+          <div className="w-80 h-full flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
@@ -742,6 +760,7 @@ export default function App() {
                 />
               </motion.div>
             </div>
+          </div>
           </div>
         </aside>
       </main>
