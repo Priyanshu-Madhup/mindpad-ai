@@ -295,24 +295,40 @@ export default function App() {
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
-      // Add empty AI message placeholder
-      setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
+      const contentType = response.headers.get('content-type') || '';
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setChatHistory(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
+      if (contentType.includes('application/json')) {
+        // Image generation response
+        const data = await response.json();
+        if (data.type === 'image') {
+          setChatHistory(prev => [...prev, {
             role: 'assistant',
-            content: updated[updated.length - 1].content + chunk,
-          };
-          return updated;
-        });
+            type: 'image',
+            content: '',
+            base64: data.base64,
+            prompt: data.prompt,
+          }]);
+        }
+      } else {
+        // Streaming text response
+        setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          setChatHistory(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: updated[updated.length - 1].content + chunk,
+            };
+            return updated;
+          });
+        }
       }
     } catch (err) {
       setChatHistory(prev => [
@@ -640,15 +656,28 @@ export default function App() {
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                       </header>
                       <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
-                        <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                        {msg.type === 'image' ? (
+                          <div className="space-y-3">
+                            <img
+                              src={`data:image/png;base64,${msg.base64}`}
+                              alt={msg.prompt || 'Generated image'}
+                              className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700 object-cover"
+                            />
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 italic font-medium tracking-wide">
+                              Generated with Stable Diffusion 3 · NVIDIA
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                        )}
                       </div>
                     </div>
                   </motion.div>
                 )
               ))}
 
-              {/* Thinking animation — shown while loading history OR waiting for first AI token */}
-              {(historyLoading || (isStreaming && chatHistory[chatHistory.length - 1]?.content === '')) && (
+              {/* Thinking animation — shown while loading history OR waiting for first AI token (but not when an image just loaded) */}
+              {(historyLoading || (isStreaming && chatHistory[chatHistory.length - 1]?.content === '' && chatHistory[chatHistory.length - 1]?.type !== 'image')) && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
