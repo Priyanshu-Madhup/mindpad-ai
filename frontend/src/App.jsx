@@ -70,7 +70,7 @@ export default function App() {
   const { getToken } = useAuth();
   const { openSignIn, openSignUp } = useClerk();
   const [view, setView] = useState('landing');
-  const [awaitingAuth, setAwaitingAuth] = useState(false);
+
   const [message, setMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -123,13 +123,16 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isStreaming]);
 
-  // Auto-transition to workspace after Clerk modal auth completes
+  // Auth state drives view — sign in → workspace, sign out → landing
   useEffect(() => {
-    if (awaitingAuth && isSignedIn) {
+    if (!isLoaded) return;
+    if (isSignedIn) {
       setView('workspace');
-      setAwaitingAuth(false);
+    } else {
+      setView('landing');
+      setChatHistory([]); // Clear stale history on sign-out
     }
-  }, [isSignedIn, awaitingAuth]);
+  }, [isSignedIn, isLoaded]);
 
   const sendMessage = async () => {
     const userText = message.trim();
@@ -201,7 +204,6 @@ export default function App() {
           if (isSignedIn) {
             setView('workspace');
           } else {
-            setAwaitingAuth(true);
             openSignUp();
           }
         }}
@@ -209,7 +211,6 @@ export default function App() {
           if (isSignedIn) {
             setView('workspace');
           } else {
-            setAwaitingAuth(true);
             openSignIn();
           }
         }}
