@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
   Bell,
@@ -121,6 +121,10 @@ export default function App() {
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
   const [openNotebookId, setOpenNotebookId] = useState(null); // which notebook's PDF drawer is open
+  // notebookPdfs: { [notebookId]: [{ name, size, selected }] }
+  const [notebookPdfs, setNotebookPdfs] = useState({});
+  const pdfInputRef = useRef(null); // hidden <input type="file"> for PDF uploads
+  const pdfUploadTargetRef = useRef(null); // which notebook id is being uploaded to
 
   // Apply dark mode class on mount and toggle
   useEffect(() => {
@@ -719,29 +723,54 @@ export default function App() {
                         {/* PDF dropdown panel */}
                         {isOpen && (
                           <div className="ml-4 mt-0.5 mb-1 border-l-2 border-slate-200 dark:border-slate-700 pl-3 py-1 space-y-1">
-                            {pdfs.length === 0 ? (
+                            {(notebookPdfs[nb.id] || []).length === 0 ? (
                               <p className="text-[11px] text-slate-400 dark:text-slate-500 py-1.5 italic">
                                 No PDFs yet — upload to add sources
                               </p>
                             ) : (
-                              pdfs.map((pdf, pIdx) => (
+                              (notebookPdfs[nb.id] || []).map((pdf, pIdx) => (
                                 <label
                                   key={pIdx}
-                                  className="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer group"
+                                  className="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                                 >
                                   <input
                                     type="checkbox"
-                                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
-                                    checked={pdf.selected || false}
-                                    onChange={() => {/* future: toggle PDF selection */}}
+                                    className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0"
+                                    checked={pdf.selected}
+                                    onChange={() => {
+                                      setNotebookPdfs(prev => {
+                                        const list = [...(prev[nb.id] || [])];
+                                        list[pIdx] = { ...list[pIdx], selected: !list[pIdx].selected };
+                                        return { ...prev, [nb.id]: list };
+                                      });
+                                    }}
                                   />
                                   <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                  <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1">{pdf.name}</span>
+                                  <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1" title={pdf.name}>{pdf.name}</span>
+                                  <button
+                                    onClick={e => {
+                                      e.preventDefault();
+                                      setNotebookPdfs(prev => {
+                                        const list = (prev[nb.id] || []).filter((_, i) => i !== pIdx);
+                                        return { ...prev, [nb.id]: list };
+                                      });
+                                    }}
+                                    className="p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors shrink-0"
+                                    title="Remove"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
                                 </label>
                               ))
                             )}
-                            {/* Future upload button placeholder */}
-                            <button className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary font-medium py-1 px-1.5 transition-colors w-full">
+                            {/* Upload PDF button */}
+                            <button
+                              onClick={() => {
+                                pdfUploadTargetRef.current = nb.id;
+                                pdfInputRef.current?.click();
+                              }}
+                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary font-medium py-1 px-1.5 transition-colors w-full"
+                            >
                               <Plus className="w-3 h-3" />
                               Upload PDF
                             </button>
@@ -756,6 +785,31 @@ export default function App() {
               </div>
               </div>
             </nav>
+
+            {/* Hidden PDF file input */}
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              multiple
+              className="hidden"
+              onChange={e => {
+                const targetId = pdfUploadTargetRef.current;
+                if (!targetId || !e.target.files?.length) return;
+                const newFiles = Array.from(e.target.files).map(f => ({
+                  name: f.name,
+                  size: f.size,
+                  selected: true,
+                }));
+                setNotebookPdfs(prev => ({
+                  ...prev,
+                  [targetId]: [...(prev[targetId] || []), ...newFiles],
+                }));
+                // Auto-open the drawer for this notebook
+                setOpenNotebookId(targetId);
+                e.target.value = ''; // reset so same file can be re-added
+              }}
+            />
 
             <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1 relative">
               <SidebarItem icon={HelpCircle} label="Help" />
