@@ -712,11 +712,7 @@ export default function App() {
             >
               Mindpad AI
             </span>
-            <nav className="hidden md:flex gap-8">
-              <a className="text-slate-900 dark:text-slate-100 border-b-2 border-slate-900 dark:border-slate-100 pb-1 font-display text-sm font-semibold tracking-tight" href="#">Workspace</a>
-              <a className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors font-display text-sm font-semibold tracking-tight" href="#">AI Studio</a>
-              <a className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors font-display text-sm font-semibold tracking-tight" href="#">Analytics</a>
-            </nav>
+
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
@@ -863,11 +859,7 @@ export default function App() {
           ${leftOpen ? 'md:translate-x-0 md:w-64' : 'md:translate-x-0 md:w-0'}
         `}>
           <div className="w-72 md:w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
-            <div className="flex items-center justify-between mb-8 px-2">
-              <div>
-                <h2 className="text-lg font-bold font-display text-slate-900 dark:text-slate-100 mb-1">The Scholar</h2>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Digital Curator</p>
-              </div>
+            <div className="flex items-center justify-end mb-6 px-2">
               <button
                 className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
                 onClick={() => setSidebarOpen(false)}
