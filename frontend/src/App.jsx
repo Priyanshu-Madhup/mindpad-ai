@@ -721,6 +721,34 @@ export default function App() {
                           <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
                         )}
                       </div>
+                      {/* User action buttons — icon only, right-aligned */}
+                      {msg.content && msg.content !== '(image attached)' && (
+                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
+                          <button
+                            onClick={() => copyMessage(msg.content, idx)}
+                            title="Copy"
+                            className={`p-1.5 rounded-lg transition-all ${
+                              copiedMsgIdx === idx
+                                ? 'text-emerald-500'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {copiedMsgIdx === idx ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => speakMessage(msg.content, idx)}
+                            disabled={speakingMsgIdx !== null}
+                            title="Read aloud"
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${
+                              speakingMsgIdx === idx
+                                ? 'text-primary'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-40'
+                            }`}
+                          >
+                            {speakingMsgIdx === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ) : (
@@ -754,39 +782,31 @@ export default function App() {
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
                         )}
                       </div>
-                      {/* Action buttons — visible only on hover, only for text messages */}
+                      {/* Assistant action buttons — icon only, transparent */}
                       {msg.type !== 'image' && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-1">
-                          {/* Copy button */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
                           <button
                             onClick={() => copyMessage(msg.content, idx)}
-                            title="Copy text"
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            title="Copy"
+                            className={`p-1.5 rounded-lg transition-all ${
                               copiedMsgIdx === idx
-                                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                                ? 'text-emerald-500'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
                             }`}
                           >
-                            {copiedMsgIdx === idx
-                              ? <><Check className="w-3.5 h-3.5" /><span>Copied!</span></>
-                              : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
-                            }
+                            {copiedMsgIdx === idx ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
-                          {/* Speak button */}
                           <button
                             onClick={() => speakMessage(msg.content, idx)}
                             disabled={speakingMsgIdx !== null}
-                            title={speakingMsgIdx === idx ? 'Speaking…' : 'Read aloud'}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all disabled:cursor-not-allowed ${
+                            title="Read aloud"
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${
                               speakingMsgIdx === idx
-                                ? 'bg-primary/10 dark:bg-primary/20 text-primary'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-50'
+                                ? 'text-primary'
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-40'
                             }`}
                           >
-                            {speakingMsgIdx === idx
-                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Speaking…</span></>
-                              : <><Volume2 className="w-3.5 h-3.5" /><span>Speak</span></>
-                            }
+                            {speakingMsgIdx === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       )}
