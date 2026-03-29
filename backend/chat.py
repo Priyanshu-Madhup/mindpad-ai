@@ -70,20 +70,38 @@ FORMATTING RULES — CRITICAL:
 - Do NOT wrap the entire response in a single container div unnecessarily
 - Keep HTML minimal and semantic"""
 
-# ── Image generation intent detection ─────────────────────────────────────────
+# ── Image generation intent detection ────────────────────────────────────────────
 IMAGE_INTENT_KEYWORDS = [
-    "generate an image", "generate image", "create an image", "create image",
-    "draw an image", "draw a picture", "draw the", "draw a ",
-    "make an image", "make a picture", "make a drawing",
-    "show me an image", "show me a picture", "visualize this",
-    "illustrate this", "explain with an image", "explain with image",
-    "with a diagram", "with a picture", "generate a picture",
-    "create a picture", "generate a photo", "create a photo",
+    "generate an image", "generate a image", "generate image",
+    "create an image", "create a image", "create image",
+    "make an image", "make a image", "make image",
+    "draw an image", "draw a image", "draw an", "draw a ",
+    "draw the ", "draw me ",
+    "generate a picture", "generate a photo", "generate an illustration",
+    "create a picture", "create a photo", "create an illustration",
+    "make a picture", "make a photo", "make a drawing", "make an illustration",
+    "show me an image", "show me a picture", "show me a photo",
+    "visualize this", "illustrate this",
+    "explain with an image", "explain with image",
+    "with a diagram", "with a picture",
+    "generate a drawing", "create a drawing",
+    "paint a ", "paint an ",
+    "sketch a ", "sketch an ",
 ]
+
+import re as _re
+_IMAGE_VERB_RE = _re.compile(
+    r"\b(generate|create|make|draw|paint|sketch|produce|render)\s+"
+    r"(a |an |me |the )?"
+    r"(image|picture|photo|photograph|illustration|drawing|artwork|visual|diagram)\b",
+    _re.IGNORECASE,
+)
 
 def is_image_request(text: str) -> bool:
     lower = text.lower()
-    return any(kw in lower for kw in IMAGE_INTENT_KEYWORDS)
+    if any(kw in lower for kw in IMAGE_INTENT_KEYWORDS):
+        return True
+    return bool(_IMAGE_VERB_RE.search(text))
 
 async def generate_image_nvidia(prompt: str) -> tuple:
     """Call NVIDIA Stable Diffusion 3 Medium. Returns (filename, base64_data_url)."""

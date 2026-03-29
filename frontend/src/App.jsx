@@ -78,15 +78,26 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 // Mirror of backend IMAGE_INTENT_KEYWORDS
 const IMAGE_INTENT_KEYWORDS = [
-  'generate an image', 'generate image', 'create an image', 'create image',
-  'draw an image', 'draw a picture', 'draw the', 'draw a ',
-  'make an image', 'make a picture', 'make a drawing',
-  'show me an image', 'show me a picture', 'visualize this',
-  'illustrate this', 'explain with an image', 'explain with image',
-  'with a diagram', 'with a picture', 'generate a picture',
-  'create a picture', 'generate a photo', 'create a photo',
+  'generate an image', 'generate a image', 'generate image',
+  'create an image', 'create a image', 'create image',
+  'make an image', 'make a image', 'make image',
+  'draw an image', 'draw a image', 'draw an', 'draw a ',
+  'draw the ', 'draw me ',
+  'generate a picture', 'generate a photo', 'generate an illustration',
+  'create a picture', 'create a photo', 'create an illustration',
+  'make a picture', 'make a photo', 'make a drawing', 'make an illustration',
+  'show me an image', 'show me a picture', 'show me a photo',
+  'visualize this', 'illustrate this',
+  'explain with an image', 'explain with image',
+  'with a diagram', 'with a picture',
+  'generate a drawing', 'create a drawing',
+  'paint a ', 'paint an ',
+  'sketch a ', 'sketch an ',
 ];
-const isImageRequest = (text) => IMAGE_INTENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+const _IMAGE_VERB_RE = /\b(generate|create|make|draw|paint|sketch|produce|render)\s+(a |an |me |the )?(image|picture|photo|photograph|illustration|drawing|artwork|visual|diagram)\b/i;
+const isImageRequest = (text) =>
+  IMAGE_INTENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw)) || _IMAGE_VERB_RE.test(text);
+
 
 export default function App() {
   const { isSignedIn, isLoaded } = useUser();
