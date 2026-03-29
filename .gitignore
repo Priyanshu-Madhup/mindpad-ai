@@ -36,3 +36,6 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Generated images (ephemeral, do not commit)
+backend/generated_images/

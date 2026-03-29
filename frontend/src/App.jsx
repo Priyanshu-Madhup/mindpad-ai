@@ -856,6 +856,7 @@ export default function App() {
               )}
               <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-700">
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className={`p-3 rounded-xl transition-all ${
                     attachedImage
@@ -874,14 +875,20 @@ export default function App() {
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={isStreaming}
+                  enterKeyHint="send"
                 />
                 <div className="flex items-center gap-2 pb-1 pr-1">
-                  <button className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+                  <button type="button" className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                     <Mic className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={sendMessage}
-                    disabled={isStreaming || !message.trim()}
+                    type="button"
+                    onPointerDown={(e) => {
+                      // Fire immediately on pointer down to avoid iOS Safari blur-cancels-click
+                      e.preventDefault();
+                      sendMessage();
+                    }}
+                    disabled={isStreaming || (!message.trim() && !attachedImage)}
                     className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <ArrowUp className="w-5 h-5" />
