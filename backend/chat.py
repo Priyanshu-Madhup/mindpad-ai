@@ -253,7 +253,7 @@ async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Hea
         def _synthesize():
             sync_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
             response = sync_client.audio.speech.create(
-                model="canopylabs/orpheus-3b-0.1-ft",
+                model="canopylabs/orpheus-v1-english",
                 voice=body.voice,
                 response_format="wav",
                 input=clean_text,
