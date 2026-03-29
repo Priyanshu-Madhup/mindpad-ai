@@ -1134,12 +1134,22 @@ export default function App() {
                               {/* Download image */}
                               <button
                                 title="Download image"
-                                onClick={() => {
-                                  const a = document.createElement('a');
-                                  a.href = msg.src;
-                                  a.download = `mindpad-image-${Date.now()}.jpg`;
-                                  a.target = '_blank';
-                                  a.click();
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch(msg.src);
+                                    const blob = await res.blob();
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `mindpad-image-${Date.now()}.jpg`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  } catch {
+                                    // Fallback: open in new tab
+                                    window.open(msg.src, '_blank');
+                                  }
                                 }}
                                 className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
                               >
