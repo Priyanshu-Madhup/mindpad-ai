@@ -907,16 +907,34 @@ export default function App() {
                               {/* Copy image to clipboard */}
                               <button
                                 title="Copy image"
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch(msg.src);
-                                    const blob = await res.blob();
-                                    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-                                  } catch {
+                                onClick={() => {
+                                  const image = new Image();
+                                  image.crossOrigin = 'anonymous';
+                                  image.onload = () => {
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = image.naturalWidth;
+                                    canvas.height = image.naturalHeight;
+                                    canvas.getContext('2d').drawImage(image, 0, 0);
+                                    canvas.toBlob(async (blob) => {
+                                      try {
+                                        await navigator.clipboard.write([
+                                          new ClipboardItem({ 'image/png': blob })
+                                        ]);
+                                      } catch {
+                                        // Clipboard API not supported — copy URL as fallback
+                                        navigator.clipboard.writeText(msg.src);
+                                      }
+                                      setCopiedMsgIdx(idx);
+                                      setTimeout(() => setCopiedMsgIdx(null), 2000);
+                                    }, 'image/png');
+                                  };
+                                  image.onerror = () => {
                                     navigator.clipboard.writeText(msg.src);
-                                  }
-                                  setCopiedMsgIdx(idx);
-                                  setTimeout(() => setCopiedMsgIdx(null), 2000);
+                                    setCopiedMsgIdx(idx);
+                                    setTimeout(() => setCopiedMsgIdx(null), 2000);
+                                  };
+                                  // Cache-bust to bypass CORS preflight cache
+                                  image.src = msg.src + (msg.src.includes('?') ? '&' : '?') + '_cb=' + Date.now();
                                 }}
                                 className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
                               >
