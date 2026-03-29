@@ -41,6 +41,7 @@ import {
   Download,
   Microscope,
   MicOff,
+  Globe,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -55,6 +56,21 @@ import {
 import LandingPage from './LandingPage.jsx';
 import { storage } from './firebase.jsx';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+const LANGUAGES = [
+  { code: 'en', label: 'English',   native: 'English'    },
+  { code: 'hi', label: 'Hindi',     native: 'हिंदी'       },
+  { code: 'bn', label: 'Bengali',   native: 'বাংলা'       },
+  { code: 'ta', label: 'Tamil',     native: 'தமிழ்'      },
+  { code: 'te', label: 'Telugu',    native: 'తెలుగు'     },
+  { code: 'kn', label: 'Kannada',   native: 'ಕನ್ನಡ'     },
+  { code: 'ml', label: 'Malayalam', native: 'മലയാളം'    },
+  { code: 'mr', label: 'Marathi',   native: 'मराठी'      },
+  { code: 'gu', label: 'Gujarati',  native: 'ગુજરાતી'    },
+  { code: 'pa', label: 'Punjabi',   native: 'ਪੰਜਾਬੀ'    },
+  { code: 'ur', label: 'Urdu',      native: 'اردو'       },
+  { code: 'or', label: 'Odia',      native: 'ଓଡ଼ିଆ'      },
+];
 
 const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   <button
@@ -120,6 +136,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
   const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
+  const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
+  const [showLangMenu, setShowLangMenu] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
@@ -481,6 +499,7 @@ export default function App() {
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
           notebook_id: activeNotebookId,
           research_mode: isResearchMode,
+          response_language: selectedLang.label,
           ...(currentImage ? { image_base64: currentImage.base64, image_mime_type: currentImage.mimeType } : {}),
         }),
       });
@@ -1453,86 +1472,124 @@ export default function App() {
                   <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]">{attachedImage.name}</span>
                 </div>
               )}
-              <div className={`glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${
-                isRecording
-                  ? 'border-red-400 dark:border-red-500 shadow-red-200/40 dark:shadow-red-900/20'
-                  : 'border-slate-200 dark:border-slate-700'
-              }`}>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`p-3 rounded-xl transition-all ${
-                    attachedImage
-                      ? 'text-primary bg-primary/10'
-                      : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  title="Attach image"
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
-
-                {/* Listening indicator replaces textarea content when recording */}
-                {isRecording ? (
-                  <div className="flex-1 flex items-center gap-2 py-3 px-1">
-                    <span className="text-sm font-semibold text-red-500 dark:text-red-400">Listening</span>
-                    <span className="flex gap-0.5 items-end">
-                      {[0, 0.15, 0.3].map((delay, i) => (
-                        <motion.span
-                          key={i}
-                          animate={{ scaleY: [0.4, 1.2, 0.4] }}
-                          transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
-                          className="inline-block w-0.5 h-3 bg-red-400 rounded-full origin-bottom"
-                        />
-                      ))}
-                    </span>
-                  </div>
-                ) : (
-                  <textarea
-                    className="flex-1 bg-transparent border-none focus:ring-0 py-3 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
-                    placeholder={isTranscribing ? 'Transcribing…' : 'Ask Midy AI...'}
-                    rows={1}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={isStreaming || isTranscribing}
-                    enterKeyHint="send"
-                  />
-                )}
-
-                <div className="flex items-center gap-2 pb-1 pr-1">
-                  {/* Mic button — always vivid */}
+              {/* Input box — flex-col: top row has paperclip + textarea, bottom row has lang pill + buttons */}
+              <div
+                className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${
+                  isRecording
+                    ? 'border-red-400 dark:border-red-500'
+                    : 'border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {/* Top: Paperclip (top-aligned) + Textarea */}
+                <div className="flex items-start gap-2 px-2 pt-2 pb-0">
                   <button
                     type="button"
-                    onClick={toggleRecording}
-                    disabled={isTranscribing}
-                    title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
-                    className={`p-3 rounded-xl transition-all relative ${
-                      isRecording
-                        ? 'text-white bg-red-500 shadow-lg shadow-red-500/30'
-                        : isTranscribing
-                          ? 'text-primary animate-pulse'
-                          : 'text-primary bg-primary/10 hover:bg-primary/20 shadow-sm'
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`mt-1 p-2 rounded-xl transition-all shrink-0 ${
+                      attachedImage
+                        ? 'text-primary bg-primary/10'
+                        : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
+                    title="Attach image"
                   >
-                    {isRecording && (
-                      <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/40" />
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+
+                  {isRecording ? (
+                    <div className="flex-1 flex items-center gap-2 py-3 px-1">
+                      <span className="text-sm font-semibold text-red-500 dark:text-red-400">Listening</span>
+                      <span className="flex gap-0.5 items-end">
+                        {[0, 0.15, 0.3].map((delay, i) => (
+                          <motion.span
+                            key={i}
+                            animate={{ scaleY: [0.4, 1.2, 0.4] }}
+                            transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
+                            className="inline-block w-0.5 h-3 bg-red-400 rounded-full origin-bottom"
+                          />
+                        ))}
+                      </span>
+                    </div>
+                  ) : (
+                    <textarea
+                      className="flex-1 bg-transparent border-none focus:ring-0 py-2.5 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
+                      placeholder={isTranscribing ? 'Transcribing…' : 'Ask Midy AI...'}
+                      rows={2}
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      disabled={isStreaming || isTranscribing}
+                      enterKeyHint="send"
+                    />
+                  )}
+                </div>
+
+                {/* Bottom row: language pill (left) + mic + send (right) */}
+                <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                  {/* Language pill */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowLangMenu(prev => !prev)}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary dark:hover:text-primary transition-all border border-slate-200 dark:border-slate-700"
+                    >
+                      <Globe className="w-3 h-3" />
+                      {selectedLang.label}
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showLangMenu ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showLangMenu && (
+                      <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 min-w-[160px]">
+                        {LANGUAGES.map(lang => (
+                          <button
+                            key={lang.code}
+                            type="button"
+                            onClick={() => { setSelectedLang(lang); setShowLangMenu(false); }}
+                            className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors ${
+                              selectedLang.code === lang.code
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <span>{lang.label}</span>
+                            <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
+                          </button>
+                        ))}
+                      </div>
                     )}
-                    {isRecording
-                      ? <MicOff className="w-5 h-5" />
-                      : <Mic className="w-5 h-5" />}
-                  </button>
-                  <button
-                    type="button"
-                    onPointerDown={(e) => {
-                      // Fire immediately on pointer down to avoid iOS Safari blur-cancels-click
-                      e.preventDefault();
-                      sendMessage();
-                    }}
-                    disabled={isStreaming || (!message.trim() && !attachedImage)}
-                    className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ArrowUp className="w-5 h-5" />
-                  </button>
+                  </div>
+
+                  {/* Mic + Send */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleRecording}
+                      disabled={isTranscribing}
+                      title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
+                      className={`p-2 rounded-xl transition-all relative ${
+                        isRecording
+                          ? 'text-white bg-red-500 shadow-lg shadow-red-500/30'
+                          : isTranscribing
+                            ? 'text-primary animate-pulse'
+                            : 'text-primary bg-primary/10 hover:bg-primary/20 shadow-sm'
+                      }`}
+                    >
+                      {isRecording && (
+                        <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/40" />
+                      )}
+                      {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        sendMessage();
+                      }}
+                      disabled={isStreaming || (!message.trim() && !attachedImage)}
+                      className="w-9 h-9 bg-primary text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

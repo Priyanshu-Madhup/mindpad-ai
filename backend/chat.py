@@ -221,7 +221,8 @@ class ChatRequest(BaseModel):
     notebook_id: str
     image_base64: Optional[str] = None
     image_mime_type: Optional[str] = "image/jpeg"
-    research_mode: bool = False  # if True, use the larger openai/gpt-oss-120b model
+    research_mode: bool = False
+    response_language: str = "English"
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -542,6 +543,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                     break
 
         full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_msgs
+
+        # Language instruction — injected when user selects a non-English language
+        if request.response_language and request.response_language.lower() != "english":
+            full_messages.append({
+                "role": "system",
+                "content": f"IMPORTANT: You must respond entirely in {request.response_language}. Do not use English unless quoting technical terms."
+            })
 
         # Vision model for images, reasoning model for text-only
         if request.image_base64:
