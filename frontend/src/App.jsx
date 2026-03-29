@@ -165,6 +165,20 @@ export default function App() {
     localStorage.setItem('mindpad_dismissed_notifs', JSON.stringify(updated));
   };
 
+  const deleteNotifForAll = async (id) => {
+    try {
+      const token = await getToken();
+      await fetch(`${BACKEND_URL}/notifications/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Remove from local state too
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('[Delete notif]', err);
+    }
+  };
+
   const sendNotification = async () => {
     if (!newNotifTitle.trim() || !newNotifMessage.trim()) return;
     setSendingNotif(true);
@@ -752,7 +766,7 @@ export default function App() {
                       <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
                     ) : (
                       visibleNotifs.map(n => (
-                        <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        <div key={n.id} className="flex items-start gap-2 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{n.title}</p>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
@@ -762,13 +776,26 @@ export default function App() {
                               </p>
                             )}
                           </div>
-                          <button
-                            onClick={() => dismissNotif(n.id)}
-                            className="shrink-0 p-0.5 text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors mt-0.5"
-                            title="Dismiss"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                            {/* Admin: delete for everyone */}
+                            {isAdmin && (
+                              <button
+                                onClick={() => deleteNotifForAll(n.id)}
+                                className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-colors"
+                                title="Remove for all users"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                            {/* Personal dismiss */}
+                            <button
+                              onClick={() => dismissNotif(n.id)}
+                              className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-300 transition-colors"
+                              title="Dismiss"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}
