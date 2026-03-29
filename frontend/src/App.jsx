@@ -1426,7 +1426,11 @@ export default function App() {
                   <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]">{attachedImage.name}</span>
                 </div>
               )}
-              <div className="glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-700">
+              <div className={`glass-input p-2 rounded-2xl flex items-end gap-2 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${
+                isRecording
+                  ? 'border-red-400 dark:border-red-500 shadow-red-200/40 dark:shadow-red-900/20'
+                  : 'border-slate-200 dark:border-slate-700'
+              }`}>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -1439,17 +1443,37 @@ export default function App() {
                 >
                   <Paperclip className="w-5 h-5" />
                 </button>
-                <textarea
-                  className="flex-1 bg-transparent border-none focus:ring-0 py-3 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
-                  placeholder="Ask Midy AI..."
-                  rows={1}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isStreaming}
-                  enterKeyHint="send"
-                />
+
+                {/* Listening indicator replaces textarea content when recording */}
+                {isRecording ? (
+                  <div className="flex-1 flex items-center gap-2 py-3 px-1">
+                    <span className="text-sm font-semibold text-red-500 dark:text-red-400">Listening</span>
+                    <span className="flex gap-0.5 items-end">
+                      {[0, 0.15, 0.3].map((delay, i) => (
+                        <motion.span
+                          key={i}
+                          animate={{ scaleY: [0.4, 1.2, 0.4] }}
+                          transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
+                          className="inline-block w-0.5 h-3 bg-red-400 rounded-full origin-bottom"
+                        />
+                      ))}
+                    </span>
+                  </div>
+                ) : (
+                  <textarea
+                    className="flex-1 bg-transparent border-none focus:ring-0 py-3 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
+                    placeholder={isTranscribing ? 'Transcribing…' : 'Ask Midy AI...'}
+                    rows={1}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isStreaming || isTranscribing}
+                    enterKeyHint="send"
+                  />
+                )}
+
                 <div className="flex items-center gap-2 pb-1 pr-1">
+                  {/* Mic button — always vivid */}
                   <button
                     type="button"
                     onClick={toggleRecording}
@@ -1457,14 +1481,14 @@ export default function App() {
                     title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
                     className={`p-3 rounded-xl transition-all relative ${
                       isRecording
-                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                        ? 'text-white bg-red-500 shadow-lg shadow-red-500/30'
                         : isTranscribing
                           ? 'text-primary animate-pulse'
-                          : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          : 'text-primary bg-primary/10 hover:bg-primary/20 shadow-sm'
                     }`}
                   >
                     {isRecording && (
-                      <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/30" />
+                      <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/40" />
                     )}
                     {isRecording
                       ? <MicOff className="w-5 h-5" />
@@ -1487,6 +1511,7 @@ export default function App() {
             </div>
           </div>
         </section>
+
 
         {/* Right Column: AI Studio Panel — hidden on mobile, collapses on toggle */}
         <aside className={`hidden lg:flex flex-shrink-0 flex-col bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden transition-[width] duration-300 ease-in-out ${rightOpen ? 'w-80' : 'w-0'}`}>
