@@ -212,6 +212,11 @@ class SpeechRequest(BaseModel):
     text: str
     voice: str = "autumn"
 
+class SaveImageRequest(BaseModel):
+    messages: List[dict]           # full user+assistant history up to this point
+    firebase_url: str              # permanent Firebase Storage download URL
+    prompt: str = ""
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
     updated = doc.get("updated_at")
@@ -343,6 +348,38 @@ async def get_history(notebook_id: str, authorization: Optional[str] = Header(No
     return {"messages": []}
 
 
+@app.post("/notebooks/{notebook_id}/save-image")
+async def save_image_url(
+    notebook_id: str,
+    body: SaveImageRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Called by the frontend after uploading the generated image to Firebase Storage.
+    Persists the full conversation including the Firebase image URL into MongoDB.
+    """
+    user_id = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+
+    # Build the messages record: previous turns + assistant image entry
+    record = [{"role": m["role"], "content": m["content"]} for m in body.messages]
+    record.append({"role": "assistant", "content": f"__FBIMG__{body.firebase_url}"})
+
+    try:
+        await notebooks_col.update_one(
+            {"_id": oid, "user_id": user_id},
+            {"$set": {"messages": record, "updated_at": datetime.now(timezone.utc)}},
+        )
+        print(f"[Firebase] Saved image URL to notebook {notebook_id}: {body.firebase_url[:60]}...")
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"[Firebase save error] {e}")
+        raise HTTPException(status_code=500, detail="Failed to save image URL")
+
+
 # ─── Streaming Chat ───────────────────────────────────────────────────────────
 
 @app.post("/chat")
@@ -362,21 +399,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     if is_image_request(last_user_text) and not request.image_base64:
         try:
             filename, data_url = await generate_image_nvidia(last_user_text)
-            img_url = f"/images/{filename}"
-
-            # Save the image URL to MongoDB so it loads on history reload
-            async def _save_img_record():
-                record = [{"role": m.role, "content": m.content} for m in messages]
-                record.append({"role": "assistant", "content": f"__IMG__{data_url}"})
-                try:
-                    await notebooks_col.update_one(
-                        {"_id": oid, "user_id": user_id},
-                        {"$set": {"messages": record, "updated_at": datetime.now(timezone.utc)}},
-                    )
-                except Exception as e:
-                    print(f"[DB save error] {e}")
-            asyncio.create_task(_save_img_record())
-            # Return the base64 data URL directly — no server URL dependency
+            # Return base64 data URL to frontend — frontend will upload to Firebase
+            # and then call /notebooks/{id}/save-image to persist the Firebase URL
             return JSONResponse({"type": "image", "url": data_url, "prompt": last_user_text})
         except Exception as e:
             print(f"[Image gen failed, falling back to text] {e}")

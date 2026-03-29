@@ -48,6 +48,8 @@ import {
   useClerk,
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
+import { storage } from './firebase.jsx';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   <button
@@ -257,10 +259,15 @@ export default function App() {
         return;
       }
       const data = await resp.json();
-      // Restore image messages stored as __IMG__<data_url> in DB
+      // Restore image messages stored as __FBIMG__ (Firebase URL) or legacy __IMG__ (base64) in DB
       const restored = (data.messages || []).map(msg => {
-        if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.startsWith('__IMG__')) {
-          return { role: 'assistant', type: 'image', content: '', src: msg.content.slice(7), prompt: '' };
+        if (msg.role === 'assistant' && typeof msg.content === 'string') {
+          if (msg.content.startsWith('__FBIMG__')) {
+            return { role: 'assistant', type: 'image', content: '', src: msg.content.slice(9), prompt: '' };
+          }
+          if (msg.content.startsWith('__IMG__')) {
+            return { role: 'assistant', type: 'image', content: '', src: msg.content.slice(7), prompt: '' };
+          }
         }
         return msg;
       });
@@ -331,14 +338,62 @@ export default function App() {
         // Image generation response
         const data = await response.json();
         if (data.type === 'image') {
+          // Show image immediately from base64 while we upload to Firebase in background
           setChatHistory(prev => [...prev, {
             role: 'assistant',
             type: 'image',
             content: '',
-            // data.url is a base64 data URL — works in any environment without BACKEND_URL
-            src: data.url,
+            src: data.url,   // base64 data URL — shown instantly
             prompt: data.prompt,
           }]);
+
+          // Upload to Firebase Storage and persist URL to MongoDB
+          (async () => {
+            try {
+              // Convert base64 data URL → Blob
+              const base64 = data.url.split(',')[1];
+              const mimeType = data.url.split(';')[0].split(':')[1] || 'image/jpeg';
+              const byteChars = atob(base64);
+              const byteArr = new Uint8Array(byteChars.length);
+              for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+              const blob = new Blob([byteArr], { type: mimeType });
+
+              // Upload to Firebase Storage
+              const filename = `generated/${activeNotebookId}/${Date.now()}.jpg`;
+              const storageRef = ref(storage, filename);
+              await uploadBytes(storageRef, blob);
+              const firebaseUrl = await getDownloadURL(storageRef);
+              console.log('[Firebase] Uploaded image:', firebaseUrl);
+
+              // Replace base64 src in chat with Firebase URL
+              setChatHistory(prev => {
+                const updated = [...prev];
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].type === 'image' && updated[i].src === data.url) {
+                    updated[i] = { ...updated[i], src: firebaseUrl };
+                    break;
+                  }
+                }
+                return updated;
+              });
+
+              // Save Firebase URL to MongoDB via backend
+              const token = await getToken();
+              await fetch(`${BACKEND_URL}/notebooks/${activeNotebookId}/save-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                  messages: newHistory.map(m => ({ role: m.role, content: m.content })),
+                  firebase_url: firebaseUrl,
+                  prompt: data.prompt,
+                }),
+              });
+              console.log('[MongoDB] Saved Firebase URL');
+            } catch (fbErr) {
+              console.error('[Firebase upload failed]', fbErr);
+              // Image still displays from base64 — no UX disruption
+            }
+          })();
         }
       } else {
         // Streaming text response (or image-gen fallback)
