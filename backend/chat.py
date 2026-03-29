@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
@@ -40,6 +40,7 @@ app.add_middleware(
 
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
+groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
@@ -449,6 +450,35 @@ async def save_image_url(
         raise HTTPException(status_code=500, detail="Failed to save image URL")
 
 
+# ─── Speech-to-Text (Whisper) ─────────────────────────────────────────────────
+
+@app.post("/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    authorization: Optional[str] = Header(None),
+):
+    """Transcribe uploaded audio using Groq Whisper large-v3-turbo."""
+    await get_current_user(authorization)
+    audio_bytes = await audio.read()
+    filename = audio.filename or "recording.webm"
+
+    def _transcribe():
+        transcription = groq_sync.audio.transcriptions.create(
+            file=(filename, audio_bytes),
+            model="whisper-large-v3-turbo",
+            temperature=0,
+            response_format="verbose_json",
+        )
+        return transcription.text
+
+    try:
+        text = await asyncio.to_thread(_transcribe)
+        return {"text": text}
+    except Exception as e:
+        print(f"[Whisper error] {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+
 # ─── Streaming Chat ───────────────────────────────────────────────────────────
 
 @app.post("/chat")
@@ -533,7 +563,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 temperature=1,
                 max_completion_tokens=8192,
                 top_p=1,
-                reasoning_effort="default" if request.research_mode else "medium",
+                reasoning_effort="high" if request.research_mode else "medium",
                 stream=True,
                 stop=None,
             )

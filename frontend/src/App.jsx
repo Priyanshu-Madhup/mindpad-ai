@@ -40,6 +40,7 @@ import {
   FileText,
   Download,
   Microscope,
+  MicOff,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -203,6 +204,61 @@ export default function App() {
   const [activeNotebookId, setActiveNotebookId] = useState(null);
   const [editingNotebookId, setEditingNotebookId] = useState(null);
   const [editingName, setEditingName] = useState('');
+
+  // ── Voice recording (Speech-to-Text) ──────────────────────────────
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
+        setIsTranscribing(true);
+        try {
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', blob, 'recording.webm');
+          const token = await getToken();
+          const res = await fetch(`${BACKEND_URL}/transcribe`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.text) setMessage(prev => prev ? `${prev} ${data.text}` : data.text);
+          }
+        } catch (err) {
+          console.error('[STT]', err);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('[Mic]', err);
+      alert('Microphone access denied. Please allow microphone in browser settings.');
+    }
+  };
 
   const chatEndRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
@@ -1394,8 +1450,25 @@ export default function App() {
                   enterKeyHint="send"
                 />
                 <div className="flex items-center gap-2 pb-1 pr-1">
-                  <button type="button" className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
-                    <Mic className="w-5 h-5" />
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={isTranscribing}
+                    title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
+                    className={`p-3 rounded-xl transition-all relative ${
+                      isRecording
+                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                        : isTranscribing
+                          ? 'text-primary animate-pulse'
+                          : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {isRecording && (
+                      <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/30" />
+                    )}
+                    {isRecording
+                      ? <MicOff className="w-5 h-5" />
+                      : <Mic className="w-5 h-5" />}
                   </button>
                   <button
                     type="button"
