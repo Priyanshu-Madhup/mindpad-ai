@@ -220,6 +220,7 @@ class ChatRequest(BaseModel):
     notebook_id: str
     image_base64: Optional[str] = None
     image_mime_type: Optional[str] = "image/jpeg"
+    research_mode: bool = False  # if True, use the larger openai/gpt-oss-120b model
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -524,13 +525,15 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 stop=None,
             )
         else:
+            # Pick model: Research Mode → 120b, default → 20b
+            text_model = "openai/gpt-oss-120b" if request.research_mode else "openai/gpt-oss-20b"
             completion = await groq_client.chat.completions.create(
-                model="openai/gpt-oss-20b",
+                model=text_model,
                 messages=full_messages,
                 temperature=1,
                 max_completion_tokens=8192,
                 top_p=1,
-                reasoning_effort="medium",
+                reasoning_effort="default" if request.research_mode else "medium",
                 stream=True,
                 stop=None,
             )

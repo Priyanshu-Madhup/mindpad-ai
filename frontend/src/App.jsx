@@ -39,6 +39,7 @@ import {
   ChevronDown,
   FileText,
   Download,
+  Microscope,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -117,6 +118,7 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
   const [showSettings, setShowSettings] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
+  const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
@@ -185,6 +187,11 @@ export default function App() {
     document.documentElement.classList.toggle('dark', isDarkMode);
     localStorage.setItem('mindpad_dark', isDarkMode);
   }, [isDarkMode]);
+
+  // Persist research mode
+  useEffect(() => {
+    localStorage.setItem('mindpad_research', isResearchMode);
+  }, [isResearchMode]);
 
   // Fetch notifications when signed in
   useEffect(() => {
@@ -403,6 +410,7 @@ export default function App() {
         body: JSON.stringify({
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
           notebook_id: activeNotebookId,
+          research_mode: isResearchMode,
           ...(currentImage ? { image_base64: currentImage.base64, image_mime_type: currentImage.mimeType } : {}),
         }),
       });
@@ -969,6 +977,25 @@ export default function App() {
                       >
                         <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
                           isDarkMode ? 'translate-x-5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Microscope className="w-4 h-4 text-primary/70" />
+                        <div>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Research Mode</span>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Uses GPT-OSS 120B — slower but deeper</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setIsResearchMode(prev => !prev)}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
+                          isResearchMode ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                        }`}
+                      >
+                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
+                          isResearchMode ? 'translate-x-5' : 'translate-x-0'
                         }`} />
                       </button>
                     </div>
