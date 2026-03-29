@@ -901,9 +901,7 @@ export default function App() {
                               className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700"
                               onError={(e) => { e.target.style.opacity = '0.4'; }}
                             />
-                            <p className="text-[10px] text-slate-400 dark:text-slate-500 italic font-medium tracking-wide">
-                              Generated with Stable Diffusion 3 · NVIDIA
-                            </p>
+
                           </div>
                         ) : (
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
