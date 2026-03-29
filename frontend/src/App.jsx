@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   Bell,
@@ -32,7 +32,10 @@ import {
   PanelRight,
   Wand2,
   Image as ImageIcon,
-  HelpCircle as QuizIcon
+  HelpCircle as QuizIcon,
+  Copy,
+  Volume2,
+  Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -99,6 +102,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
 
   // Apply dark mode class on mount and toggle
   useEffect(() => {
@@ -374,6 +379,55 @@ export default function App() {
       sendMessage();
     }
   };
+
+  // Strip HTML tags to get plain text for copy/TTS
+  const stripHtml = (html) => {
+    if (!html) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  };
+
+  const copyMessage = useCallback(async (content, idx) => {
+    const plain = stripHtml(content);
+    try {
+      await navigator.clipboard.writeText(plain);
+      setCopiedMsgIdx(idx);
+      setTimeout(() => setCopiedMsgIdx(null), 2000);
+    } catch {
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = plain;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedMsgIdx(idx);
+      setTimeout(() => setCopiedMsgIdx(null), 2000);
+    }
+  }, []);
+
+  const speakMessage = useCallback(async (content, idx) => {
+    if (speakingMsgIdx === idx) return; // already speaking this one
+    setSpeakingMsgIdx(idx);
+    try {
+      const token = await getToken();
+      const resp = await fetch(`${BACKEND_URL}/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: content, voice: 'autumn' }),
+      });
+      if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
+      const data = await resp.json();
+      const audio = new Audio(data.audio);
+      audio.onended = () => setSpeakingMsgIdx(null);
+      audio.onerror = () => setSpeakingMsgIdx(null);
+      await audio.play();
+    } catch (err) {
+      console.error('[TTS]', err);
+      setSpeakingMsgIdx(null);
+    }
+  }, [speakingMsgIdx, getToken]);
 
   // Show nothing while Clerk loads auth state
   if (!isLoaded) return null;
@@ -700,6 +754,42 @@ export default function App() {
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
                         )}
                       </div>
+                      {/* Action buttons — visible only on hover, only for text messages */}
+                      {msg.type !== 'image' && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-1">
+                          {/* Copy button */}
+                          <button
+                            onClick={() => copyMessage(msg.content, idx)}
+                            title="Copy text"
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              copiedMsgIdx === idx
+                                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {copiedMsgIdx === idx
+                              ? <><Check className="w-3.5 h-3.5" /><span>Copied!</span></>
+                              : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+                            }
+                          </button>
+                          {/* Speak button */}
+                          <button
+                            onClick={() => speakMessage(msg.content, idx)}
+                            disabled={speakingMsgIdx !== null}
+                            title={speakingMsgIdx === idx ? 'Speaking…' : 'Read aloud'}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all disabled:cursor-not-allowed ${
+                              speakingMsgIdx === idx
+                                ? 'bg-primary/10 dark:bg-primary/20 text-primary'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-50'
+                            }`}
+                          >
+                            {speakingMsgIdx === idx
+                              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Speaking…</span></>
+                              : <><Volume2 className="w-3.5 h-3.5" /><span>Speak</span></>
+                            }
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )
