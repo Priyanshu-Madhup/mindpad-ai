@@ -38,6 +38,7 @@ import {
   Loader2,
   ChevronDown,
   FileText,
+  Download,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -894,14 +895,47 @@ export default function App() {
                       </header>
                       <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
                         {msg.type === 'image' ? (
-                          <div className="space-y-3">
+                          <div className="space-y-3 relative group/img">
                             <img
                               src={msg.src}
                               alt={msg.prompt || 'Generated image'}
                               className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700"
                               onError={(e) => { e.target.style.opacity = '0.4'; }}
                             />
-
+                            {/* Hover action buttons */}
+                            <div className="absolute bottom-3 right-3 flex gap-1.5 opacity-0 group-hover/img:opacity-100 transition-opacity duration-200">
+                              {/* Copy image to clipboard */}
+                              <button
+                                title="Copy image"
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch(msg.src);
+                                    const blob = await res.blob();
+                                    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                                  } catch {
+                                    // fallback: copy URL
+                                    navigator.clipboard.writeText(msg.src);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              {/* Download image */}
+                              <button
+                                title="Download image"
+                                onClick={() => {
+                                  const a = document.createElement('a');
+                                  a.href = msg.src;
+                                  a.download = `mindpad-image-${Date.now()}.jpg`;
+                                  a.target = '_blank';
+                                  a.click();
+                                }}
+                                className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
