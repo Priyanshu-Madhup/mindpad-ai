@@ -103,7 +103,7 @@ const isImageRequest = (text) =>
 
 
 export default function App() {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded, user } = useUser();
   const { getToken } = useAuth();
   const { openSignIn, openSignUp } = useClerk();
   const [view, setView] = useState('landing');
@@ -123,14 +123,73 @@ export default function App() {
   const [openNotebookId, setOpenNotebookId] = useState(null); // which notebook's PDF drawer is open
   // notebookPdfs: { [notebookId]: [{ name, size, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
-  const pdfInputRef = useRef(null); // hidden <input type="file"> for PDF uploads
-  const pdfUploadTargetRef = useRef(null); // which notebook id is being uploaded to
+  const pdfInputRef = useRef(null);
+  const pdfUploadTargetRef = useRef(null);
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
+  const userEmail = user?.primaryEmailAddress?.emailAddress || '';
+  const isAdmin = userEmail === ADMIN_EMAIL;
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [dismissedNotifs, setDismissedNotifs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mindpad_dismissed_notifs') || '[]'); }
+    catch { return []; }
+  });
+  const [newNotifTitle, setNewNotifTitle] = useState('');
+  const [newNotifMessage, setNewNotifMessage] = useState('');
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  const visibleNotifs = notifications.filter(n => !dismissedNotifs.includes(n.id));
+  const unreadCount = visibleNotifs.length;
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+      }
+    } catch {}
+  }, [getToken]);
+
+  const dismissNotif = (id) => {
+    const updated = [...dismissedNotifs, id];
+    setDismissedNotifs(updated);
+    localStorage.setItem('mindpad_dismissed_notifs', JSON.stringify(updated));
+  };
+
+  const sendNotification = async () => {
+    if (!newNotifTitle.trim() || !newNotifMessage.trim()) return;
+    setSendingNotif(true);
+    try {
+      const token = await getToken();
+      await fetch(`${BACKEND_URL}/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: newNotifTitle.trim(), message: newNotifMessage.trim() }),
+      });
+      setNewNotifTitle('');
+      setNewNotifMessage('');
+      await fetchNotifications();
+    } finally {
+      setSendingNotif(false);
+    }
+  };
 
   // Apply dark mode class on mount and toggle
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
     localStorage.setItem('mindpad_dark', isDarkMode);
   }, [isDarkMode]);
+
+  // Fetch notifications when signed in
+  useEffect(() => {
+    if (isSignedIn) fetchNotifications();
+  }, [isSignedIn, fetchNotifications]);
 
   // Notebooks state
   const [notebooks, setNotebooks] = useState([]);
@@ -572,9 +631,87 @@ export default function App() {
                 type="text"
               />
             </div>
-            <button className="p-2 text-slate-500 hover:bg-slate-100 transition-colors rounded-full">
-              <Bell className="w-5 h-5" />
-            </button>
+            {/* Bell / Notifications */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifs(prev => !prev)}
+                className="relative p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications dropdown */}
+              {showNotifs && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-sm font-bold font-display text-slate-800 dark:text-slate-100">Notifications</span>
+                    <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Admin: create notification form */}
+                  {isAdmin && (
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 space-y-2 bg-primary/5 dark:bg-primary/10">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Admin — Broadcast</p>
+                      <input
+                        value={newNotifTitle}
+                        onChange={e => setNewNotifTitle(e.target.value)}
+                        placeholder="Title"
+                        className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100"
+                      />
+                      <textarea
+                        value={newNotifMessage}
+                        onChange={e => setNewNotifMessage(e.target.value)}
+                        placeholder="Message..."
+                        rows={2}
+                        className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100 resize-none"
+                      />
+                      <button
+                        onClick={sendNotification}
+                        disabled={sendingNotif || !newNotifTitle.trim() || !newNotifMessage.trim()}
+                        className="w-full py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                      >
+                        {sendingNotif ? 'Sending...' : 'Send to Everyone'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Notifications list */}
+                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
+                    {visibleNotifs.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
+                    ) : (
+                      visibleNotifs.map(n => (
+                        <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{n.title}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
+                            {n.created_at && (
+                              <p className="text-[10px] text-slate-300 dark:text-slate-600 mt-1">
+                                {new Date(n.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => dismissNotif(n.id)}
+                            className="shrink-0 p-0.5 text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors mt-0.5"
+                            title="Dismiss"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <Show when="signed-out">
               <SignInButton mode="modal">
                 <button className="px-3 md:px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors rounded-xl border border-slate-200">
@@ -645,8 +782,6 @@ export default function App() {
                     const isActive = activeNotebookId === nb.id;
                     const isEditing = editingNotebookId === nb.id;
                     const isOpen = openNotebookId === nb.id;
-                    // Placeholder: notebooks will have a `pdfs` array in future
-                    const pdfs = nb.pdfs || [];
 
                     return (
                       <div key={nb.id} className="rounded-xl overflow-hidden">

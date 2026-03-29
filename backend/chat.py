@@ -44,7 +44,8 @@ NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 db = mongo_client["mindpad_ai"]
-notebooks_col = db["notebooks"]   # each doc = one notebook + its chat history
+notebooks_col = db["notebooks"]       # each doc = one notebook + its chat history
+notifications_col = db["notifications"] # global broadcast notifications from admin
 
 CLERK_FRONTEND_API = os.environ.get("CLERK_FRONTEND_API", "").rstrip("/")
 
@@ -231,9 +232,13 @@ class SpeechRequest(BaseModel):
     voice: str = "autumn"
 
 class SaveImageRequest(BaseModel):
-    messages: List[dict]           # full user+assistant history up to this point
-    firebase_url: str              # permanent Firebase Storage download URL
+    messages: List[dict]
+    firebase_url: str
     prompt: str = ""
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
@@ -292,6 +297,51 @@ async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Hea
     except Exception as e:
         print(f"[TTS error] {e}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+
+# ─── Notifications ─────────────────────────────────────────────────────────────
+
+@app.get("/notifications")
+async def get_notifications(authorization: Optional[str] = Header(None)):
+    """Return all broadcast notifications, newest first."""
+    await get_current_user(authorization)  # must be authenticated
+    cursor = notifications_col.find({}, {"_id": 1, "title": 1, "message": 1, "created_at": 1})
+    cursor.sort("created_at", -1)
+    docs = await cursor.to_list(length=100)
+    return {"notifications": [
+        {
+            "id": str(d["_id"]),
+            "title": d.get("title", ""),
+            "message": d.get("message", ""),
+            "created_at": d.get("created_at", "").isoformat() if d.get("created_at") else "",
+        }
+        for d in docs
+    ]}
+
+
+@app.post("/notifications")
+async def create_notification(body: NotificationCreate, authorization: Optional[str] = Header(None)):
+    """Create a broadcast notification (admin only — enforced on frontend)."""
+    await get_current_user(authorization)
+    doc = {
+        "title": body.title.strip(),
+        "message": body.message.strip(),
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = await notifications_col.insert_one(doc)
+    return {"id": str(result.inserted_id), "status": "created"}
+
+
+@app.delete("/notifications/{notification_id}")
+async def delete_notification(notification_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a notification (admin only — enforced on frontend)."""
+    await get_current_user(authorization)
+    try:
+        oid = ObjectId(notification_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notification ID")
+    await notifications_col.delete_one({"_id": oid})
+    return {"status": "deleted"}
 
 
 # ─── Notebooks CRUD ────────────────────────────────────────────────────────────
