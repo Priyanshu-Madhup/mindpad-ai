@@ -913,13 +913,16 @@ export default function App() {
                                     const blob = await res.blob();
                                     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
                                   } catch {
-                                    // fallback: copy URL
                                     navigator.clipboard.writeText(msg.src);
                                   }
+                                  setCopiedMsgIdx(idx);
+                                  setTimeout(() => setCopiedMsgIdx(null), 2000);
                                 }}
                                 className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
                               >
-                                <Copy className="w-3.5 h-3.5" />
+                                {copiedMsgIdx === idx
+                                  ? <Check className="w-3.5 h-3.5 text-green-400" />
+                                  : <Copy className="w-3.5 h-3.5" />}
                               </button>
                               {/* Download image */}
                               <button
