@@ -1491,7 +1491,7 @@ export default function App() {
                 className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${
                   isRecording
                     ? 'border-red-400 dark:border-red-500'
-                    : 'border-slate-200 dark:border-slate-700'
+                    : 'border-slate-200 dark:border-white/[0.09]'
                 }`}
               >
                 {/* Top: Paperclip (top-aligned) + Textarea */}
