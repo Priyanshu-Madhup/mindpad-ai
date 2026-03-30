@@ -3,6 +3,8 @@
 
 /* ── Enable class-based dark mode ─────────────────────────────────────────── */
 @variant dark (&:where(.dark, .dark *));
+/* ── Enable class-based black mode (OLED true black) ──────────────────────── */
+@variant black (&:where(.black, .black *));
 
 @theme {
   --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -40,6 +42,11 @@
   body {
     @apply font-body text-on-surface bg-white dark:bg-slate-950 dark:text-slate-100;
   }
+  /* True-black OLED mode overrides */
+  .black body, body.black {
+    background-color: #000000;
+    color: #e4e4e7;
+  }
 }
 
 /* ── Smooth dark mode transitions ─────────────────────────────────────────── */
@@ -54,6 +61,7 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #e1e3e4; border-radius: 10px; }
 .dark ::-webkit-scrollbar-thumb { background: #334155; }
+.black ::-webkit-scrollbar-thumb { background: #27272a; }
 
 /* ── Glass input ──────────────────────────────────────────────────────────── */
 .glass-input {
@@ -63,6 +71,9 @@
 }
 .dark .glass-input {
   background: rgba(15, 23, 42, 0.85);
+}
+.black .glass-input {
+  background: rgba(0, 0, 0, 0.9);
 }
 
 /* Textarea placeholder in dark mode */
@@ -110,3 +121,89 @@
 
 .chat-html hr { border: none; border-top: 1px solid #e2e8f0; margin: 1rem 0; }
 .dark .chat-html hr { border-top-color: #1e293b; }
+
+/* Textarea placeholder in black mode */
+.black textarea::placeholder { color: #3f3f46; }
+
+/* ── Black mode — chat-html prose overrides ───────────────────────────────── */
+.black .chat-html { color: #d4d4d8; }
+.black .chat-html h2 { color: #fafafa; }
+.black .chat-html h3 { color: #f4f4f5; }
+.black .chat-html strong { color: #fafafa; }
+.black .chat-html em { color: #71717a; }
+.black .chat-html th { background: #111111; }
+.black .chat-html td { border-bottom-color: #1c1c1c; color: #a1a1aa; }
+.black .chat-html tbody tr:nth-child(even) td { background: #0a0a0a; }
+.black .chat-html code { background: #111111; color: #67e8f9; }
+.black .chat-html blockquote { border-left-color: #27272a; color: #71717a; }
+.black .chat-html hr { border-top-color: #1c1c1c; }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* ── Black mode — global surface overrides (replaces navy slate with black) ── */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Main backgrounds */
+.black { background-color: #000000; color-scheme: dark; }
+.black .bg-white { background-color: #000000 !important; }
+.black .bg-white\/80 { background-color: rgba(0,0,0,0.85) !important; }
+.black .bg-white\/90 { background-color: rgba(0,0,0,0.92) !important; }
+
+/* Slate-950 (deepest bg) → pure black */
+.black .bg-slate-950 { background-color: #000000 !important; }
+.black .dark\:bg-slate-950 { background-color: #000000 !important; }
+
+/* Slate-900 (header, panels) → near-black */
+.black .bg-slate-900 { background-color: #0a0a0a !important; }
+.black .dark\:bg-slate-900 { background-color: #0a0a0a !important; }
+.black .bg-slate-900\/90 { background-color: rgba(10,10,10,0.9) !important; }
+.black .dark\:bg-slate-900\/90 { background-color: rgba(10,10,10,0.9) !important; }
+
+/* Slate-800 (cards, message bubbles) → #111 */
+.black .bg-slate-800 { background-color: #111111 !important; }
+.black .dark\:bg-slate-800 { background-color: #111111 !important; }
+.black .bg-slate-800\/50 { background-color: rgba(17,17,17,0.5) !important; }
+.black .dark\:bg-slate-800\/50 { background-color: rgba(17,17,17,0.5) !important; }
+.black .bg-slate-800\/60 { background-color: rgba(17,17,17,0.6) !important; }
+.black .dark\:bg-slate-800\/60 { background-color: rgba(17,17,17,0.6) !important; }
+
+/* Slate-700 (inputs, hover states) → #1a1a1a */
+.black .bg-slate-700 { background-color: #1a1a1a !important; }
+.black .dark\:bg-slate-700 { background-color: #1a1a1a !important; }
+.black .bg-slate-700\/60 { background-color: rgba(26,26,26,0.6) !important; }
+.black .dark\:bg-slate-700\/60 { background-color: rgba(26,26,26,0.6) !important; }
+
+/* Slate-50 (sidebar, right panel bg) → #0d0d0d */
+.black .bg-slate-50 { background-color: #0d0d0d !important; }
+.black .dark\:bg-slate-50 { background-color: #0d0d0d !important; }
+.black .bg-slate-50\/30 { background-color: rgba(13,13,13,0.3) !important; }
+
+/* Hover states */
+.black .dark\:hover\:bg-slate-800:hover { background-color: #111111 !important; }
+.black .dark\:hover\:bg-slate-800\/60:hover { background-color: rgba(17,17,17,0.6) !important; }
+.black .dark\:hover\:bg-slate-600:hover { background-color: #1a1a1a !important; }
+.black .dark\:hover\:bg-slate-800\/50:hover { background-color: rgba(17,17,17,0.5) !important; }
+.black .hover\:bg-slate-800:hover { background-color: #111111 !important; }
+
+/* Active / selected states */
+.black .dark\:bg-white\/5 { background-color: rgba(255,255,255,0.04) !important; }
+.black .dark\:hover\:bg-white\/5:hover { background-color: rgba(255,255,255,0.06) !important; }
+
+/* Borders */
+.black .border-slate-800 { border-color: #1c1c1c !important; }
+.black .dark\:border-slate-800 { border-color: #1c1c1c !important; }
+.black .border-slate-700 { border-color: #222222 !important; }
+.black .dark\:border-slate-700 { border-color: #222222 !important; }
+.black .dark\:border-slate-700\/50 { border-color: rgba(34,34,34,0.5) !important; }
+.black .dark\:border-slate-600 { border-color: #2a2a2a !important; }
+
+/* Text colors */
+.black .dark\:text-slate-100 { color: #f4f4f5 !important; }
+.black .dark\:text-slate-200 { color: #e4e4e7 !important; }
+.black .dark\:text-slate-300 { color: #d4d4d8 !important; }
+.black .dark\:text-slate-400 { color: #a1a1aa !important; }
+.black .dark\:text-slate-500 { color: #71717a !important; }
+.black .dark\:text-slate-600 { color: #52525b !important; }
+
+/* Settings popover */
+.black .dark\:bg-slate-800 { background-color: #111111 !important; }
+.black .dark\:bg-slate-800.rounded-xl { background-color: #0f0f0f !important; }

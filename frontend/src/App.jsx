@@ -134,7 +134,13 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(true);         // desktop left sidebar
   const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
   const [showSettings, setShowSettings] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('mindpad_dark') === 'true');
+  // colorMode: 'light' | 'dark' (navy) | 'black' (OLED true black)
+  const [colorMode, setColorMode] = useState(() => {
+    const saved = localStorage.getItem('mindpad_color_mode');
+    if (saved === 'dark' || saved === 'black' || saved === 'light') return saved;
+    // Legacy migration: if old 'mindpad_dark' was true, default to 'dark'
+    return localStorage.getItem('mindpad_dark') === 'true' ? 'dark' : 'light';
+  });
   const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [showLangMenu, setShowLangMenu] = useState(false);
@@ -215,11 +221,13 @@ export default function App() {
     }
   };
 
-  // Apply dark mode class on mount and toggle
+  // Apply color mode classes on mount and toggle
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-    localStorage.setItem('mindpad_dark', isDarkMode);
-  }, [isDarkMode]);
+    const root = document.documentElement;
+    root.classList.toggle('dark', colorMode === 'dark' || colorMode === 'black');
+    root.classList.toggle('black', colorMode === 'black');
+    localStorage.setItem('mindpad_color_mode', colorMode);
+  }, [colorMode]);
 
   // Persist research mode
   useEffect(() => {
@@ -1058,25 +1066,35 @@ export default function App() {
               {/* Settings with dark mode popover */}
               <div className="relative">
                 {showSettings && (
-                  <div className="absolute bottom-full mb-2 left-0 right-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-xl">
+                  <div className="absolute bottom-full mb-2 left-0 right-0 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {isDarkMode
+
+                    {/* ── 3-way colour mode toggle ─────────────────── */}
+                    <div className="mb-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        {colorMode === 'light'
+                          ? <Sun className="w-4 h-4 text-slate-500" />
+                          : colorMode === 'dark'
                           ? <Moon className="w-4 h-4 text-slate-400" />
-                          : <Sun className="w-4 h-4 text-slate-500" />}
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Dark Mode</span>
+                          : <Moon className="w-4 h-4 text-zinc-400" />}
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Appearance</span>
                       </div>
-                      <button
-                        onClick={() => setIsDarkMode(prev => !prev)}
-                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
-                          isDarkMode ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
-                        }`}
-                      >
-                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
-                          isDarkMode ? 'translate-x-5' : 'translate-x-0'
-                        }`} />
-                      </button>
+                      <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 text-[11px] font-bold">
+                        {[['light', 'Light', Sun], ['dark', 'Dark', Moon], ['black', 'Black', Moon]].map(([mode, label, Icon]) => (
+                          <button
+                            key={mode}
+                            onClick={() => setColorMode(mode)}
+                            className={`flex-1 flex flex-col items-center gap-1 py-2 transition-colors ${
+                              colorMode === mode
+                                ? 'bg-primary text-white'
+                                : 'bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600'
+                            }`}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                       <div className="flex items-center gap-2">
