@@ -699,6 +699,13 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-white dark:bg-slate-950 overflow-hidden">
+      {/* ── Click-outside overlay — closes all dropdowns ───────────────────── */}
+      {(showNotifs || showSettings || showLangMenu) && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => { setShowNotifs(false); setShowSettings(false); setShowLangMenu(false); }}
+        />
+      )}
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
@@ -1066,7 +1073,7 @@ export default function App() {
               {/* Settings with dark mode popover */}
               <div className="relative">
                 {showSettings && (
-                  <div className="absolute bottom-full mb-2 left-0 right-0 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
+                  <div className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
 
                     {/* ── 3-way colour mode toggle ─────────────────── */}
