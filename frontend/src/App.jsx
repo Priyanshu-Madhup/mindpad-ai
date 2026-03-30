@@ -1525,7 +1525,7 @@ export default function App() {
                     </div>
                   ) : (
                     <textarea
-                      className="flex-1 bg-transparent border-none focus:ring-0 py-2.5 text-sm dark:text-slate-200 resize-none max-h-48 scrollbar-hide outline-none"
+                      className="flex-1 bg-transparent border-none focus:ring-0 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none max-h-48 scrollbar-hide outline-none"
                       placeholder={isTranscribing ? 'Transcribing…' : 'Ask Midy AI...'}
                       rows={2}
                       value={message}
@@ -1583,8 +1583,8 @@ export default function App() {
                         isRecording
                           ? 'text-white bg-red-500 shadow-lg shadow-red-500/30'
                           : isTranscribing
-                            ? 'text-primary animate-pulse'
-                            : 'text-primary bg-primary/10 hover:bg-primary/20 shadow-sm'
+                            ? 'text-slate-400 dark:text-slate-300 animate-pulse'
+                            : 'text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 shadow-sm'
                       }`}
                     >
                       {isRecording && (
@@ -1599,7 +1599,7 @@ export default function App() {
                         sendMessage();
                       }}
                       disabled={isStreaming || (!message.trim() && !attachedImage)}
-                      className="w-9 h-9 bg-primary text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="w-9 h-9 bg-primary dark:bg-white/15 dark:hover:bg-white/25 text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <ArrowUp className="w-4 h-4" />
                     </button>
