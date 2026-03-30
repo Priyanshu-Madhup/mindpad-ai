@@ -55,6 +55,7 @@ import {
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
+import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -743,7 +744,7 @@ export default function App() {
               className="flex items-center gap-2 cursor-pointer"
             >
               <img
-                src={mindpadLogo}
+                src={colorMode === 'dark' || colorMode === 'black' ? mindpadLogoDark : mindpadLogo}
                 alt="Mindpad AI logo"
                 className="h-7 w-auto object-contain"
               />
