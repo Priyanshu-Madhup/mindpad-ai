@@ -927,7 +927,7 @@ export default function App() {
                             />
                           ) : (
                             <span className={`flex-1 text-sm truncate ${
-                              isActive ? 'font-semibold text-primary dark:text-primary-light' : 'font-medium text-slate-700 dark:text-slate-300'
+                              isActive ? 'font-semibold text-primary dark:text-white' : 'font-medium text-slate-700 dark:text-slate-300'
                             }`}>
                               {nb.name}
                             </span>
