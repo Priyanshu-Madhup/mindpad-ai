@@ -698,7 +698,7 @@ export default function App() {
 
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-slate-950 overflow-hidden">
+    <div className="flex flex-col h-dvh bg-white dark:bg-slate-950 overflow-hidden">
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
