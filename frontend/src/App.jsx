@@ -987,7 +987,7 @@ export default function App() {
                               }}
                               className={`p-1 rounded-lg transition-all ${
                                 isOpen
-                                  ? 'text-primary bg-primary/10'
+                                  ? 'text-primary bg-primary/10 dark:text-slate-200 dark:bg-white/10'
                                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
                               }`}
                               title="Show PDFs"
@@ -1046,7 +1046,7 @@ export default function App() {
                                 pdfUploadTargetRef.current = nb.id;
                                 pdfInputRef.current?.click();
                               }}
-                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary font-medium py-1 px-1.5 transition-colors w-full"
+                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full"
                             >
                               <Plus className="w-3 h-3" />
                               Upload PDF
