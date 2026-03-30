@@ -909,7 +909,7 @@ export default function App() {
                           }`}
                         >
                           <BookOpen className={`w-3.5 h-3.5 shrink-0 ${
-                            isActive ? 'text-primary' : 'text-slate-400 dark:text-slate-500'
+                            isActive ? 'text-primary dark:text-white' : 'text-slate-400 dark:text-slate-500'
                           }`} />
 
                           {isEditing ? (
