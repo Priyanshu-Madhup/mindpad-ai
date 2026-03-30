@@ -61,79 +61,152 @@ MAIL_PASS = os.environ.get("MAIL_PASS", "")
 WELCOME_HTML = """\
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Welcome to Mindpad AI</title></head>
-<body style="margin:0;padding:0;background:#f6f7f8;font-family:'Inter','Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f8;padding:40px 0;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);max-width:600px;width:100%;">
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#0D1B2A 0%,#1a3a5c 100%);padding:40px 48px;text-align:center;">
-            <img src="https://raw.githubusercontent.com/Priyanshu-Madhup/mindpad-ai/master/frontend/src/mindpad_ai_logo.png"
-                 alt="Mindpad AI" width="64" height="64"
-                 style="border-radius:16px;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>
-            <h1 style="margin:0;color:#fff;font-size:26px;font-weight:800;letter-spacing:-0.5px;">Welcome to Mindpad AI</h1>
-            <p style="margin:8px 0 0;color:rgba(255,255,255,0.7);font-size:14px;">Your premium AI-powered research workspace</p>
-          </td>
-        </tr>
-        <!-- Body -->
-        <tr>
-          <td style="padding:40px 48px;">
-            <p style="margin:0 0 20px;font-size:16px;color:#1e293b;line-height:1.7;">
-              Hi there! &#128075;<br/><br/>
-              We're thrilled to have you join <strong>Mindpad AI</strong> — a premium intellectual workspace built for scholars, students, and lifelong learners who demand more from their tools.
-            </p>
-            <!-- Features -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
-              <tr><td style="background:#f0f4ff;border-radius:12px;padding:16px 20px;border-left:4px solid #4f6ef7;">
-                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#129504; Midy AI &mdash; Intelligent Research Assistant</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Ask anything &mdash; get deep answers, summaries, mind maps, quizzes and study aids powered by state-of-the-art AI.</p>
-              </td></tr>
-              <tr><td style="height:10px;"></td></tr>
-              <tr><td style="background:#f0fff4;border-radius:12px;padding:16px 20px;border-left:4px solid #22c55e;">
-                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#128211; Smart Notebooks</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Organize research into private notebooks, each with its own AI chat history and persistent context.</p>
-              </td></tr>
-              <tr><td style="height:10px;"></td></tr>
-              <tr><td style="background:#fff7f0;border-radius:12px;padding:16px 20px;border-left:4px solid #f97316;">
-                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127912; AI Image Generation</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Generate stunning visuals from text prompts using Stable Diffusion 3 &mdash; right inside your notebook.</p>
-              </td></tr>
-              <tr><td style="height:10px;"></td></tr>
-              <tr><td style="background:#fdf0ff;border-radius:12px;padding:16px 20px;border-left:4px solid #a855f7;">
-                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127908; Voice Input &amp; Text-to-Speech</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Speak your questions with Whisper-powered transcription and listen to answers with Orpheus TTS.</p>
-              </td></tr>
-              <tr><td style="height:10px;"></td></tr>
-              <tr><td style="background:#f0faff;border-radius:12px;padding:16px 20px;border-left:4px solid #06b6d4;">
-                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127760; Multi-language Support</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Get AI responses in Hindi, Tamil, Bengali, Marathi &amp; more &mdash; Midy AI speaks your language.</p>
-              </td></tr>
-            </table>
-            <!-- CTA -->
-            <div style="text-align:center;margin:32px 0 8px;">
-              <a href="https://mindpad-ai.vercel.app" target="_blank"
-                 style="display:inline-block;background:#0D1B2A;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;">
-                Open Mindpad AI &#8594;
-              </a>
-            </div>
-            <p style="margin:28px 0 0;font-size:13px;color:#64748b;line-height:1.7;">
-              Have questions or feedback? Just reply to this email &mdash; we read every message.<br/><br/>
-              Happy researching,<br/>
-              <strong style="color:#0D1B2A;">The Mindpad AI Team</strong>
-            </p>
-          </td>
-        </tr>
-        <!-- Footer -->
-        <tr>
-          <td style="background:#f8fafc;padding:20px 48px;text-align:center;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;font-size:11px;color:#94a3b8;">&copy; 2025 Mindpad AI &nbsp;&middot;&nbsp; mindpad.ai@gmail.com</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Welcome to Mindpad AI</title>
+</head>
+<body style="margin:0;padding:0;background:#f0f2f4;font-family:'Inter','Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f4;padding:48px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+      <!-- Header -->
+      <tr>
+        <td style="background:#0D1B2A;border-radius:12px 12px 0 0;padding:48px 48px 40px;text-align:center;">
+          <img src="https://raw.githubusercontent.com/Priyanshu-Madhup/mindpad-ai/master/frontend/src/mindpad_ai_logo.png"
+               alt="Mindpad AI" width="52" height="52"
+               style="display:block;margin:0 auto 20px;border-radius:10px;"/>
+          <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#64748b;">Welcome aboard</p>
+          <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;letter-spacing:-0.5px;line-height:1.2;">Mindpad AI</h1>
+          <p style="margin:12px 0 0;color:#94a3b8;font-size:14px;line-height:1.6;">Your AI-powered research workspace is ready.</p>
+        </td>
+      </tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="background:#ffffff;padding:44px 48px 36px;">
+
+          <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#0D1B2A;letter-spacing:-0.1px;">Hello,</p>
+          <p style="margin:0 0 32px;font-size:15px;color:#475569;line-height:1.75;">
+            Your account has been created. Mindpad AI is a premium research workspace built for scholars, students, and professionals who need a smarter way to think, research, and create.
+          </p>
+
+          <!-- Divider -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            <tr>
+              <td style="border-top:1px solid #e2e8f0;"></td>
+            </tr>
+          </table>
+
+          <p style="margin:0 0 24px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#94a3b8;">What you have access to</p>
+
+          <!-- Feature 01 -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;">
+                <span style="display:inline-block;font-size:10px;font-weight:800;color:#0D1B2A;letter-spacing:0.05em;font-family:'Courier New',monospace;">01</span>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#0D1B2A;">Midy AI Research Assistant</p>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">In-depth answers, summaries, mind maps, and study aids powered by state-of-the-art language models.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;"><tr><td style="border-top:1px solid #f1f5f9;"></td></tr></table>
+
+          <!-- Feature 02 -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;">
+                <span style="display:inline-block;font-size:10px;font-weight:800;color:#0D1B2A;letter-spacing:0.05em;font-family:'Courier New',monospace;">02</span>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#0D1B2A;">Private Notebooks</p>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">Organize research into separate notebooks, each with its own persistent AI conversation history.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;"><tr><td style="border-top:1px solid #f1f5f9;"></td></tr></table>
+
+          <!-- Feature 03 -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;">
+                <span style="display:inline-block;font-size:10px;font-weight:800;color:#0D1B2A;letter-spacing:0.05em;font-family:'Courier New',monospace;">03</span>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#0D1B2A;">AI Image Generation</p>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">Generate professional visuals from natural language prompts using Stable Diffusion 3 inside your notebook.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;"><tr><td style="border-top:1px solid #f1f5f9;"></td></tr></table>
+
+          <!-- Feature 04 -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;">
+                <span style="display:inline-block;font-size:10px;font-weight:800;color:#0D1B2A;letter-spacing:0.05em;font-family:'Courier New',monospace;">04</span>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#0D1B2A;">Voice Input &amp; Text-to-Speech</p>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">Dictate queries with Whisper transcription and receive spoken responses via Orpheus TTS.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;"><tr><td style="border-top:1px solid #f1f5f9;"></td></tr></table>
+
+          <!-- Feature 05 -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:36px;">
+            <tr>
+              <td width="36" valign="top" style="padding-top:2px;">
+                <span style="display:inline-block;font-size:10px;font-weight:800;color:#0D1B2A;letter-spacing:0.05em;font-family:'Courier New',monospace;">05</span>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#0D1B2A;">Multi-language Responses</p>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">Get responses in Hindi, Tamil, Bengali, Marathi and more — select your language from the input bar.</p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- CTA -->
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td align="center">
+                <a href="https://mindpad-ai.vercel.app" target="_blank"
+                   style="display:inline-block;background:#0D1B2A;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;letter-spacing:0.04em;padding:13px 32px;border-radius:8px;">
+                  Open Mindpad AI &rarr;
+                </a>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin:36px 0 0;font-size:13px;color:#94a3b8;line-height:1.7;border-top:1px solid #f1f5f9;padding-top:24px;">
+            Reply to this email if you have any questions. We read every message personally.
+          </p>
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="background:#f8fafc;border-radius:0 0 12px 12px;padding:20px 48px;border-top:1px solid #e2e8f0;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size:11px;color:#94a3b8;">
+                &copy; 2025 Mindpad AI
+              </td>
+              <td align="right" style="font-size:11px;color:#94a3b8;">
+                mindpad.ai@gmail.com
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
 </body>
 </html>"""
 
