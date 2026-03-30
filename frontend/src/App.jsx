@@ -297,12 +297,16 @@ export default function App() {
 
   const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, base64, mimeType, name }
 
-  // Load notebooks when workspace opens
+  // Load notebooks when workspace opens OR when auth becomes ready.
+  // Both conditions are needed: Clerk's openSignIn() can resolve isSignedIn
+  // and trigger setView('workspace') in the same React batch, causing
+  // getToken() to return null on the first render. Depending on isSignedIn
+  // ensures we re-fetch once the token is actually available.
   useEffect(() => {
-    if (view === 'workspace') {
+    if (view === 'workspace' && isSignedIn) {
       loadNotebooks();
     }
-  }, [view]);
+  }, [view, isSignedIn]);
 
   const loadNotebooks = async () => {
     try {
