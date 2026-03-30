@@ -787,8 +787,8 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Notifications list */}
-                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
+                  {/* Notifications list — scrollable after ~3 items */}
+                  <div className="max-h-[216px] overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
                     {visibleNotifs.length === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
                     ) : (
