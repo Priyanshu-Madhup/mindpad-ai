@@ -325,8 +325,12 @@ export default function App() {
         token = await getToken();
       }
       if (!token) return;
+      const userEmail = user?.primaryEmailAddress?.emailAddress || '';
       const resp = await fetch(`${BACKEND_URL}/notebooks`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(userEmail && { 'X-User-Email': userEmail }),
+        },
       });
       if (!resp.ok) return;
       const data = await resp.json();

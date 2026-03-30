@@ -2,6 +2,10 @@ import os
 import asyncio
 import base64 as b64_lib
 import uuid
+import smtplib
+import threading
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -47,8 +51,110 @@ mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 db = mongo_client["mindpad_ai"]
 notebooks_col = db["notebooks"]       # each doc = one notebook + its chat history
 notifications_col = db["notifications"] # global broadcast notifications from admin
+users_meta_col = db["users_meta"]      # tracks per-user metadata (welcome email sent, etc.)
 
 CLERK_FRONTEND_API = os.environ.get("CLERK_FRONTEND_API", "").rstrip("/")
+MAIL_USER = os.environ.get("MAIL_USER", "")
+MAIL_PASS = os.environ.get("MAIL_PASS", "")
+
+# ── Welcome email ──────────────────────────────────────────────────────────────
+WELCOME_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Welcome to Mindpad AI</title></head>
+<body style="margin:0;padding:0;background:#f6f7f8;font-family:'Inter','Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f8;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);max-width:600px;width:100%;">
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#0D1B2A 0%,#1a3a5c 100%);padding:40px 48px;text-align:center;">
+            <img src="https://raw.githubusercontent.com/Priyanshu-Madhup/mindpad-ai/master/frontend/src/mindpad_ai_logo.png"
+                 alt="Mindpad AI" width="64" height="64"
+                 style="border-radius:16px;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>
+            <h1 style="margin:0;color:#fff;font-size:26px;font-weight:800;letter-spacing:-0.5px;">Welcome to Mindpad AI</h1>
+            <p style="margin:8px 0 0;color:rgba(255,255,255,0.7);font-size:14px;">Your premium AI-powered research workspace</p>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px 48px;">
+            <p style="margin:0 0 20px;font-size:16px;color:#1e293b;line-height:1.7;">
+              Hi there! &#128075;<br/><br/>
+              We're thrilled to have you join <strong>Mindpad AI</strong> — a premium intellectual workspace built for scholars, students, and lifelong learners who demand more from their tools.
+            </p>
+            <!-- Features -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+              <tr><td style="background:#f0f4ff;border-radius:12px;padding:16px 20px;border-left:4px solid #4f6ef7;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#129504; Midy AI &mdash; Intelligent Research Assistant</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Ask anything &mdash; get deep answers, summaries, mind maps, quizzes and study aids powered by state-of-the-art AI.</p>
+              </td></tr>
+              <tr><td style="height:10px;"></td></tr>
+              <tr><td style="background:#f0fff4;border-radius:12px;padding:16px 20px;border-left:4px solid #22c55e;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#128211; Smart Notebooks</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Organize research into private notebooks, each with its own AI chat history and persistent context.</p>
+              </td></tr>
+              <tr><td style="height:10px;"></td></tr>
+              <tr><td style="background:#fff7f0;border-radius:12px;padding:16px 20px;border-left:4px solid #f97316;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127912; AI Image Generation</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Generate stunning visuals from text prompts using Stable Diffusion 3 &mdash; right inside your notebook.</p>
+              </td></tr>
+              <tr><td style="height:10px;"></td></tr>
+              <tr><td style="background:#fdf0ff;border-radius:12px;padding:16px 20px;border-left:4px solid #a855f7;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127908; Voice Input &amp; Text-to-Speech</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Speak your questions with Whisper-powered transcription and listen to answers with Orpheus TTS.</p>
+              </td></tr>
+              <tr><td style="height:10px;"></td></tr>
+              <tr><td style="background:#f0faff;border-radius:12px;padding:16px 20px;border-left:4px solid #06b6d4;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#0D1B2A;">&#127760; Multi-language Support</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#475569;line-height:1.6;">Get AI responses in Hindi, Tamil, Bengali, Marathi &amp; more &mdash; Midy AI speaks your language.</p>
+              </td></tr>
+            </table>
+            <!-- CTA -->
+            <div style="text-align:center;margin:32px 0 8px;">
+              <a href="https://mindpad-ai.vercel.app" target="_blank"
+                 style="display:inline-block;background:#0D1B2A;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;">
+                Open Mindpad AI &#8594;
+              </a>
+            </div>
+            <p style="margin:28px 0 0;font-size:13px;color:#64748b;line-height:1.7;">
+              Have questions or feedback? Just reply to this email &mdash; we read every message.<br/><br/>
+              Happy researching,<br/>
+              <strong style="color:#0D1B2A;">The Mindpad AI Team</strong>
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f8fafc;padding:20px 48px;text-align:center;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:11px;color:#94a3b8;">&copy; 2025 Mindpad AI &nbsp;&middot;&nbsp; mindpad.ai@gmail.com</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+def _send_welcome_email_sync(to_email: str):
+    """Sends a welcome email via Gmail SMTP. Runs in a background thread."""
+    if not MAIL_USER or not MAIL_PASS:
+        print("[Welcome email] Credentials not set — skipping.")
+        return
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Welcome to Mindpad AI — Your Research Journey Begins!"
+        msg["From"] = f"Mindpad AI <{MAIL_USER}>"
+        msg["To"] = to_email
+        msg.attach(MIMEText(WELCOME_HTML, "html"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(MAIL_USER, MAIL_PASS)
+            server.sendmail(MAIL_USER, to_email, msg.as_string())
+        print(f"[Welcome email] Sent to {to_email}")
+    except Exception as e:
+        print(f"[Welcome email error] {e}")
+
 
 # ── System Prompt ──────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are Midy AI, an intelligent research assistant inside Mindpad AI — a premium intellectual workspace for scholars, researchers, and lifelong learners.
@@ -200,14 +306,22 @@ async def startup_event():
     except Exception:
         pass  # Non-fatal — will retry on first real request
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    """Decode Clerk JWT and return (user_id, email). Email may be empty string."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.split(" ", 1)[1]
     try:
         jwks = await get_jwks()
         payload = jose_jwt.decode(token, jwks, algorithms=["RS256"], options={"verify_aud": False})
-        return payload["sub"]  # Clerk user ID
+        user_id = payload["sub"]  # Clerk user ID
+        # Clerk embeds primary email in the token under various claim names
+        email = (
+            payload.get("email")
+            or payload.get("primary_email_address", "")
+            or ""
+        )
+        return user_id, email
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
@@ -265,7 +379,7 @@ async def health():
 async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Header(None)):
     """Convert text to speech using Groq Orpheus TTS model. Returns base64 WAV data URL."""
     # Auth check
-    await get_current_user(authorization)
+    await get_current_user(authorization)  # auth check only
 
     text = body.text.strip()
     if not text:
@@ -325,7 +439,7 @@ async def get_notifications(authorization: Optional[str] = Header(None)):
 @app.post("/notifications")
 async def create_notification(body: NotificationCreate, authorization: Optional[str] = Header(None)):
     """Create a broadcast notification (admin only — enforced on frontend)."""
-    await get_current_user(authorization)
+    await get_current_user(authorization)  # auth check only
     doc = {
         "title": body.title.strip(),
         "message": body.message.strip(),
@@ -338,7 +452,7 @@ async def create_notification(body: NotificationCreate, authorization: Optional[
 @app.delete("/notifications/{notification_id}")
 async def delete_notification(notification_id: str, authorization: Optional[str] = Header(None)):
     """Delete a notification (admin only — enforced on frontend)."""
-    await get_current_user(authorization)
+    await get_current_user(authorization)  # auth check only
     try:
         oid = ObjectId(notification_id)
     except Exception:
@@ -350,21 +464,42 @@ async def delete_notification(notification_id: str, authorization: Optional[str]
 # ─── Notebooks CRUD ────────────────────────────────────────────────────────────
 
 @app.get("/notebooks")
-async def list_notebooks(authorization: Optional[str] = Header(None)):
+async def list_notebooks(
+    authorization: Optional[str] = Header(None),
+    x_user_email: Optional[str] = Header(None),   # passed by frontend from Clerk's useUser()
+):
     """Return all notebooks for the authenticated user, sorted by most recent."""
-    user_id = await get_current_user(authorization)
+    user_id, jwt_email = await get_current_user(authorization)
+    # Prefer the frontend-supplied header (always available) over the JWT claim (often absent)
+    user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
         {"_id": 1, "name": 1, "updated_at": 1}
     ).sort("updated_at", -1)
     docs = await cursor.to_list(length=100)
+
+    # ── First-time user: send welcome email once ───────────────────────────────
+    if len(docs) == 0 and user_email:
+        meta = await users_meta_col.find_one({"user_id": user_id})
+        if not meta or not meta.get("welcomed"):
+            await users_meta_col.update_one(
+                {"user_id": user_id},
+                {"$set": {"user_id": user_id, "welcomed": True,
+                          "welcomed_at": datetime.now(timezone.utc)}},
+                upsert=True,
+            )
+            threading.Thread(
+                target=_send_welcome_email_sync, args=(user_email,), daemon=True
+            ).start()
+    # ───────────────────────────────────────────────────────────────────────────
+
     return {"notebooks": [fmt_notebook(d) for d in docs]}
 
 
 @app.post("/notebooks")
 async def create_notebook(body: NotebookCreate, authorization: Optional[str] = Header(None)):
     """Create a new notebook and return its ID."""
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     now = datetime.now(timezone.utc)
     result = await notebooks_col.insert_one({
         "user_id": user_id,
@@ -379,7 +514,7 @@ async def create_notebook(body: NotebookCreate, authorization: Optional[str] = H
 @app.patch("/notebooks/{notebook_id}")
 async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization: Optional[str] = Header(None)):
     """Rename a notebook."""
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     try:
         oid = ObjectId(notebook_id)
     except Exception:
@@ -394,7 +529,7 @@ async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization:
 @app.delete("/notebooks/{notebook_id}")
 async def delete_notebook(notebook_id: str, authorization: Optional[str] = Header(None)):
     """Delete a notebook and its chat history."""
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     try:
         oid = ObjectId(notebook_id)
     except Exception:
@@ -408,7 +543,7 @@ async def delete_notebook(notebook_id: str, authorization: Optional[str] = Heade
 @app.get("/history/{notebook_id}")
 async def get_history(notebook_id: str, authorization: Optional[str] = Header(None)):
     """Return chat history for a specific notebook."""
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     try:
         oid = ObjectId(notebook_id)
     except Exception:
@@ -429,7 +564,7 @@ async def save_image_url(
     Called by the frontend after uploading the generated image to Firebase Storage.
     Persists the full conversation including the Firebase image URL into MongoDB.
     """
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     try:
         oid = ObjectId(notebook_id)
     except Exception:
@@ -459,7 +594,7 @@ async def transcribe_audio(
     authorization: Optional[str] = Header(None),
 ):
     """Transcribe uploaded audio using Groq Whisper large-v3-turbo."""
-    await get_current_user(authorization)
+    await get_current_user(authorization)  # auth check only
     audio_bytes = await audio.read()
     filename = audio.filename or "recording.webm"
 
@@ -485,7 +620,7 @@ async def transcribe_audio(
 @app.post("/chat")
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
     """Stream AI response (or return generated image) and persist history to the notebook."""
-    user_id = await get_current_user(authorization)
+    user_id, _ = await get_current_user(authorization)
     messages = request.messages
     notebook_id = request.notebook_id
 
