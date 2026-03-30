@@ -904,8 +904,8 @@ export default function App() {
                           onClick={() => !isEditing && switchNotebook(nb.id)}
                           className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
                             isActive
-                              ? 'bg-primary/10 dark:bg-primary/10'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                              ? 'bg-primary/10 dark:bg-primary/10 black:bg-white/[0.07]'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 black:hover:bg-white/[0.04]'
                           }`}
                         >
                           <BookOpen className={`w-3.5 h-3.5 shrink-0 ${
