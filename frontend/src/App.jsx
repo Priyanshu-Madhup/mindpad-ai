@@ -54,6 +54,7 @@ import {
   useClerk,
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
+import mindpadLogo from './mindpad_ai_logo.png';
 import { storage } from './firebase.jsx';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -735,9 +736,16 @@ export default function App() {
             </button>
             <span
               onClick={() => setView('landing')}
-              className="text-lg font-black text-slate-900 dark:text-slate-100 font-display uppercase tracking-widest cursor-pointer"
+              className="flex items-center gap-2 cursor-pointer"
             >
-              Mindpad AI
+              <img
+                src={mindpadLogo}
+                alt="Mindpad AI logo"
+                className="h-7 w-auto object-contain"
+              />
+              <span className="text-lg font-black text-slate-900 dark:text-slate-100 font-display uppercase tracking-widest">
+                Mindpad AI
+              </span>
             </span>
 
           </div>
