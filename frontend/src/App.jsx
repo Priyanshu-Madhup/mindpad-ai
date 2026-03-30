@@ -305,20 +305,24 @@ export default function App() {
 
   const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, base64, mimeType, name }
 
-  // Load notebooks when workspace opens OR when auth becomes ready.
-  // Both conditions are needed: Clerk's openSignIn() can resolve isSignedIn
-  // and trigger setView('workspace') in the same React batch, causing
-  // getToken() to return null on the first render. Depending on isSignedIn
-  // ensures we re-fetch once the token is actually available.
+  // Load notebooks when view changes to workspace via manual navigation (e.g. login button).
+  // Note: on auth-driven transitions (page load / sign-in), loadNotebooks is called
+  // directly from the auth effect below to avoid waiting an extra render cycle.
   useEffect(() => {
-    if (view === 'workspace' && isSignedIn) {
+    if (view === 'workspace' && isSignedIn && isLoaded) {
       loadNotebooks();
     }
-  }, [view, isSignedIn]);
+  }, [view]);
 
   const loadNotebooks = async () => {
     try {
-      const token = await getToken();
+      // getToken() may return null briefly when Clerk is freshly hydrated from a
+      // cached session (page load / mobile). Retry once after 1 s before giving up.
+      let token = await getToken();
+      if (!token) {
+        await new Promise(r => setTimeout(r, 1000));
+        token = await getToken();
+      }
       if (!token) return;
       const resp = await fetch(`${BACKEND_URL}/notebooks`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -470,11 +474,15 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isStreaming]);
 
-  // Auth state drives view — sign in → workspace, sign out → landing
+  // Auth state drives view — sign in → workspace, sign out → landing.
+  // We also call loadNotebooks() directly here to avoid waiting for the
+  // notebooks useEffect to fire on the NEXT render cycle, which adds
+  // noticeable delay on page load with an existing session.
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) {
       setView('workspace');
+      loadNotebooks(); // fire immediately — don't wait for view state to propagate
     } else {
       setView('landing');
       setChatHistory([]); // Clear stale history on sign-out
