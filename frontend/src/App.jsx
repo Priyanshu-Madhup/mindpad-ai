@@ -644,6 +644,55 @@ export default function App() {
     return tmp.textContent || tmp.innerText || '';
   };
 
+  // Convert markdown to HTML for models that ignore the HTML system prompt (e.g. vision model)
+  const markdownToHtml = (md) => {
+    if (!md) return '';
+    let html = md
+      // Escape bare < and > that are not part of HTML tags (prevent double-encoding real HTML)
+      // Code blocks first (protect content inside them)
+      .replace(/```([\w]*)?\n([\s\S]*?)```/g, (_, lang, code) =>
+        `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`
+      )
+      // Inline code
+      .replace(/`([^`]+)`/g, (_, c) => `<code>${c.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`)
+      // Headers
+      .replace(/^#{4}\s+(.+)$/gm, '<h4>$1</h4>')
+      .replace(/^#{3}\s+(.+)$/gm, '<h3>$1</h3>')
+      .replace(/^#{2}\s+(.+)$/gm, '<h2>$1</h2>')
+      .replace(/^#{1}\s+(.+)$/gm, '<h2>$1</h2>')
+      // Bold + italic
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      // Blockquotes
+      .replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>')
+      // HR
+      .replace(/^[-*_]{3,}$/gm, '<hr>')
+      // Unordered lists — wrap consecutive li items
+      .replace(/^[-*+]\s+(.+)$/gm, '<li>$1</li>')
+      // Ordered lists
+      .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+      // Wrap consecutive <li> blocks in <ul>
+      .replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+      // Paragraphs: double newlines
+      .replace(/\n{2,}/g, '</p><p>')
+      // Single newlines → <br> inside paragraphs  
+      .replace(/\n/g, '<br>');
+    // Wrap in paragraph if not already block-level
+    if (!html.startsWith('<')) html = `<p>${html}</p>`;
+    return html;
+  };
+
+  // Auto-detect HTML vs markdown and render appropriately
+  const renderContent = (content) => {
+    if (!content) return '';
+    const trimmed = content.trimStart();
+    // If it starts with an HTML tag, treat as HTML directly
+    if (trimmed.startsWith('<')) return content;
+    // Otherwise convert markdown → HTML
+    return markdownToHtml(content);
+  };
+
   const copyMessage = useCallback(async (content, idx) => {
     const plain = stripHtml(content);
     try {
@@ -1329,7 +1378,7 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="chat-html" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                          <div className="chat-html" dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
                         )}
                       </div>
                       {/* Assistant action buttons — icon only, transparent */}
