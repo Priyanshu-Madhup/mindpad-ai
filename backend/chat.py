@@ -230,26 +230,9 @@ def _send_welcome_email_sync(to_email: str):
 
 
 # ── System Prompt ──────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are Midy AI, an intelligent research assistant inside Mindpad AI — a premium intellectual workspace for scholars, researchers, and lifelong learners.
-
-Your role is to help users:
-- Synthesize and summarize research papers, notes, and documents
-- Answer academic and intellectual questions with depth and clarity
-- Suggest connections between concepts across disciplines
-- Generate mind maps, flashcard ideas, quiz questions, and study frameworks
-- Guide users through complex topics step by step
-
-Tone: Thoughtful, precise, and scholarly — but never condescending. Be concise when possible, thorough when needed.
-
-FORMATTING RULES — CRITICAL:
-- Always respond using clean, valid HTML only. Never use Markdown.
-- Use these tags as appropriate: <h2>, <h3>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <code>, <pre>, <blockquote>, <hr>
-- Wrap all table headers in <thead><tr><th>...</th></tr></thead> and body rows in <tbody><tr><td>...</td></tr></tbody>
-- For code, use <pre><code>...</code></pre>
-- Do NOT include <html>, <head>, or <body> tags — only the inner content
-- Do NOT use inline styles, classes, or any attributes
-- Do NOT wrap the entire response in a single container div unnecessarily
-- Keep HTML minimal and semantic"""
+SYSTEM_PROMPT = """You are Midy AI, a scholarly research assistant inside Mindpad AI. Help users research, summarize, and learn.
+Tone: precise and thoughtful. Be concise when possible, thorough when needed.
+FORMAT: Respond in clean HTML only — no Markdown. Use <h2>, <h3>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <code>, <pre>, <blockquote>, <hr>. No <html>/<head>/<body> tags, no inline styles or classes."""
 
 # ── Image generation intent detection ────────────────────────────────────────────
 IMAGE_INTENT_KEYWORDS = [
@@ -732,25 +715,30 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             print(f"[DB save error] {e}")
 
     async def stream_response():
-        # Build base message list
-        chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
+        # Only send the latest user message — no conversation history — to stay within TPM limits
+        last_user_msg = next((m for m in reversed(messages) if m.role == "user"), None)
+        if last_user_msg is None:
+            return
 
-        # If image attached, convert the last user message to multimodal format
+        # Build single-turn payload
         if request.image_base64:
-            for i in range(len(chat_msgs) - 1, -1, -1):
-                if chat_msgs[i]["role"] == "user":
-                    chat_msgs[i]["content"] = [
-                        {"type": "text", "text": chat_msgs[i]["content"]},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{request.image_mime_type or 'image/jpeg'};base64,{request.image_base64}"
-                            },
-                        },
-                    ]
-                    break
+            # Multimodal: wrap last user message with image
+            user_content = [
+                {"type": "text", "text": last_user_msg.content},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{request.image_mime_type or 'image/jpeg'};base64,{request.image_base64}"
+                    },
+                },
+            ]
+        else:
+            user_content = last_user_msg.content
 
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_msgs
+        full_messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
 
         # Language instruction — injected when user selects a non-English language
         if request.response_language and request.response_language.lower() != "english":
@@ -760,12 +748,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             })
 
         # Vision model for images, reasoning model for text-only
+        # NOTE: max_completion_tokens is capped at 1500 to stay within Groq's 8000 TPM
+        # budget (input_tokens + max_completion_tokens must be < 8000).
         if request.image_base64:
             completion = await groq_client.chat.completions.create(
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
                 messages=full_messages,
                 temperature=1,
-                max_completion_tokens=8192,
+                max_completion_tokens=1500,
                 top_p=1,
                 stream=True,
                 stop=None,
@@ -777,7 +767,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 model=text_model,
                 messages=full_messages,
                 temperature=1,
-                max_completion_tokens=8192,
+                max_completion_tokens=1500,
                 top_p=1,
                 reasoning_effort="high" if request.research_mode else "medium",
                 stream=True,
