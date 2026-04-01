@@ -246,6 +246,7 @@ export default function App() {
   const [activeNotebookId, setActiveNotebookId] = useState(null);
   const [editingNotebookId, setEditingNotebookId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const loadingNotebooksRef = useRef(false); // guard: prevent concurrent loadNotebooks calls
 
   // ── Voice recording (Speech-to-Text) ──────────────────────────────
   const [isRecording, setIsRecording] = useState(false);
@@ -307,16 +308,17 @@ export default function App() {
 
   const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, base64, mimeType, name }
 
-  // Load notebooks when view changes to workspace via manual navigation (e.g. login button).
-  // Note: on auth-driven transitions (page load / sign-in), loadNotebooks is called
-  // directly from the auth effect below to avoid waiting an extra render cycle.
+  // Load notebooks when manually navigating to workspace (e.g. after sign-in button press).
+  // The auth effect below already handles the automatic sign-in case directly.
   useEffect(() => {
-    if (view === 'workspace' && isSignedIn && isLoaded) {
+    if (view === 'workspace' && isSignedIn && isLoaded && !loadingNotebooksRef.current) {
       loadNotebooks();
     }
   }, [view]);
 
   const loadNotebooks = async () => {
+    if (loadingNotebooksRef.current) return; // already in flight
+    loadingNotebooksRef.current = true;
     try {
       // getToken() may return null briefly when Clerk is freshly hydrated from a
       // cached session (page load / mobile). Retry once after 1 s before giving up.
@@ -349,6 +351,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to load notebooks:', err);
+    } finally {
+      loadingNotebooksRef.current = false;
     }
   };
 
