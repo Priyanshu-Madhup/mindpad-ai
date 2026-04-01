@@ -1366,7 +1366,10 @@ export default function App() {
               ))}
 
               {/* Thinking animation — shown while waiting for first streamed chunk */}
-              {(historyLoading || (isStreaming && !isGeneratingImage && !chatHistory[chatHistory.length - 1]?.content)) && (
+              {(historyLoading || (isStreaming && !isGeneratingImage && (
+                chatHistory[chatHistory.length - 1]?.role === 'user' ||
+                chatHistory[chatHistory.length - 1]?.content === ''
+              ))) && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
