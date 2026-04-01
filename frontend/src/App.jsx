@@ -1365,8 +1365,8 @@ export default function App() {
                 )
               ))}
 
-              {/* Thinking animation — text responses only, not while generating images */}
-              {(historyLoading || (isStreaming && !isGeneratingImage && chatHistory[chatHistory.length - 1]?.content === '' && chatHistory[chatHistory.length - 1]?.type !== 'image')) && (
+              {/* Thinking animation — shown while waiting for first streamed chunk */}
+              {(historyLoading || (isStreaming && !isGeneratingImage && !chatHistory[chatHistory.length - 1]?.content)) && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1455,7 +1455,7 @@ export default function App() {
                         />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-30">
                           <ImageIcon className="w-8 h-8 text-slate-500 dark:text-slate-400" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Stable Diffusion 3</span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Crafting your image</span>
                         </div>
                       </div>
                       <p className="text-[10px] text-slate-400 dark:text-slate-500">This may take up to 60 seconds…</p>
