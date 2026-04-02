@@ -150,8 +150,9 @@ export default function App() {
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
   const [openNotebookId, setOpenNotebookId] = useState(null); // which notebook's PDF drawer is open
-  // notebookPdfs: { [notebookId]: [{ name, size, selected }] }
+  // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
+  const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
 
@@ -347,7 +348,7 @@ export default function App() {
         // Open the most recent notebook
         const first = list[0];
         setActiveNotebookId(first.id);
-        await loadHistory(first.id);
+        await Promise.all([loadHistory(first.id), loadPdfs(first.id)]);
       }
     } catch (err) {
       console.error('Failed to load notebooks:', err);
@@ -377,12 +378,87 @@ export default function App() {
     }
   };
 
+  // ── PDF helpers ─────────────────────────────────────────────────────────────
+  const loadPdfs = async (notebookId) => {
+    if (!notebookId) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${BACKEND_URL}/pdfs/${notebookId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const pdfs = (data.pdfs || []).map(p => ({ ...p, selected: p.selected ?? true }));
+      setNotebookPdfs(prev => ({ ...prev, [notebookId]: pdfs }));
+    } catch (err) {
+      console.error('[PDF list]', err);
+    }
+  };
+
+  const uploadPdfToNotebook = async (notebookId, file) => {
+    setUploadingPdf(true);
+    let uploaded = null;
+    try {
+      const token = await getToken();
+      if (!token) return null;
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${BACKEND_URL}/upload-pdf`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Notebook-Id': notebookId,
+        },
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`PDF upload failed: ${err.detail || res.status}`);
+        return null;
+      }
+      const pdf = await res.json();
+      setNotebookPdfs(prev => ({
+        ...prev,
+        [notebookId]: [{ ...pdf, selected: true }, ...(prev[notebookId] || [])],
+      }));
+      setOpenNotebookId(notebookId);
+      uploaded = pdf;
+    } catch (err) {
+      console.error('[PDF upload]', err);
+      alert('PDF upload failed. Check backend logs.');
+    } finally {
+      setUploadingPdf(false);
+    }
+    return uploaded;
+  };
+
+  const deletePdf = async (notebookId, docId, e) => {
+    e.preventDefault();
+    try {
+      const token = await getToken();
+      await fetch(`${BACKEND_URL}/pdfs/${docId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Notebook-Id': notebookId,
+        },
+      });
+      setNotebookPdfs(prev => ({
+        ...prev,
+        [notebookId]: (prev[notebookId] || []).filter(p => p.doc_id !== docId),
+      }));
+    } catch (err) {
+      console.error('[PDF delete]', err);
+    }
+  };
+
   const switchNotebook = async (id) => {
     if (id === activeNotebookId || isStreaming) return;
     setActiveNotebookId(id);
     setChatHistory([]);
     setSidebarOpen(false);
-    await loadHistory(id);
+    await Promise.all([loadHistory(id), loadPdfs(id)]);
   };
 
   const deleteNotebook = async (id, e) => {
@@ -530,6 +606,11 @@ export default function App() {
           notebook_id: activeNotebookId,
           research_mode: isResearchMode,
           response_language: selectedLang.label,
+          // RAG: send the doc_ids the user has checked
+          selected_pdf_ids: (notebookPdfs[activeNotebookId] || [])
+            .filter(p => p.selected)
+            .map(p => p.doc_id)
+            .filter(Boolean),
           ...(currentImage ? { image_base64: currentImage.base64, image_mime_type: currentImage.mimeType } : {}),
         }),
       });
@@ -1053,14 +1134,21 @@ export default function App() {
                         {/* PDF dropdown panel */}
                         {isOpen && (
                           <div className="ml-4 mt-0.5 mb-1 border-l-2 border-slate-200 dark:border-slate-700 pl-3 py-1 space-y-1">
-                            {(notebookPdfs[nb.id] || []).length === 0 ? (
+                            {/* Uploading indicator */}
+                            {uploadingPdf && openNotebookId === nb.id && (
+                              <div className="flex items-center gap-1.5 py-1 px-1.5">
+                                <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0" />
+                                <span className="text-[11px] text-primary font-medium">Processing PDF…</span>
+                              </div>
+                            )}
+                            {(notebookPdfs[nb.id] || []).length === 0 && !uploadingPdf ? (
                               <p className="text-[11px] text-slate-400 dark:text-slate-500 py-1.5 italic">
                                 No PDFs yet — upload to add sources
                               </p>
                             ) : (
                               (notebookPdfs[nb.id] || []).map((pdf, pIdx) => (
                                 <label
-                                  key={pIdx}
+                                  key={pdf.doc_id || pIdx}
                                   className="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                                 >
                                   <input
@@ -1076,15 +1164,16 @@ export default function App() {
                                     }}
                                   />
                                   <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                  <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1" title={pdf.name}>{pdf.name}</span>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate" title={pdf.name}>{pdf.name}</span>
+                                    {pdf.total_tokens && (
+                                      <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                                        {pdf.total_tokens.toLocaleString()} tokens · {pdf.chunk_count} chunks
+                                      </span>
+                                    )}
+                                  </div>
                                   <button
-                                    onClick={e => {
-                                      e.preventDefault();
-                                      setNotebookPdfs(prev => {
-                                        const list = (prev[nb.id] || []).filter((_, i) => i !== pIdx);
-                                        return { ...prev, [nb.id]: list };
-                                      });
-                                    }}
+                                    onClick={e => deletePdf(nb.id, pdf.doc_id, e)}
                                     className="p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors shrink-0"
                                     title="Remove"
                                   >
@@ -1099,7 +1188,8 @@ export default function App() {
                                 pdfUploadTargetRef.current = nb.id;
                                 pdfInputRef.current?.click();
                               }}
-                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full"
+                              disabled={uploadingPdf}
+                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full disabled:opacity-50"
                             >
                               <Plus className="w-3 h-3" />
                               Upload PDF
@@ -1123,21 +1213,26 @@ export default function App() {
               accept=".pdf,application/pdf"
               multiple
               className="hidden"
-              onChange={e => {
+              onChange={async (e) => {
                 const targetId = pdfUploadTargetRef.current;
                 if (!targetId || !e.target.files?.length) return;
-                const newFiles = Array.from(e.target.files).map(f => ({
-                  name: f.name,
-                  size: f.size,
-                  selected: true,
-                }));
-                setNotebookPdfs(prev => ({
-                  ...prev,
-                  [targetId]: [...(prev[targetId] || []), ...newFiles],
-                }));
-                // Auto-open the drawer for this notebook
-                setOpenNotebookId(targetId);
-                e.target.value = ''; // reset so same file can be re-added
+                const files = Array.from(e.target.files);
+                e.target.value = ''; // reset immediately
+                for (const f of files) {
+                  const result = await uploadPdfToNotebook(targetId, f);
+                  // Inject summary as first assistant message in the notebook's chat
+                  if (result?.summary && targetId === activeNotebookId) {
+                    const meta = `${(result.total_tokens || 0).toLocaleString()} tokens · ${result.chunk_count || 0} chunks indexed`;
+                    setChatHistory(prev => [...prev, {
+                      role: 'assistant',
+                      content: [
+                        `<p><strong>${result.name}</strong> &nbsp;<em style="font-size:0.8em;opacity:0.6">${meta}</em></p>`,
+                        `<hr>`,
+                        result.summary,
+                      ].join(''),
+                    }]);
+                  }
+                }
               }}
             />
 
@@ -1213,25 +1308,83 @@ export default function App() {
         <section className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full space-y-8">
-              {/* Welcome message — only when not loading and history is empty */}
+              {/* Welcome / Analysing state — empty chat + no history loading */}
               {!historyLoading && chatHistory.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex gap-6 group"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
-                    <Sparkles className="w-5 h-5 text-white fill-white" />
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <header className="flex items-center justify-between">
+                uploadingPdf ? (
+                  /* ── Analysing PDF animation ───────────────────────────── */
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="flex gap-6"
+                  >
+                    <motion.div
+                      animate={{ scale: [1, 1.12, 1], opacity: [1, 0.7, 1] }}
+                      transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                      className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
+                    >
+                      <Sparkles className="w-5 h-5 text-white fill-white" />
+                    </motion.div>
+                    <div className="flex-1 space-y-4">
                       <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
-                    </header>
-                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
-                      <p>Hello! I'm Midy AI, your research curator. Ask me anything — I can help you synthesize research, explain concepts, generate study aids, and more.</p>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-4">
+                        <div className="flex items-center gap-2">
+                          <motion.span
+                            animate={{ opacity: [0.4, 1, 0.4] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                            className="text-xs font-semibold text-primary/70 font-display tracking-wide"
+                          >
+                            Analysing PDF
+                          </motion.span>
+                          <div className="flex gap-1">
+                            {[0, 0.2, 0.4].map((delay, i) => (
+                              <motion.span
+                                key={i}
+                                animate={{ opacity: [0, 1, 0] }}
+                                transition={{ duration: 1.2, repeat: Infinity, delay }}
+                                className="text-primary/70 text-sm font-bold leading-none"
+                              >.</motion.span>
+                            ))}
+                          </div>
+                        </div>
+                        {/* Shimmer bars */}
+                        <div className="space-y-2.5">
+                          {[3/4, 1/2, 2/3, 5/8, 3/5].map((w, i) => (
+                            <motion.div
+                              key={i}
+                              animate={{ opacity: [0.25, 0.6, 0.25] }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
+                              className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full"
+                              style={{ width: `${w * 100}%` }}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          Chunking, embedding and generating summary — this takes a few seconds…
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
+                  </motion.div>
+                ) : (
+                  /* ── Default welcome message ────────────────────────────── */
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex gap-6 group"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
+                      <Sparkles className="w-5 h-5 text-white fill-white" />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                      <header className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
+                      </header>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
+                        <p>Hello! I'm Midy AI, your research curator. Ask me anything — I can help you synthesize research, explain concepts, generate study aids, and more.</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )
               )}
 
               {/* Dynamic chat history — skip empty assistant placeholders to prevent ghost bubbles (but keep image messages which intentionally have empty content) */}

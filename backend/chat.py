@@ -23,6 +23,9 @@ import httpx
 
 load_dotenv()
 
+# RAG module — import after load_dotenv so env vars are available
+from rag import router as rag_router, retrieve_rag_context
+
 # ── Generated images storage ────────────────────────────────────────────────
 IMAGES_DIR = Path(__file__).parent / "generated_images"
 IMAGES_DIR.mkdir(exist_ok=True)
@@ -41,6 +44,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount the RAG router (PDF upload / list / delete endpoints)
+app.include_router(rag_router)
 
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -393,6 +399,8 @@ class ChatRequest(BaseModel):
     image_mime_type: Optional[str] = "image/jpeg"
     research_mode: bool = False
     response_language: str = "English"
+    # RAG: list of doc_ids the user has checked — retrieved from Pinecone at query time
+    selected_pdf_ids: Optional[List[str]] = []
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -720,6 +728,18 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         if last_user_msg is None:
             return
 
+        # ── RAG: retrieve relevant chunks from selected PDFs ─────────────────
+        rag_context = ""
+        if request.selected_pdf_ids and not request.image_base64:
+            rag_context = await retrieve_rag_context(
+                query=last_user_msg.content,
+                user_id=user_id,
+                doc_ids=request.selected_pdf_ids,
+                top_k=3,
+            )
+            if rag_context:
+                print(f"[RAG] Injecting {len(rag_context)} chars of context for user {user_id[:8]}…")
+
         # Build single-turn payload
         if request.image_base64:
             # Multimodal: wrap last user message with image
@@ -735,8 +755,22 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         else:
             user_content = last_user_msg.content
 
+        # Build system prompt — prepend RAG context when available
+        system_content = SYSTEM_PROMPT
+        if rag_context:
+            system_content = (
+                SYSTEM_PROMPT
+                + "\n\n"
+                + "IMPORTANT CONSTRAINT: Each retrieved chunk below contains at most 1000 tokens. "
+                + "Use ONLY the following document excerpts to answer the user's question. "
+                + "If the excerpts don't contain the answer, say so honestly.\n\n"
+                + "=== RETRIEVED DOCUMENT CONTEXT ===\n"
+                + rag_context
+                + "\n=== END OF CONTEXT ==="
+            )
+
         full_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
 
