@@ -424,6 +424,35 @@ export default function App() {
       }));
       setOpenNotebookId(notebookId);
       uploaded = pdf;
+
+      // ── Upload raw PDF to Firebase Storage ─────────────────────────────────
+      // Run in background so it doesn't block the summary display
+      if (pdf.doc_id && user?.id) {
+        (async () => {
+          try {
+            const storagePath = `pdfs/${user.id}/${pdf.doc_id}/${file.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, file, { contentType: 'application/pdf' });
+            const firebaseUrl = await getDownloadURL(storageRef);
+            console.log('[Firebase] PDF uploaded:', firebaseUrl);
+
+            // Save Firebase URL back to MongoDB via backend
+            const t = await getToken();
+            if (t) {
+              await fetch(`${BACKEND_URL}/pdfs/${pdf.doc_id}/firebase-url`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+                body: JSON.stringify({ firebase_pdf_url: firebaseUrl }),
+              });
+              console.log('[MongoDB] Firebase PDF URL saved for doc_id:', pdf.doc_id);
+            }
+          } catch (fbErr) {
+            console.error('[Firebase PDF upload failed]', fbErr);
+            // Non-fatal — Pinecone embeddings still work; PDF just won't be re-downloadable
+          }
+        })();
+      }
+      // ───────────────────────────────────────────────────────────────────────
     } catch (err) {
       console.error('[PDF upload]', err);
       alert('PDF upload failed. Check backend logs.');

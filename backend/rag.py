@@ -26,6 +26,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 
 import tiktoken
+from bson import ObjectId
 from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from groq import AsyncGroq
 from pinecone import Pinecone, ServerlessSpec
@@ -46,7 +47,8 @@ EMBED_DIM = 1024
 
 _mongo = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 _db = _mongo["mindpad_ai"]
-pdf_docs_col = _db["pdf_docs"]   # stores per-PDF metadata for each user
+pdf_docs_col  = _db["pdf_docs"]    # per-PDF metadata for each user
+notebooks_col = _db["notebooks"]   # same collection as chat.py uses
 
 # ── Tokenizer ──────────────────────────────────────────────────────────────────
 _enc = tiktoken.get_encoding("cl100k_base")
@@ -163,40 +165,59 @@ async def embed_texts(texts: List[str], input_type: str = "passage") -> List[Lis
     return await asyncio.to_thread(_embed_sync, texts, input_type)
 
 
-# ── Public: RAG context retrieval (called from chat.py) ───────────────────────
-async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> str:
+# ── Public: RAG context retrieval (called from chat.py) ──────────────────────
+async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> tuple:
     """
-    Generate a structured HTML summary for a newly-uploaded PDF.
+    Generate a structured HTML summary AND a short notebook name for a newly-uploaded PDF
+    in a single LLM call — eliminates the race condition that existed when both were
+    separate sequential calls.
 
-    Strategy — identical to how RAG context is retrieved for chat:
-      1. Embed a hardcoded broad summary query
-      2. Retrieve the top-10 most-representative chunks from Pinecone
-         (filtered to this doc, ordered by chunk_index for coherence)
-      3. Feed those chunks to Groq with a hardcoded HTML summary prompt
-      4. Return the HTML string (stored in MongoDB by the caller)
+    Strategy:
+      1. Embed a broad summary query
+      2. Retry querying Pinecone up to 4 times (3 s apart) — serverless
+         indexes can take a few seconds to become queryable after upsert
+      3. Feed the top-10 retrieved chunks to Groq, which responds with:
+             NOTEBOOK_NAME: <4-7 word title in Title Case>
+             <rest is clean HTML summary>
+      4. Parse the first line to extract the notebook name
+      5. Return (summary_html, notebook_name)
     """
-    # Broad query that surfaces intro / methodology / results / conclusion chunks
     SUMMARY_QUERY = (
         "introduction overview main topic methodology findings results "
         "conclusions key points abstract"
     )
+    fallback_name = (filename.rsplit(".", 1)[0] if "." in filename else filename)[:80]
+
     try:
         q_vec = await embed_texts([SUMMARY_QUERY], "query")
         index = await asyncio.to_thread(get_index)
 
-        results = await asyncio.to_thread(
-            index.query,
-            vector=q_vec[0],
-            top_k=10,                          # more chunks → better coverage
-            namespace=user_id,                 # user-isolated namespace
-            include_metadata=True,
-            filter={"doc_id": {"$in": [doc_id]}},
-        )
+        # ── Retry loop: wait for Pinecone to index the freshly upserted vectors
+        # top_k=4 keeps us inside Groq's 8000 TPM limit:
+        #   4 chunks × ~1000 tokens = ~4000 ctx + ~500 prompt + 1200 output ≈ 5700 total
+        # (top_k=10 was causing rate-limit failures on subsequent uploads)
+        results = None
+        for attempt in range(4):                      # try up to 4 times
+            r = await asyncio.to_thread(
+                index.query,
+                vector=q_vec[0],
+                top_k=4,
+                namespace=user_id,
+                include_metadata=True,
+                filter={"doc_id": {"$in": [doc_id]}},
+            )
+            if r.matches:
+                results = r
+                print(f"[RAG] Pinecone returned {len(r.matches)} matches on attempt {attempt+1}")
+                break
+            print(f"[RAG] Pinecone returned 0 matches (attempt {attempt+1}/4) — waiting 3 s…")
+            await asyncio.sleep(3)
 
-        if not results.matches:
-            return ""
+        if not results or not results.matches:
+            print(f"[RAG] No Pinecone matches found after retries for doc_id={doc_id}")
+            return "", fallback_name
 
-        # Sort by chunk_index so the context reads in document order
+        # Sort by chunk_index so context reads in document order
         sorted_matches = sorted(
             results.matches,
             key=lambda m: m.metadata.get("chunk_index", 0),
@@ -205,86 +226,60 @@ async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> str:
             m.metadata.get("text", "") for m in sorted_matches
         )
 
-        # Hardcoded summary prompt — HTML output matches the chat renderer
         prompt = (
             f'You are summarizing the PDF "{filename}".\n'
-            f"Using ONLY the excerpts below, write a comprehensive, structured HTML summary.\n"
-            f"Cover: main topic, key arguments, methodology (if present), findings, conclusions.\n"
-            f"Rules:\n"
-            f"  - Output ONLY clean HTML: <h3>, <p>, <ul>, <li>, <strong>, <em>, <hr> tags\n"
+            f"Using ONLY the excerpts below, produce two things:\n\n"
+            f"1. FIRST LINE ONLY — a short notebook title (4-7 words, Title Case, no quotes, no punctuation at end).\n"
+            f"   Start this line with exactly: NOTEBOOK_NAME: \n"
+            f"   Example: NOTEBOOK_NAME: Climate Change Economic Impacts Study\n\n"
+            f"2. THEN — a comprehensive, structured HTML summary.\n"
+            f"   Cover: main topic, key arguments, methodology (if present), findings, conclusions.\n\n"
+            f"STRICT RULES:\n"
+            f"  - The very first line must be: NOTEBOOK_NAME: <title>\n"
+            f"  - After that, output ONLY clean HTML: <h3>, <p>, <ul>, <li>, <strong>, <em>, <hr> tags\n"
             f"  - No <html>/<body>/<head> tags, no inline styles, no markdown\n"
-            f"  - Do NOT open with 'Here is a summary' — go straight into content\n\n"
+            f"  - Do NOT open the summary with 'Here is a summary' — go straight into content\n"
+            f"  - The notebook title must NOT be generic (avoid: 'PDF Summary', 'Research Notes', 'Document Overview')\n"
+            f"  - The notebook title must NOT be the filename or its words\n\n"
             f"DOCUMENT EXCERPTS:\n{context}"
         )
 
         resp = await _groq.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=1500,
+            max_completion_tokens=1200,  # 4k ctx + 500 prompt + 1200 out ≈ 5700 ≤ 8000 TPM
             temperature=0.3,
         )
-        summary = resp.choices[0].message.content.strip()
+        raw = resp.choices[0].message.content.strip()
+
+        # ── Parse: first line = NOTEBOOK_NAME: <name>, rest = HTML summary
+        notebook_name = fallback_name
+        summary = raw
+
+        lines = raw.split("\n", 1)
+        first_line = lines[0].strip()
+        if first_line.upper().startswith("NOTEBOOK_NAME:"):
+            extracted = first_line[len("NOTEBOOK_NAME:"):].strip().strip('"\' ').rstrip(".,;:")
+            if extracted:
+                notebook_name = extracted
+            summary = lines[1].strip() if len(lines) > 1 else ""
+        else:
+            # LLM didn't follow format — whole response is summary, use fallback name
+            print(f"[RAG] Warning: LLM did not start with NOTEBOOK_NAME: prefix. Raw start: {first_line[:80]}")
+
         print(f"[RAG] Summary generated for '{filename}' ({len(summary)} chars)")
-        return summary
+        print(f"[RAG] Notebook name extracted: '{notebook_name}'")
+        return summary, notebook_name
 
     except Exception as exc:
         print(f"[RAG summary error] {exc}")
-        return ""
+        return "", fallback_name
 
 
-async def generate_notebook_name(doc_id: str, filename: str) -> str:
-    """
-    Read the summary stored in MongoDB for *doc_id*, then ask Groq to produce
-    a short, natural notebook name that reflects the document's actual content.
-    Falls back to the stripped filename only if both the DB read and LLM call fail.
-    """
-    # ── 1. Fetch summary from MongoDB ─────────────────────────────────────────
-    doc = await pdf_docs_col.find_one({"doc_id": doc_id}, {"summary": 1})
-    summary = (doc or {}).get("summary", "").strip()
-    print(f"[RAG] Naming — summary length from DB: {len(summary)} chars")
-
-    if not summary:
-        # No summary yet — cannot produce a meaningful name
-        print("[RAG] Naming — summary empty, skipping LLM call")
-        stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-        return stem[:80]
-
-    # Trim to a safe prompt size
-    snippet = summary[:2000]
-
-    prompt = (
-        "You are a creative assistant that names research notebooks.\n"
-        "Read the document summary below and write ONE short notebook title (4–7 words).\n\n"
-        "STRICT RULES:\n"
-        "  • Plain text only — no quotes, no punctuation at the end\n"
-        "  • Title Case (capitalise each major word)\n"
-        "  • Must reflect the SPECIFIC subject matter of the document\n"
-        "  • Do NOT use the filename or its words\n"
-        "  • Do NOT use generic titles like 'PDF Summary', 'Research Notes', 'Document Overview'\n"
-        "  • Think of how a researcher would label this notebook on their shelf\n\n"
-        f"DOCUMENT SUMMARY:\n{snippet}\n\n"
-        "Notebook title:"
-    )
-
-    try:
-        resp = await _groq.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=40,
-            temperature=0.6,
-        )
-        raw = resp.choices[0].message.content.strip()
-        print(f"[RAG] Raw LLM name output: '{raw}'")
-        # Strip any wrapping quotes or trailing punctuation
-        name = raw.strip('"\' ').rstrip(".,;:").strip()
-        if name:
-            return name
-    except Exception as exc:
-        print(f"[RAG name error] {exc}")
-
-    # Fallback: filename stem
-    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    return stem[:80]
+# generate_notebook_name has been merged into generate_pdf_summary above.
+# Both the summary and the notebook name are now produced in a single LLM call
+# to eliminate the race condition that occurred when the naming call ran
+# before the summary was reliably written to MongoDB.
 
 
 async def retrieve_rag_context(
@@ -427,7 +422,7 @@ async def upload_pdf(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pinecone upsert failed: {exc}")
 
-    # ── 7. Save metadata to MongoDB (summary added in step 8) ────────────────
+    # ── 7. Save metadata to MongoDB (summary + firebase_url added later) ────────
     await pdf_docs_col.insert_one({
         "doc_id":           doc_id,
         "notebook_id":      notebook_id,
@@ -439,20 +434,50 @@ async def upload_pdf(
         "tokens_per_chunk": tokens_per_chunk,
         "uploaded_at":      datetime.now(timezone.utc),
         "selected":         True,
-        "summary":          "",          # placeholder — filled in step 8
+        "summary":          "",   # placeholder — filled in step 8
+        "firebase_pdf_url": "",   # placeholder — filled by frontend after Firebase upload
     })
 
-    # ── 8. Generate summary using the same RAG system (hardcoded query) ───────
-    summary = await generate_pdf_summary(doc_id, user_id, filename)
+    # ── 8. Query Pinecone for indexed vectors → single LLM call produces:
+    #         • suggested_name  (parsed from first line: "NOTEBOOK_NAME: ...")
+    #         • summary         (the rest of the response — clean HTML)
+    #    generate_pdf_summary retries up to 4× (3 s apart) so Pinecone has time
+    #    to make the freshly upserted vectors queryable.
+    summary, suggested_name = await generate_pdf_summary(doc_id, user_id, filename)
     if summary:
         await pdf_docs_col.update_one(
             {"doc_id": doc_id},
             {"$set": {"summary": summary}},
         )
+        print(f"[RAG] Summary saved to MongoDB for doc_id={doc_id}")
 
-    # ── 9. Generate a descriptive notebook name from the stored summary ────────
-    #    Read fresh from MongoDB so the LLM always gets the saved summary text.
-    suggested_name = await generate_notebook_name(doc_id, filename)
+        # ── Persist the summary as an assistant chat message in the notebook ───────
+        # This means the summary survives page refreshes: loadHistory() fetches
+        # it back from MongoDB just like any other chat message.
+        try:
+            meta_line = (
+                f'<p><strong>{filename}</strong> '
+                f'&nbsp;<em style="font-size:0.8em;opacity:0.6">'
+                f'{total_tokens:,} tokens · {actual_chunks} chunks indexed'
+                f'</em></p><hr>'
+            )
+            summary_chat_msg = {
+                "role":    "assistant",
+                "content": meta_line + summary,
+            }
+            await notebooks_col.update_one(
+                {"_id": ObjectId(notebook_id)},
+                {
+                    "$push": {"messages": summary_chat_msg},
+                    "$set":  {"updated_at": datetime.now(timezone.utc)},
+                },
+            )
+            print(f"[RAG] Summary message persisted to notebook {notebook_id}")
+        except Exception as exc:
+            print(f"[RAG] Warning: could not persist summary message to notebook: {exc}")
+    else:
+        print(f"[RAG] WARNING: summary empty for '{filename}' — notebook name will fall back to filename")
+
     print(f"[RAG] Suggested notebook name: '{suggested_name}'")
 
     return {
@@ -463,7 +488,7 @@ async def upload_pdf(
         "tokens_per_chunk": tokens_per_chunk,
         "selected":         True,
         "summary":          summary,        # returned to frontend for immediate display
-        "suggested_name":   suggested_name, # LLM-generated notebook name
+        "suggested_name":   suggested_name, # parsed from same LLM response — no race condition
     }
 
 
@@ -493,6 +518,37 @@ async def list_pdfs(
             d["uploaded_at"] = d["uploaded_at"].isoformat()
 
     return {"pdfs": docs}
+
+
+# ── PATCH /pdfs/{doc_id}/firebase-url ────────────────────────────────────
+from pydantic import BaseModel as _BaseModel
+
+class _FirebaseUrlBody(_BaseModel):
+    firebase_pdf_url: str
+
+@router.patch("/pdfs/{doc_id}/firebase-url")
+async def save_pdf_firebase_url(
+    doc_id: str,
+    body: _FirebaseUrlBody,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Called by the frontend after uploading the raw PDF file to Firebase Storage.
+    Saves the permanent download URL to MongoDB so the PDF can be re-downloaded later.
+    """
+    from chat import get_current_user
+    user_id, _ = await get_current_user(authorization)
+
+    doc = await pdf_docs_col.find_one({"doc_id": doc_id, "user_id": user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="PDF not found or access denied")
+
+    await pdf_docs_col.update_one(
+        {"doc_id": doc_id, "user_id": user_id},
+        {"$set": {"firebase_pdf_url": body.firebase_pdf_url}},
+    )
+    print(f"[RAG] Firebase PDF URL saved for doc_id={doc_id}: {body.firebase_pdf_url[:60]}...")
+    return {"status": "ok"}
 
 
 # ── DELETE /pdfs/{doc_id} ──────────────────────────────────────────────────────

@@ -816,9 +816,12 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 yield content
 
         # Save only text messages — images are NOT stored in MongoDB
+        # NOTE: await directly — asyncio.create_task() inside an async generator is
+        # unreliable (task can be GC'd before it executes). await guarantees the write
+        # completes before the generator closes; no latency impact since streaming is done.
         save_messages = [{"role": m.role, "content": m.content} for m in messages]
         save_messages.append({"role": "assistant", "content": full_response})
-        asyncio.create_task(save_to_db(save_messages))
+        await save_to_db(save_messages)
 
     headers_out = {}
     if image_gen_failed:
