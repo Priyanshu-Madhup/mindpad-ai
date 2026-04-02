@@ -287,15 +287,17 @@ async def retrieve_rag_context(
     user_id: str,
     doc_ids: List[str],
     top_k: int = 3,
-) -> str:
+) -> tuple:
     """
     Embed *query*, query Pinecone in the user's namespace filtered to
-    *doc_ids*, and return the top-k chunks as a formatted string.
+    *doc_ids*, and return:
+      - formatted context string (for injection into system prompt)
+      - list of source dicts (for frontend hover citations)
 
-    Returns "" if nothing relevant is found or an error occurs.
+    Returns ("", []) if nothing relevant is found or an error occurs.
     """
     if not doc_ids:
-        return ""
+        return "", []
     try:
         q_vec = await embed_texts([query], "query")
         index = await asyncio.to_thread(get_index)
@@ -310,20 +312,28 @@ async def retrieve_rag_context(
         )
 
         if not results.matches:
-            return ""
+            return "", []
 
         parts: List[str] = []
+        sources: List[dict] = []
         for match in results.matches:
             meta = match.metadata or {}
             source = meta.get("pdf_name", "document")
             chunk_text = meta.get("text", "")
             parts.append(f"[Source: {source}]\n{chunk_text}")
+            sources.append({
+                "pdf_name":    source,
+                "chunk_index": meta.get("chunk_index", 0),
+                "doc_id":      meta.get("doc_id", ""),
+                "text":        chunk_text,
+                "score":       round(float(match.score), 3) if match.score else 0.0,
+            })
 
-        return "\n\n---\n\n".join(parts)
+        return "\n\n---\n\n".join(parts), sources
 
     except Exception as e:
         print(f"[RAG retrieve error] {e}")
-        return ""
+        return "", []
 
 
 # ── POST /upload-pdf ───────────────────────────────────────────────────────────

@@ -734,6 +734,29 @@ export default function App() {
             return updated;
           });
         }
+
+        // ── Parse RAG sources marker emitted at end of stream ──────────────────
+        // The backend appends "\n__SOURCES_JSON__:[...]" after all LLM content.
+        // Strip it from the displayed text and store it as msg.sources.
+        const SOURCES_MARKER = '\n__SOURCES_JSON__:';
+        setChatHistory(prev => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            const markerIdx = lastMsg.content.lastIndexOf(SOURCES_MARKER);
+            if (markerIdx !== -1) {
+              try {
+                const sources = JSON.parse(lastMsg.content.slice(markerIdx + SOURCES_MARKER.length));
+                updated[updated.length - 1] = {
+                  ...lastMsg,
+                  content: lastMsg.content.slice(0, markerIdx),
+                  sources,
+                };
+              } catch {/* JSON parse failed — leave message as-is */}
+            }
+          }
+          return updated;
+        });
       }
     } catch (err) {
       setChatHistory(prev => [
@@ -1596,6 +1619,35 @@ export default function App() {
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
                         )}
                       </div>
+                      {/* RAG source citation dots */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-600 mr-0.5">Sources</span>
+                          {msg.sources.map((src, si) => (
+                            <div key={si} className="relative group/dot">
+                              <button
+                                type="button"
+                                className="w-6 h-4 flex items-center justify-center rounded text-[11px] font-bold text-slate-400 dark:text-slate-500 hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-all tracking-widest leading-none"
+                                title={`${src.pdf_name} — chunk ${src.chunk_index + 1}`}
+                              >
+                                ···
+                              </button>
+                              {/* Hover popover — pb-2 fills the gap so cursor stays inside group/dot */}
+                              <div className="absolute bottom-full left-0 pb-2 hidden group-hover/dot:block w-80 z-50">
+                                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+                                  <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                                    <span className="text-[10px] font-bold text-primary truncate flex-1">{src.pdf_name}</span>
+                                    <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 shrink-0">chunk {src.chunk_index + 1} · {Math.round(src.score * 100)}% match</span>
+                                  </div>
+                                  <div className="max-h-48 overflow-y-auto px-3 py-2">
+                                    <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{src.text}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {/* Assistant action buttons — icon only, transparent */}
                       {msg.type !== 'image' && (
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-0.5">

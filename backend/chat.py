@@ -784,15 +784,16 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
 
         # ── RAG: retrieve relevant chunks from selected PDFs ─────────────────
         rag_context = ""
+        rag_sources = []
         if request.selected_pdf_ids and not request.image_base64:
-            rag_context = await retrieve_rag_context(
+            rag_context, rag_sources = await retrieve_rag_context(
                 query=last_user_msg.content,
                 user_id=user_id,
                 doc_ids=request.selected_pdf_ids,
                 top_k=3,
             )
             if rag_context:
-                print(f"[RAG] Injecting {len(rag_context)} chars of context for user {user_id[:8]}…")
+                print(f"[RAG] Injecting {len(rag_context)} chars of context, {len(rag_sources)} sources for user {user_id[:8]}…")
 
         # ── Web Search: fetch live results if toggle is on ────────────────────
         web_context = ""
@@ -885,10 +886,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 full_response += content
                 yield content
 
-        # Save only text messages — images are NOT stored in MongoDB
-        # NOTE: await directly — asyncio.create_task() inside an async generator is
-        # unreliable (task can be GC'd before it executes). await guarantees the write
-        # completes before the generator closes; no latency impact since streaming is done.
+        # Yield RAG sources as a special end-of-stream marker so the frontend
+        # can attach hover citations to this message. NOT included in full_response
+        # so it is never saved to MongoDB.
+        if rag_sources:
+            import json as _json
+            yield f"\n__SOURCES_JSON__:{_json.dumps(rag_sources)}"
+
+        # Save only the clean text response (no sources marker) to MongoDB
         save_messages = [{"role": m.role, "content": m.content} for m in messages]
         save_messages.append({"role": "assistant", "content": full_response})
         await save_to_db(save_messages)
