@@ -52,6 +52,7 @@ app.include_router(rag_router)
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 db = mongo_client["mindpad_ai"]
@@ -401,6 +402,8 @@ class ChatRequest(BaseModel):
     response_language: str = "English"
     # RAG: list of doc_ids the user has checked — retrieved from Pinecone at query time
     selected_pdf_ids: Optional[List[str]] = []
+    # Web search: fetch live results via Serper.dev and inject as context
+    web_search: bool = False
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -679,6 +682,57 @@ async def transcribe_audio(
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 
+# ─── Web Search (Serper.dev) ─────────────────────────────────────────────────
+
+async def fetch_web_results(query: str, num_results: int = 5) -> str:
+    """Fetch top web search results from Serper.dev and return formatted context string."""
+    if not SERPER_API_KEY:
+        print("[Web Search] SERPER_API_KEY not set — skipping web search.")
+        return ""
+    try:
+        payload = {"q": query, "num": num_results}
+        headers = {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://google.serper.dev/search",
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        lines = []
+        # Knowledge Graph blurb (if present)
+        if kg := data.get("knowledgeGraph", {}):
+            title = kg.get("title", "")
+            desc = kg.get("description", "")
+            if title or desc:
+                lines.append(f"[Knowledge Graph] {title}: {desc}")
+
+        # Organic results
+        for res in data.get("organic", [])[:num_results]:
+            title = res.get("title", "")
+            snippet = res.get("snippet", "")
+            link = res.get("link", "")
+            lines.append(f"- {title}\n  {snippet}\n  Source: {link}")
+
+        # Answer box
+        if ab := data.get("answerBox", {}):
+            answer = ab.get("answer") or ab.get("snippet", "")
+            if answer:
+                lines.insert(0, f"[Featured Answer] {answer}")
+
+        context = "\n\n".join(lines)
+        print(f"[Web Search] Retrieved {len(lines)} results for query: {query[:60]}")
+        return context
+    except Exception as e:
+        print(f"[Web Search error] {e}")
+        return ""
+
+
 # ─── Streaming Chat ───────────────────────────────────────────────────────────
 
 @app.post("/chat")
@@ -740,6 +794,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             if rag_context:
                 print(f"[RAG] Injecting {len(rag_context)} chars of context for user {user_id[:8]}…")
 
+        # ── Web Search: fetch live results if toggle is on ────────────────────
+        web_context = ""
+        if request.web_search and not request.image_base64:
+            web_context = await fetch_web_results(last_user_msg.content)
+            if web_context:
+                print(f"[Web Search] Injecting {len(web_context)} chars of web context")
+
         # Build single-turn payload
         if request.image_base64:
             # Multimodal: wrap last user message with image
@@ -755,19 +816,28 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         else:
             user_content = last_user_msg.content
 
-        # Build system prompt — prepend RAG context when available
+        # Build system prompt — prepend RAG context and/or web search context when available
         system_content = SYSTEM_PROMPT
+        extra_context_parts = []
         if rag_context:
-            system_content = (
-                SYSTEM_PROMPT
-                + "\n\n"
-                + "IMPORTANT CONSTRAINT: Each retrieved chunk below contains at most 1000 tokens. "
-                + "Use ONLY the following document excerpts to answer the user's question. "
-                + "If the excerpts don't contain the answer, say so honestly.\n\n"
-                + "=== RETRIEVED DOCUMENT CONTEXT ===\n"
+            extra_context_parts.append(
+                "IMPORTANT CONSTRAINT: Each retrieved chunk below contains at most 1000 tokens. "
+                "Use ONLY the following document excerpts to answer the user's question. "
+                "If the excerpts don't contain the answer, say so honestly.\n\n"
+                "=== RETRIEVED DOCUMENT CONTEXT ===\n"
                 + rag_context
-                + "\n=== END OF CONTEXT ==="
+                + "\n=== END OF DOCUMENT CONTEXT ==="
             )
+        if web_context:
+            extra_context_parts.append(
+                "The following are LIVE WEB SEARCH RESULTS fetched right now for the user's query. "
+                "Use these to provide an up-to-date, accurate answer. Always cite sources when referencing them.\n\n"
+                "=== WEB SEARCH RESULTS ===\n"
+                + web_context
+                + "\n=== END OF WEB SEARCH RESULTS ==="
+            )
+        if extra_context_parts:
+            system_content = SYSTEM_PROMPT + "\n\n" + "\n\n".join(extra_context_parts)
 
         full_messages = [
             {"role": "system", "content": system_content},

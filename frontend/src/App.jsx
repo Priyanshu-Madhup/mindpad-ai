@@ -42,6 +42,7 @@ import {
   Microscope,
   MicOff,
   Globe,
+  Languages,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -144,6 +145,7 @@ export default function App() {
     return localStorage.getItem('mindpad_dark') === 'true' ? 'dark' : 'light';
   });
   const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
+  const [isWebSearch, setIsWebSearch] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -634,6 +636,7 @@ export default function App() {
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
           notebook_id: activeNotebookId,
           research_mode: isResearchMode,
+          web_search: isWebSearch,
           response_language: selectedLang.label,
           // RAG: send the doc_ids the user has checked
           selected_pdf_ids: (notebookPdfs[activeNotebookId] || [])
@@ -1829,39 +1832,57 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Bottom row: language pill (left) + mic + send (right) */}
+                {/* Bottom row: language pill + web search (left, adjacent) · mic + send (right) */}
                 <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                  {/* Language pill */}
-                  <div className="relative">
+                  {/* Left group: Language pill + Web Search pill side by side */}
+                  <div className="flex items-center gap-2">
+                    {/* Language pill */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowLangMenu(prev => !prev)}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary dark:hover:text-primary transition-all border border-slate-200 dark:border-slate-700"
+                      >
+                        <Languages className="w-3 h-3" />
+                        {selectedLang.label}
+                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showLangMenu ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showLangMenu && (
+                        <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 min-w-[160px]">
+                          {LANGUAGES.map(lang => (
+                            <button
+                              key={lang.code}
+                              type="button"
+                              onClick={() => { setSelectedLang(lang); setShowLangMenu(false); }}
+                              className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors ${
+                                selectedLang.code === lang.code
+                                  ? 'bg-primary/10 text-primary font-semibold'
+                                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <span>{lang.label}</span>
+                              <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Web Search toggle pill — sits right next to language */}
                     <button
                       type="button"
-                      onClick={() => setShowLangMenu(prev => !prev)}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary dark:hover:text-primary transition-all border border-slate-200 dark:border-slate-700"
+                      onClick={() => setIsWebSearch(prev => !prev)}
+                      title={isWebSearch ? 'Web Search ON — click to disable' : 'Enable Web Search'}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
+                        isWebSearch
+                          ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
                     >
                       <Globe className="w-3 h-3" />
-                      {selectedLang.label}
-                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showLangMenu ? 'rotate-180' : ''}`} />
+                      Web Search
                     </button>
-
-                    {showLangMenu && (
-                      <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 min-w-[160px]">
-                        {LANGUAGES.map(lang => (
-                          <button
-                            key={lang.code}
-                            type="button"
-                            onClick={() => { setSelectedLang(lang); setShowLangMenu(false); }}
-                            className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors ${
-                              selectedLang.code === lang.code
-                                ? 'bg-primary/10 text-primary font-semibold'
-                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            <span>{lang.label}</span>
-                            <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   {/* Mic + Send */}
