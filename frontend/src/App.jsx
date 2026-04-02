@@ -345,10 +345,10 @@ export default function App() {
         // Auto-create first notebook
         await createNotebook('My Workspace', true);
       } else {
-        // Open the most recent notebook
-        const first = list[0];
-        setActiveNotebookId(first.id);
-        await Promise.all([loadHistory(first.id), loadPdfs(first.id)]);
+        // Open the most recently created notebook (last in ASC sorted list)
+        const last = list[list.length - 1];
+        setActiveNotebookId(last.id);
+        await Promise.all([loadHistory(last.id), loadPdfs(last.id)]);
       }
     } catch (err) {
       console.error('Failed to load notebooks:', err);
@@ -369,7 +369,7 @@ export default function App() {
       if (!resp.ok) return;
       const nb = await resp.json();
       const newNb = { id: nb.id, name: nb.name, updated_at: new Date().toISOString() };
-      setNotebooks(prev => [newNb, ...prev]);
+      setNotebooks(prev => [...prev, newNb]); // append to end — preserve creation order
       setActiveNotebookId(nb.id);
       setChatHistory([]);
       if (!silent) setSidebarOpen(false);

@@ -539,7 +539,7 @@ async def list_notebooks(
     cursor = notebooks_col.find(
         {"user_id": user_id},
         {"_id": 1, "name": 1, "updated_at": 1}
-    ).sort("updated_at", -1)
+    ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
     # ── First-time user: send welcome email once ───────────────────────────────
