@@ -232,45 +232,59 @@ async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> str:
         return ""
 
 
-async def generate_notebook_name(summary: str, filename: str) -> str:
+async def generate_notebook_name(doc_id: str, filename: str) -> str:
     """
-    Ask Groq to produce a short, descriptive notebook name based on the PDF summary.
-    Returns a clean plain-text string (no quotes, no punctuation at the end).
-    Falls back to the bare filename stem if the LLM call fails.
+    Read the summary stored in MongoDB for *doc_id*, then ask Groq to produce
+    a short, natural notebook name that reflects the document's actual content.
+    Falls back to the stripped filename only if both the DB read and LLM call fail.
     """
-    # Provide a condensed snippet of the summary so the prompt stays small
-    snippet = summary[:1200] if summary else filename
+    # ── 1. Fetch summary from MongoDB ─────────────────────────────────────────
+    doc = await pdf_docs_col.find_one({"doc_id": doc_id}, {"summary": 1})
+    summary = (doc or {}).get("summary", "").strip()
+    print(f"[RAG] Naming — summary length from DB: {len(summary)} chars")
+
+    if not summary:
+        # No summary yet — cannot produce a meaningful name
+        print("[RAG] Naming — summary empty, skipping LLM call")
+        stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+        return stem[:80]
+
+    # Trim to a safe prompt size
+    snippet = summary[:2000]
 
     prompt = (
-        f'You are naming a research notebook for a PDF called "{filename}".\n'
-        f"Based on the summary below, produce ONE short notebook name (3–7 words).\n"
-        f"Rules:\n"
-        f"  - Plain text only — no quotes, no punctuation at the end\n"
-        f"  - Capitalise like a book title\n"
-        f"  - No generic names like 'PDF Summary' or 'Document Notes'\n"
-        f"  - Reflect the specific topic, paper, or domain\n\n"
-        f"SUMMARY EXCERPT:\n{snippet}\n\n"
-        f"Reply with ONLY the notebook name. Nothing else."
+        "You are a creative assistant that names research notebooks.\n"
+        "Read the document summary below and write ONE short notebook title (4–7 words).\n\n"
+        "STRICT RULES:\n"
+        "  • Plain text only — no quotes, no punctuation at the end\n"
+        "  • Title Case (capitalise each major word)\n"
+        "  • Must reflect the SPECIFIC subject matter of the document\n"
+        "  • Do NOT use the filename or its words\n"
+        "  • Do NOT use generic titles like 'PDF Summary', 'Research Notes', 'Document Overview'\n"
+        "  • Think of how a researcher would label this notebook on their shelf\n\n"
+        f"DOCUMENT SUMMARY:\n{snippet}\n\n"
+        "Notebook title:"
     )
 
     try:
         resp = await _groq.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=30,
-            temperature=0.4,
+            max_completion_tokens=40,
+            temperature=0.6,
         )
         raw = resp.choices[0].message.content.strip()
-        # Strip wrapping quotes if any
-        name = raw.strip('"\'').strip()
+        print(f"[RAG] Raw LLM name output: '{raw}'")
+        # Strip any wrapping quotes or trailing punctuation
+        name = raw.strip('"\' ').rstrip(".,;:").strip()
         if name:
             return name
     except Exception as exc:
         print(f"[RAG name error] {exc}")
 
-    # Fallback: use filename without extension
+    # Fallback: filename stem
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    return stem[:60]
+    return stem[:80]
 
 
 async def retrieve_rag_context(
@@ -436,8 +450,9 @@ async def upload_pdf(
             {"$set": {"summary": summary}},
         )
 
-    # ── 9. Generate a descriptive notebook name from the summary ──────────────
-    suggested_name = await generate_notebook_name(summary, filename)
+    # ── 9. Generate a descriptive notebook name from the stored summary ────────
+    #    Read fresh from MongoDB so the LLM always gets the saved summary text.
+    suggested_name = await generate_notebook_name(doc_id, filename)
     print(f"[RAG] Suggested notebook name: '{suggested_name}'")
 
     return {
