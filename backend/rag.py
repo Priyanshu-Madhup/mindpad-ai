@@ -232,6 +232,47 @@ async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> str:
         return ""
 
 
+async def generate_notebook_name(summary: str, filename: str) -> str:
+    """
+    Ask Groq to produce a short, descriptive notebook name based on the PDF summary.
+    Returns a clean plain-text string (no quotes, no punctuation at the end).
+    Falls back to the bare filename stem if the LLM call fails.
+    """
+    # Provide a condensed snippet of the summary so the prompt stays small
+    snippet = summary[:1200] if summary else filename
+
+    prompt = (
+        f'You are naming a research notebook for a PDF called "{filename}".\n'
+        f"Based on the summary below, produce ONE short notebook name (3–7 words).\n"
+        f"Rules:\n"
+        f"  - Plain text only — no quotes, no punctuation at the end\n"
+        f"  - Capitalise like a book title\n"
+        f"  - No generic names like 'PDF Summary' or 'Document Notes'\n"
+        f"  - Reflect the specific topic, paper, or domain\n\n"
+        f"SUMMARY EXCERPT:\n{snippet}\n\n"
+        f"Reply with ONLY the notebook name. Nothing else."
+    )
+
+    try:
+        resp = await _groq.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            max_completion_tokens=30,
+            temperature=0.4,
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Strip wrapping quotes if any
+        name = raw.strip('"\'').strip()
+        if name:
+            return name
+    except Exception as exc:
+        print(f"[RAG name error] {exc}")
+
+    # Fallback: use filename without extension
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return stem[:60]
+
+
 async def retrieve_rag_context(
     query: str,
     user_id: str,
@@ -395,6 +436,10 @@ async def upload_pdf(
             {"$set": {"summary": summary}},
         )
 
+    # ── 9. Generate a descriptive notebook name from the summary ──────────────
+    suggested_name = await generate_notebook_name(summary, filename)
+    print(f"[RAG] Suggested notebook name: '{suggested_name}'")
+
     return {
         "doc_id":           doc_id,
         "name":             filename,
@@ -402,7 +447,8 @@ async def upload_pdf(
         "chunk_count":      actual_chunks,
         "tokens_per_chunk": tokens_per_chunk,
         "selected":         True,
-        "summary":          summary,     # returned to frontend for immediate display
+        "summary":          summary,        # returned to frontend for immediate display
+        "suggested_name":   suggested_name, # LLM-generated notebook name
     }
 
 

@@ -1220,7 +1220,33 @@ export default function App() {
                 e.target.value = ''; // reset immediately
                 for (const f of files) {
                   const result = await uploadPdfToNotebook(targetId, f);
-                  // Inject summary as first assistant message in the notebook's chat
+
+                  // ── Auto-rename notebook from LLM-suggested name ────────────
+                  if (result?.suggested_name && targetId) {
+                    const newName = result.suggested_name;
+                    // Update sidebar instantly
+                    setNotebooks(prev =>
+                      prev.map(n => n.id === targetId ? { ...n, name: newName } : n)
+                    );
+                    // Persist to MongoDB via the existing PATCH endpoint
+                    try {
+                      const token = await getToken();
+                      if (token) {
+                        await fetch(`${BACKEND_URL}/notebooks/${targetId}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({ name: newName }),
+                        });
+                      }
+                    } catch (err) {
+                      console.error('[Auto-rename notebook]', err);
+                    }
+                  }
+
+                  // Inject summary as assistant message in the active notebook's chat
                   if (result?.summary && targetId === activeNotebookId) {
                     const meta = `${(result.total_tokens || 0).toLocaleString()} tokens · ${result.chunk_count || 0} chunks indexed`;
                     setChatHistory(prev => [...prev, {
