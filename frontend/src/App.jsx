@@ -58,7 +58,7 @@ import LandingPage from './LandingPage.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const LANGUAGES = [
   { code: 'en', label: 'English',   native: 'English'    },
@@ -428,8 +428,11 @@ export default function App() {
       uploaded = pdf;
 
       // ── Upload raw PDF to Firebase Storage ─────────────────────────────────
-      // Run in background so it doesn't block the summary display
-      if (pdf.doc_id && user?.id) {
+      // Skip if the backend reused existing vectors — Firebase URL already saved.
+      if (pdf.reused) {
+        console.log('[Firebase] Skipping upload — PDF already indexed & stored (reused vectors).');
+      } else if (pdf.doc_id && user?.id) {
+        // Run in background so it doesn't block the summary display
         (async () => {
           try {
             const storagePath = `pdfs/${user.id}/${pdf.doc_id}/${file.name}`;
@@ -468,17 +471,38 @@ export default function App() {
     e.preventDefault();
     try {
       const token = await getToken();
-      await fetch(`${BACKEND_URL}/pdfs/${docId}`, {
+      const res = await fetch(`${BACKEND_URL}/pdfs/${docId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
           'X-Notebook-Id': notebookId,
         },
       });
+
+      // Update local UI immediately regardless of Firebase outcome
       setNotebookPdfs(prev => ({
         ...prev,
         [notebookId]: (prev[notebookId] || []).filter(p => p.doc_id !== docId),
       }));
+
+      // Delete raw PDF from Firebase Storage (Pinecone vectors are kept for dedup reuse)
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const firebaseUrl = data.firebase_pdf_url;
+        if (firebaseUrl) {
+          (async () => {
+            try {
+              // Firebase Storage SDK can delete by full download URL via ref(storage, url)
+              const fileRef = ref(storage, firebaseUrl);
+              await deleteObject(fileRef);
+              console.log('[Firebase] PDF file deleted from Storage:', docId);
+            } catch (fbErr) {
+              // Non-fatal — MongoDB row is already gone; orphaned file is harmless
+              console.warn('[Firebase] PDF Storage delete failed (non-fatal):', fbErr.message);
+            }
+          })();
+        }
+      }
     } catch (err) {
       console.error('[PDF delete]', err);
     }

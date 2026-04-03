@@ -22,6 +22,7 @@ import os
 import uuid
 import asyncio
 import io
+import hashlib
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -49,6 +50,26 @@ _mongo = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 _db = _mongo["mindpad_ai"]
 pdf_docs_col  = _db["pdf_docs"]    # per-PDF metadata for each user
 notebooks_col = _db["notebooks"]   # same collection as chat.py uses
+
+# ── Ensure MongoDB indexes (called once at startup) ────────────────────────────
+async def ensure_indexes():
+    """
+    Create indexes needed for deduplication and list queries.
+    Motor's create_index is idempotent — safe to call on every startup.
+    """
+    # Fast dedup lookup: (user_id, pdf_hash)
+    await pdf_docs_col.create_index(
+        [("user_id", 1), ("pdf_hash", 1)],
+        name="user_pdf_hash",
+        background=True,
+    )
+    # Fast notebook PDF listing
+    await pdf_docs_col.create_index(
+        [("notebook_id", 1), ("user_id", 1), ("uploaded_at", -1)],
+        name="notebook_user_uploaded",
+        background=True,
+    )
+    print("[RAG] MongoDB indexes ensured.")
 
 # ── Tokenizer ──────────────────────────────────────────────────────────────────
 _enc = tiktoken.get_encoding("cl100k_base")
@@ -344,7 +365,9 @@ async def upload_pdf(
     x_notebook_id: Optional[str] = Header(None, alias="X-Notebook-Id"),
 ):
     """
-    Full RAG ingestion pipeline:
+    Full RAG ingestion pipeline with deduplication:
+      0. SHA-256 hash of raw bytes → check MongoDB for existing user doc
+         If match found → reuse existing doc_id / vectors (skip steps 1-6)
       1. Extract text (PyPDF2)
       2. Count tokens (tiktoken cl100k_base)
       3. Groq decides optimal chunk count (max 1000 tokens/chunk)
@@ -364,6 +387,86 @@ async def upload_pdf(
 
     pdf_bytes = await file.read()
     filename = file.filename or "document.pdf"
+
+    # ── 0. Deduplication: hash the raw bytes ───────────────────────────────────
+    pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    print(f"[RAG] PDF hash for '{filename}': {pdf_hash[:16]}…")
+
+    # Check if this user has already processed an identical PDF elsewhere
+    existing_doc = await pdf_docs_col.find_one(
+        {"user_id": user_id, "pdf_hash": pdf_hash},
+        # Prefer docs that have a summary already; sort by upload date descending
+        sort=[("uploaded_at", -1)],
+    )
+
+    if existing_doc:
+        # ── Fast path: reuse existing vectors ─────────────────────────────────
+        orig_doc_id      = existing_doc["doc_id"]
+        orig_total_toks  = existing_doc.get("total_tokens", 0)
+        orig_chunks      = existing_doc.get("chunk_count", 0)
+        orig_tpc         = existing_doc.get("tokens_per_chunk", 0)
+        orig_summary     = existing_doc.get("summary", "")
+        orig_firebase    = existing_doc.get("firebase_pdf_url", "")
+        orig_name        = existing_doc.get("suggested_name") or existing_doc.get("name", filename)
+
+        print(f"[RAG] ♻️  Duplicate PDF detected — reusing doc_id={orig_doc_id} "
+              f"from notebook {existing_doc.get('notebook_id')} "
+              f"(skipping embed + Pinecone upsert)")
+
+        # Create a fresh pdf_docs row for *this* notebook that points to the
+        # same doc_id so Pinecone vector queries work without any re-indexing.
+        new_meta = {
+            "doc_id":           orig_doc_id,      # same Pinecone vectors!
+            "notebook_id":      notebook_id,
+            "user_id":          user_id,
+            "name":             filename,
+            "size":             len(pdf_bytes),
+            "total_tokens":     orig_total_toks,
+            "chunk_count":      orig_chunks,
+            "tokens_per_chunk": orig_tpc,
+            "uploaded_at":      datetime.now(timezone.utc),
+            "selected":         True,
+            "summary":          orig_summary,
+            "firebase_pdf_url": orig_firebase,
+            "pdf_hash":         pdf_hash,
+            "reused_from":      existing_doc["_id"],  # audit trail
+        }
+        await pdf_docs_col.insert_one(new_meta)
+
+        # Persist a "♻️ Already indexed" summary message to the notebook chat
+        if orig_summary:
+            try:
+                meta_line = (
+                    f'<p><strong>{filename}</strong> '
+                    f'&nbsp;<em style="font-size:0.8em;opacity:0.6">'
+                    f'{orig_total_toks:,} tokens · {orig_chunks} chunks — '
+                    f'<strong>♻️ reused from existing index</strong>'
+                    f'</em></p><hr>'
+                )
+                await notebooks_col.update_one(
+                    {"_id": ObjectId(notebook_id)},
+                    {
+                        "$push": {"messages": {"role": "assistant", "content": meta_line + orig_summary}},
+                        "$set":  {"updated_at": datetime.now(timezone.utc)},
+                    },
+                )
+                print(f"[RAG] Reuse summary persisted to notebook {notebook_id}")
+            except Exception as exc:
+                print(f"[RAG] Warning: could not persist reuse summary: {exc}")
+
+        return {
+            "doc_id":           orig_doc_id,
+            "name":             filename,
+            "total_tokens":     orig_total_toks,
+            "chunk_count":      orig_chunks,
+            "tokens_per_chunk": orig_tpc,
+            "selected":         True,
+            "summary":          orig_summary,
+            "suggested_name":   orig_name,
+            "firebase_pdf_url": orig_firebase,
+            "reused":           True,   # ← tells frontend to skip Firebase re-upload
+        }
+    # ── End fast path ─────────────────────────────────────────────────────────
 
     # ── 1. Extract text ────────────────────────────────────────────────────────
     try:
@@ -446,7 +549,30 @@ async def upload_pdf(
         "selected":         True,
         "summary":          "",   # placeholder — filled in step 8
         "firebase_pdf_url": "",   # placeholder — filled by frontend after Firebase upload
+        "pdf_hash":         pdf_hash,  # for deduplication on future uploads
     })
+
+    # ── 7b. Backfill pdf_hash on legacy docs (uploaded before dedup was added) ──
+    # Older documents for this user share the same filename + byte size but have
+    # no pdf_hash field because they predate this feature.  Stamping the hash now
+    # means the *next* re-upload of those PDFs will correctly hit the fast path.
+    try:
+        backfill_result = await pdf_docs_col.update_many(
+            {
+                "user_id":  user_id,
+                "name":     filename,
+                "size":     len(pdf_bytes),
+                "pdf_hash": {"$exists": False},   # only legacy docs without a hash
+            },
+            {"$set": {"pdf_hash": pdf_hash}},
+        )
+        if backfill_result.modified_count:
+            print(
+                f"[RAG] Backfilled pdf_hash onto {backfill_result.modified_count} "
+                f"legacy doc(s) for '{filename}' — future re-uploads will skip processing"
+            )
+    except Exception as exc:
+        print(f"[RAG] Warning: pdf_hash backfill failed (non-fatal): {exc}")
 
     # ── 8. Query Pinecone for indexed vectors → single LLM call produces:
     #         • suggested_name  (parsed from first line: "NOTEBOOK_NAME: ...")
@@ -456,8 +582,8 @@ async def upload_pdf(
     summary, suggested_name = await generate_pdf_summary(doc_id, user_id, filename)
     if summary:
         await pdf_docs_col.update_one(
-            {"doc_id": doc_id},
-            {"$set": {"summary": summary}},
+            {"doc_id": doc_id, "notebook_id": notebook_id},
+            {"$set": {"summary": summary, "suggested_name": suggested_name}},
         )
         print(f"[RAG] Summary saved to MongoDB for doc_id={doc_id}")
 
@@ -499,6 +625,7 @@ async def upload_pdf(
         "selected":         True,
         "summary":          summary,        # returned to frontend for immediate display
         "suggested_name":   suggested_name, # parsed from same LLM response — no race condition
+        "reused":           False,
     }
 
 
@@ -566,29 +693,51 @@ async def save_pdf_firebase_url(
 async def delete_pdf(
     doc_id: str,
     authorization: Optional[str] = Header(None),
+    x_notebook_id: Optional[str] = Header(None, alias="X-Notebook-Id"),
 ):
     """
-    Delete a PDF's vectors from Pinecone (user namespace) and its
-    metadata row from MongoDB.  Only the owning user can delete.
+    Remove a PDF from a notebook.
+
+    Strategy (dedup-safe):
+      • Pinecone vectors are NEVER deleted — they stay in the user namespace
+        so that an identical PDF uploaded to any future notebook can skip
+        re-embedding entirely (zero Pinecone write-units reused).
+      • Only the single pdf_docs MongoDB row for *this* notebook is removed.
+      • The firebase_pdf_url is returned to the frontend so it can delete
+        the raw PDF file from Firebase Storage (storage cost, not compute).
+
+    Only the owning user can delete.
     """
     from chat import get_current_user
     user_id, _ = await get_current_user(authorization)
 
-    doc = await pdf_docs_col.find_one({"doc_id": doc_id, "user_id": user_id})
+    notebook_id = x_notebook_id or ""
+
+    # Find the precise row for this user + notebook combination
+    query: dict = {"doc_id": doc_id, "user_id": user_id}
+    if notebook_id:
+        query["notebook_id"] = notebook_id
+
+    doc = await pdf_docs_col.find_one(query)
     if not doc:
         raise HTTPException(status_code=404, detail="PDF not found or access denied")
 
-    chunk_count = doc.get("chunk_count", 100)
-    vector_ids = [f"{doc_id}::chunk_{i}" for i in range(chunk_count)]
+    firebase_pdf_url = doc.get("firebase_pdf_url", "")
 
-    # Remove vectors from Pinecone (non-fatal if already gone)
-    try:
-        index = await asyncio.to_thread(get_index)
-        await asyncio.to_thread(index.delete, ids=vector_ids, namespace=user_id)
-        print(f"[RAG] Deleted {chunk_count} vectors for doc_id={doc_id}")
-    except Exception as exc:
-        print(f"[RAG delete] Pinecone error (non-fatal): {exc}")
+    # ♻️  Pinecone vectors are intentionally preserved for deduplication reuse.
+    #     If the same PDF is uploaded again (same sha-256 hash), the backend
+    #     will find the still-existing vectors and skip all embedding work.
+    print(
+        f"[RAG] Removing MongoDB record for doc_id={doc_id} "
+        f"notebook={notebook_id or 'any'} "
+        f"(Pinecone vectors kept for dedup reuse)"
+    )
 
-    # Remove metadata from MongoDB
-    await pdf_docs_col.delete_one({"doc_id": doc_id, "user_id": user_id})
-    return {"status": "deleted", "doc_id": doc_id}
+    # Remove only this notebook's metadata row from MongoDB
+    await pdf_docs_col.delete_one(query)
+
+    return {
+        "status":           "deleted",
+        "doc_id":           doc_id,
+        "firebase_pdf_url": firebase_pdf_url,  # frontend uses this to delete from Firebase Storage
+    }

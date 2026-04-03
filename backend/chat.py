@@ -363,11 +363,19 @@ async def get_jwks() -> dict:
 
 @app.on_event("startup")
 async def startup_event():
-    """Pre-warm JWKS cache on boot to cut first-request latency."""
+    """Pre-warm JWKS cache on boot to cut first-request latency.
+    Also ensures MongoDB indexes needed for PDF deduplication."""
     try:
         await get_jwks()
     except Exception:
         pass  # Non-fatal — will retry on first real request
+
+    # Ensure MongoDB indexes for RAG / dedup (idempotent)
+    try:
+        from rag import ensure_indexes
+        await ensure_indexes()
+    except Exception as exc:
+        print(f"[Startup] Warning: could not ensure indexes: {exc}")
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     """Decode Clerk JWT and return (user_id, email). Email may be empty string."""
