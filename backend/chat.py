@@ -24,7 +24,7 @@ import httpx
 load_dotenv()
 
 # RAG module — import after load_dotenv so env vars are available
-from rag import router as rag_router, retrieve_rag_context
+from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdfs
 
 # ── Generated images storage ────────────────────────────────────────────────
 IMAGES_DIR = Path(__file__).parent / "generated_images"
@@ -603,14 +603,23 @@ async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization:
 
 @app.delete("/notebooks/{notebook_id}")
 async def delete_notebook(notebook_id: str, authorization: Optional[str] = Header(None)):
-    """Delete a notebook and its chat history."""
+    """Delete a notebook, its chat history, associated pdf_docs rows,
+    and orphaned Pinecone vectors.  Returns firebase_pdf_urls for the frontend
+    to clean up Firebase Storage."""
     user_id, _ = await get_current_user(authorization)
     try:
         oid = ObjectId(notebook_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid notebook ID")
+
+    # 1. Cascade-clean PDFs: collect firebase URLs, delete orphaned Pinecone vectors,
+    #    delete all pdf_docs rows for this notebook
+    firebase_urls = await cleanup_notebook_pdfs(notebook_id, user_id)
+
+    # 2. Delete the notebook document itself (chat history etc.)
     await notebooks_col.delete_one({"_id": oid, "user_id": user_id})
-    return {"status": "deleted"}
+
+    return {"status": "deleted", "firebase_pdf_urls": firebase_urls}
 
 
 # ─── Chat History per Notebook ────────────────────────────────────────────────

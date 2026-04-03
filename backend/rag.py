@@ -741,3 +741,69 @@ async def delete_pdf(
         "doc_id":           doc_id,
         "firebase_pdf_url": firebase_pdf_url,  # frontend uses this to delete from Firebase Storage
     }
+
+
+# ── Notebook cascade cleanup (called from chat.py on notebook delete) ──────────
+async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
+    """
+    Called when an entire notebook is deleted.  Handles three resources:
+
+      Firebase Storage  → always collect URLs so the frontend can delete files
+                          (storage is billed per byte; always clean up)
+
+      Pinecone vectors  → delete ONLY if no other notebook for this user still
+                          references the same doc_id.  If another notebook shares
+                          the vectors (dedup reuse), they must be preserved.
+
+      MongoDB pdf_docs  → always delete all rows for this notebook
+
+    Returns list[str] of firebase_pdf_urls so the frontend can call deleteObject().
+    """
+    # 1. Fetch all PDF docs belonging to this notebook
+    cursor = pdf_docs_col.find({"notebook_id": notebook_id, "user_id": user_id})
+    notebook_pdfs = await cursor.to_list(length=500)
+
+    if not notebook_pdfs:
+        print(f"[RAG cleanup] No pdf_docs found for notebook {notebook_id}")
+        return []
+
+    firebase_urls: list = []
+    orphaned_vectors: list = []  # (doc_id, chunk_count) — safe to delete from Pinecone
+
+    for doc in notebook_pdfs:
+        doc_id    = doc["doc_id"]
+        fb_url    = doc.get("firebase_pdf_url", "")
+        if fb_url:
+            firebase_urls.append(fb_url)
+
+        # Check if any OTHER notebook for this user still needs these vectors
+        other_refs = await pdf_docs_col.count_documents({
+            "user_id":     user_id,
+            "doc_id":      doc_id,
+            "notebook_id": {"$ne": notebook_id},   # exclude the one being deleted
+        })
+
+        if other_refs == 0:
+            # No other notebook references this doc_id → vectors are now orphaned
+            orphaned_vectors.append((doc_id, doc.get("chunk_count", 100)))
+
+    # 2. Delete orphaned Pinecone vectors
+    if orphaned_vectors:
+        try:
+            index = await asyncio.to_thread(get_index)
+            for doc_id, chunk_count in orphaned_vectors:
+                vector_ids = [f"{doc_id}::chunk_{i}" for i in range(chunk_count)]
+                await asyncio.to_thread(index.delete, ids=vector_ids, namespace=user_id)
+                print(f"[RAG cleanup] Deleted {chunk_count} orphaned vectors for doc_id={doc_id}")
+        except Exception as exc:
+            print(f"[RAG cleanup] Pinecone error (non-fatal): {exc}")
+
+    kept = len(notebook_pdfs) - len(orphaned_vectors)
+    if kept:
+        print(f"[RAG cleanup] Kept {kept} shared doc_id(s) in Pinecone (still used by other notebooks)")
+
+    # 3. Remove all pdf_docs rows for this notebook
+    result = await pdf_docs_col.delete_many({"notebook_id": notebook_id, "user_id": user_id})
+    print(f"[RAG cleanup] Deleted {result.deleted_count} pdf_docs rows for notebook {notebook_id}")
+
+    return firebase_urls

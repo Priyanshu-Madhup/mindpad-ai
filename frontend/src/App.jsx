@@ -157,6 +157,7 @@ export default function App() {
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
+  const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
@@ -522,18 +523,46 @@ export default function App() {
     try {
       const token = await getToken();
       if (!token) return;
-      await fetch(`${BACKEND_URL}/notebooks/${id}`, {
+      const res = await fetch(`${BACKEND_URL}/notebooks/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Update UI immediately
       const remaining = notebooks.filter(n => n.id !== id);
       setNotebooks(remaining);
+      // Clear PDF state for deleted notebook
+      setNotebookPdfs(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
       if (activeNotebookId === id) {
         if (remaining.length > 0) {
           setActiveNotebookId(remaining[0].id);
           await loadHistory(remaining[0].id);
         } else {
           await createNotebook('My Workspace', true);
+        }
+      }
+
+      // Clean up Firebase Storage files in the background (non-blocking)
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const urls = data.firebase_pdf_urls || [];
+        if (urls.length > 0) {
+          (async () => {
+            for (const url of urls) {
+              try {
+                await deleteObject(ref(storage, url));
+                console.log('[Firebase] Deleted PDF from storage:', url.slice(0, 60));
+              } catch (fbErr) {
+                // Non-fatal — MongoDB + Pinecone already cleaned up
+                console.warn('[Firebase] Storage delete failed (non-fatal):', fbErr.message);
+              }
+            }
+          })();
         }
       }
     } catch (err) {
@@ -926,6 +955,25 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-white dark:bg-slate-950 overflow-hidden">
+      {/* ── Fixed PDF info tooltip — renders outside sidebar overflow ───────── */}
+      {pdfInfoTooltip && (
+        <div
+          className="fixed z-[9999] pointer-events-none"
+          style={{ top: pdfInfoTooltip.y, left: pdfInfoTooltip.x }}
+        >
+          <div className="flex items-center">
+            <div className="w-0 h-0 border-t-[5px] border-b-[5px] border-r-[6px] border-t-transparent border-b-transparent border-r-white dark:border-r-slate-800 shrink-0" />
+            <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-[11px] rounded-lg px-3 py-2 shadow-2xl border border-slate-200 dark:border-slate-700 min-w-[165px]">
+              <p className="font-semibold text-slate-900 dark:text-white text-[11px] mb-1 break-all leading-tight">{pdfInfoTooltip.pdf.name}</p>
+              <div className="space-y-0.5 text-slate-500 dark:text-slate-400">
+                <p>{(pdfInfoTooltip.pdf.total_tokens || 0).toLocaleString()} tokens</p>
+                <p>{pdfInfoTooltip.pdf.chunk_count} chunks</p>
+                <p>{pdfInfoTooltip.pdf.tokens_per_chunk || '—'} tok / chunk</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Click-outside overlay — closes all dropdowns ───────────────────── */}
       {(showNotifs || showSettings || showLangMenu) && (
         <div
@@ -1196,7 +1244,12 @@ export default function App() {
                             <button
                               onClick={e => {
                                 e.stopPropagation();
-                                setOpenNotebookId(isOpen ? null : nb.id);
+                                const opening = !isOpen;
+                                setOpenNotebookId(opening ? nb.id : null);
+                                // Lazily load PDFs the first time this drawer is opened
+                                if (opening && notebookPdfs[nb.id] === undefined) {
+                                  loadPdfs(nb.id);
+                                }
                               }}
                               className={`p-1 rounded-lg transition-all ${
                                 isOpen
@@ -1220,7 +1273,14 @@ export default function App() {
                                 <span className="text-[11px] text-primary font-medium">Processing PDF…</span>
                               </div>
                             )}
-                            {(notebookPdfs[nb.id] || []).length === 0 && !uploadingPdf ? (
+                            {/* Loading indicator — PDFs not fetched yet for this notebook */}
+                            {notebookPdfs[nb.id] === undefined && !uploadingPdf && (
+                              <div className="flex items-center gap-1.5 py-1 px-1.5">
+                                <Loader2 className="w-3 h-3 animate-spin text-slate-400 shrink-0" />
+                                <span className="text-[11px] text-slate-400">Loading…</span>
+                              </div>
+                            )}
+                            {notebookPdfs[nb.id] !== undefined && (notebookPdfs[nb.id] || []).length === 0 && !uploadingPdf ? (
                               <p className="text-[11px] text-slate-400 dark:text-slate-500 py-1.5 italic">
                                 No PDFs yet — upload to add sources
                               </p>
@@ -1243,12 +1303,22 @@ export default function App() {
                                     }}
                                   />
                                   <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                  <div className="flex flex-col min-w-0 flex-1">
+                                  <div className="flex items-center gap-1 min-w-0 flex-1">
                                     <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate" title={pdf.name}>{pdf.name}</span>
                                     {pdf.total_tokens && (
-                                      <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                                        {pdf.total_tokens.toLocaleString()} tokens · {pdf.chunk_count} chunks
-                                      </span>
+                                      <svg
+                                        className="w-3.5 h-3.5 shrink-0 text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary transition-colors cursor-default"
+                                        viewBox="0 0 16 16"
+                                        fill="currentColor"
+                                        onMouseEnter={e => {
+                                          const r = e.currentTarget.getBoundingClientRect();
+                                          setPdfInfoTooltip({ pdf, x: r.right + 8, y: r.top + r.height / 2 - 40 });
+                                        }}
+                                        onMouseLeave={() => setPdfInfoTooltip(null)}
+                                      >
+                                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                                        <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+                                      </svg>
                                     )}
                                   </div>
                                   <button
