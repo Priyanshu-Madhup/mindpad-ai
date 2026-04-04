@@ -145,6 +145,8 @@ export default function App() {
     return localStorage.getItem('mindpad_dark') === 'true' ? 'dark' : 'light';
   });
   const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
+  const [isDeepResearch, setIsDeepResearch] = useState(() => localStorage.getItem('mindpad_deep_research') === 'true');
+  const [isDeepResearching, setIsDeepResearching] = useState(false); // true while scraping pipeline runs
   const [isWebSearch, setIsWebSearch] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [showLangMenu, setShowLangMenu] = useState(false);
@@ -235,10 +237,14 @@ export default function App() {
     localStorage.setItem('mindpad_color_mode', colorMode);
   }, [colorMode]);
 
-  // Persist research mode
+  // Persist research mode + deep research preference
   useEffect(() => {
     localStorage.setItem('mindpad_research', isResearchMode);
   }, [isResearchMode]);
+
+  useEffect(() => {
+    localStorage.setItem('mindpad_deep_research', isDeepResearch);
+  }, [isDeepResearch]);
 
   // Fetch notifications when signed in
   useEffect(() => {
@@ -674,6 +680,8 @@ export default function App() {
     const currentImage = attachedImage;
     setAttachedImage(null);
     setIsStreaming(true);
+    // Deep research mode: show special searching indicator
+    if (isDeepResearch && !attachedImage && !isImageRequest(userText)) setIsDeepResearching(true);
     // If this looks like an image generation request, show crafting indicator
     if (isImageRequest(userText) && !attachedImage) setIsGeneratingImage(true);
 
@@ -690,6 +698,7 @@ export default function App() {
           notebook_id: activeNotebookId,
           research_mode: isResearchMode,
           web_search: isWebSearch,
+          deep_research: isDeepResearch,
           response_language: selectedLang.label,
           // RAG: send the doc_ids the user has checked
           selected_pdf_ids: (notebookPdfs[activeNotebookId] || [])
@@ -819,6 +828,7 @@ export default function App() {
     } finally {
       setIsStreaming(false);
       setIsGeneratingImage(false);
+      setIsDeepResearching(false);
     }
   };
 
@@ -1466,6 +1476,27 @@ export default function App() {
                         }`} />
                       </button>
                     </div>
+
+                    {/* ── Deep Research toggle ─────────────────── */}
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-primary/70" />
+                        <div>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Deep Research</span>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Scrapes & vectorises web — answers from RAG</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setIsDeepResearch(prev => !prev)}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
+                          isDeepResearch ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                        }`}
+                      >
+                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
+                          isDeepResearch ? 'translate-x-5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
                   </div>
                 )}
                 <SidebarItem
@@ -1827,6 +1858,69 @@ export default function App() {
                 </motion.div>
               )}
 
+              {/* ── Deep Research animation — shown while Serper+Firecrawl+Pinecone runs ── */}
+              {isDeepResearching && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex gap-6"
+                >
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1], opacity: [0.8, 1, 0.8] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
+                  >
+                    <Globe className="w-5 h-5 text-white" />
+                  </motion.div>
+                  <div className="flex-1 space-y-3">
+                    <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI — Deep Research</span>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-4">
+                      {/* Animated phase label */}
+                      <div className="flex items-center gap-2">
+                        <motion.span
+                          animate={{ opacity: [0.5, 1, 0.5] }}
+                          transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                          className="text-xs font-semibold text-primary/70 dark:text-slate-300 font-display tracking-wide"
+                        >
+                          Searching · scraping · vectorising
+                        </motion.span>
+                        <div className="flex gap-1">
+                          {[0, 0.25, 0.5].map((delay, i) => (
+                            <motion.span key={i} animate={{ opacity: [0, 1, 0] }} transition={{ duration: 1.4, repeat: Infinity, delay }} className="text-primary/70 text-sm font-bold leading-none">.</motion.span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Phase steps */}
+                      <div className="space-y-2.5">
+                        {[
+                          { label: 'Searching web via Serper', delay: 0 },
+                          { label: 'Scraping top pages with Firecrawl', delay: 0.3 },
+                          { label: 'Chunking & embedding content', delay: 0.6 },
+                          { label: 'Retrieving top-3 relevant chunks', delay: 0.9 },
+                        ].map(({ label, delay }, i) => (
+                          <div key={i} className="flex items-center gap-2.5">
+                            <motion.div
+                              animate={{ opacity: [0.3, 1, 0.3] }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }}
+                              className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0"
+                            />
+                            <motion.span
+                              animate={{ opacity: [0.4, 0.9, 0.4] }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }}
+                              className="text-[11px] text-slate-500 dark:text-slate-400"
+                            >
+                              {label}
+                            </motion.span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500">This may take 20–60 seconds — scraping live web pages…</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {/* Crafting image animation — shown while NVIDIA Stable Diffusion generates */}
               {isGeneratingImage && (
                 <motion.div
@@ -2015,7 +2109,7 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Web Search toggle pill — sits right next to language */}
+                    {/* Web Search toggle pill */}
                     <button
                       type="button"
                       onClick={() => setIsWebSearch(prev => !prev)}
@@ -2028,6 +2122,21 @@ export default function App() {
                     >
                       <Globe className="w-3 h-3" />
                       Web Search
+                    </button>
+
+                    {/* Deep Research toggle pill — always visible, click to enable/disable */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDeepResearch(prev => !prev)}
+                      title={isDeepResearch ? 'Deep Research ON — click to disable' : 'Enable Deep Research (Serper + Firecrawl + RAG)'}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
+                        isDeepResearch
+                          ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <Microscope className="w-3 h-3" />
+                      Deep Research
                     </button>
                   </div>
 

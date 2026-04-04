@@ -26,6 +26,9 @@ load_dotenv()
 # RAG module — import after load_dotenv so env vars are available
 from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdfs
 
+# Deep Research module — Serper + Firecrawl + Pinecone RAG pipeline
+from deep_research import router as deep_research_router, run_deep_research
+
 # ── Generated images storage ────────────────────────────────────────────────
 IMAGES_DIR = Path(__file__).parent / "generated_images"
 IMAGES_DIR.mkdir(exist_ok=True)
@@ -47,6 +50,9 @@ app.add_middleware(
 
 # Mount the RAG router (PDF upload / list / delete endpoints)
 app.include_router(rag_router)
+
+# Mount the Deep Research router (/deep-research/index endpoint)
+app.include_router(deep_research_router)
 
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -217,23 +223,30 @@ WELCOME_HTML = """\
 </body>
 </html>"""
 
-def _send_welcome_email_sync(to_email: str):
-    """Sends a welcome email via Gmail SMTP. Runs in a background thread."""
+def _send_welcome_email_sync(to_email: str, user_id: str = ""):
+    """Sends a welcome email via Gmail SMTP. Runs in a background thread.
+    Only marks the user as 'welcomed' in MongoDB AFTER the email is confirmed sent.
+    """
     if not MAIL_USER or not MAIL_PASS:
-        print("[Welcome email] Credentials not set — skipping.")
+        print("[Welcome email] MAIL_USER or MAIL_PASS not set — skipping.")
         return
+    print(f"[Welcome email] Attempting to send to {to_email}…")
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Welcome to Mindpad AI — Your Research Journey Begins!"
         msg["From"] = f"Mindpad AI <{MAIL_USER}>"
         msg["To"] = to_email
         msg.attach(MIMEText(WELCOME_HTML, "html"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(MAIL_USER, MAIL_PASS)
             server.sendmail(MAIL_USER, to_email, msg.as_string())
-        print(f"[Welcome email] Sent to {to_email}")
+        print(f"[Welcome email] ✅ Sent successfully to {to_email}")
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[Welcome email] ❌ SMTP auth failed — check MAIL_USER/MAIL_PASS: {e}")
+    except smtplib.SMTPException as e:
+        print(f"[Welcome email] ❌ SMTP error: {e}")
     except Exception as e:
-        print(f"[Welcome email error] {e}")
+        print(f"[Welcome email] ❌ Unexpected error: {e}")
 
 
 # ── System Prompt ──────────────────────────────────────────────────────────────
@@ -412,6 +425,8 @@ class ChatRequest(BaseModel):
     selected_pdf_ids: Optional[List[str]] = []
     # Web search: fetch live results via Serper.dev and inject as context
     web_search: bool = False
+    # Deep Research: Serper → Firecrawl scraping → Pinecone RAG (answers from vector DB, not raw snippets)
+    deep_research: bool = False
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -447,6 +462,37 @@ def fmt_notebook(doc: dict) -> dict:
 async def health():
     """Health check — used by deployment platforms to verify the service is running."""
     return {"status": "ok", "service": "mindpad-ai-backend"}
+
+
+@app.post("/test-email")
+async def test_email(authorization: Optional[str] = Header(None)):
+    """
+    Debug endpoint: send a test welcome email to the authenticated user's address.
+    Useful for verifying SMTP credentials without needing a fresh signup.
+    """
+    user_id, jwt_email = await get_current_user(authorization)
+    if not jwt_email:
+        raise HTTPException(status_code=400, detail="No email in JWT — pass X-User-Email header instead")
+
+    import threading as _threading
+    _threading.Thread(
+        target=_send_welcome_email_sync, args=(jwt_email, user_id), daemon=True
+    ).start()
+    return {"status": "queued", "to": jwt_email}
+
+
+@app.post("/reset-welcome")
+async def reset_welcome(authorization: Optional[str] = Header(None)):
+    """
+    Debug endpoint: clear the 'welcomed' flag so the welcome email fires again
+    on the next GET /notebooks call. Useful for re-testing without a new account.
+    """
+    user_id, _ = await get_current_user(authorization)
+    result = await users_meta_col.update_one(
+        {"user_id": user_id},
+        {"$set": {"welcomed": False}},
+    )
+    return {"status": "reset", "modified": result.modified_count}
 
 
 # ── Text-to-Speech ─────────────────────────────────────────────────────────────
@@ -554,18 +600,27 @@ async def list_notebooks(
     docs = await cursor.to_list(length=100)
 
     # ── First-time user: send welcome email once ───────────────────────────────
-    if len(docs) == 0 and user_email:
+    # Trigger condition: user has no notebooks yet AND we haven't sent before.
+    # The 'welcomed' flag is set BEFORE the thread to prevent duplicate sends
+    # even if loadNotebooks fires multiple times in quick succession.
+    if user_email:
         meta = await users_meta_col.find_one({"user_id": user_id})
         if not meta or not meta.get("welcomed"):
+            # Mark as welcomed now to prevent race-condition duplicates
             await users_meta_col.update_one(
                 {"user_id": user_id},
                 {"$set": {"user_id": user_id, "welcomed": True,
                           "welcomed_at": datetime.now(timezone.utc)}},
                 upsert=True,
             )
+            print(f"[Welcome email] New user detected: {user_id[:12]}… — launching email thread to {user_email}")
             threading.Thread(
-                target=_send_welcome_email_sync, args=(user_email,), daemon=True
+                target=_send_welcome_email_sync, args=(user_email, user_id), daemon=True
             ).start()
+        else:
+            print(f"[Welcome email] User {user_id[:12]}… already welcomed — skipping")
+    else:
+        print(f"[Welcome email] No email address available for user {user_id[:12]}… — skipping")
     # ───────────────────────────────────────────────────────────────────────────
 
     return {"notebooks": [fmt_notebook(d) for d in docs]}
@@ -819,6 +874,40 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             if web_context:
                 print(f"[Web Search] Injecting {len(web_context)} chars of web context")
 
+        # ── Deep Research: Serper → Firecrawl → Pinecone → top-3 RAG chunks ──
+        # When enabled this REPLACES the raw web_context with proper RAG retrieval.
+        # The scraping step is slow (10-60 s) and happens inline so the response
+        # is grounded in the scraped + vectorised content, not raw snippets.
+        if request.deep_research and not request.image_base64:
+            print(f"[DeepResearch] Running pipeline for notebook={notebook_id}")
+            dr_doc_id, dr_urls = await run_deep_research(
+                query=last_user_msg.content,
+                user_id=user_id,
+                notebook_id=notebook_id,
+            )
+            if dr_doc_id:
+                # Retrieve top-3 chunks from the freshly-indexed research doc
+                dr_context, dr_sources = await retrieve_rag_context(
+                    query=last_user_msg.content,
+                    user_id=user_id,
+                    doc_ids=[dr_doc_id],
+                    top_k=3,
+                )
+                if dr_context:
+                    # Deep research results take priority — override web_context
+                    web_context = ""  # don't double-inject web snippets
+                    # Inject as RAG context so LLM is grounded in scraped content
+                    rag_context = dr_context
+                    rag_sources = dr_sources
+                    # Annotate sources with the URLs that were scraped
+                    for src in rag_sources:
+                        src["scraped_urls"] = dr_urls
+                    print(f"[DeepResearch] Injecting {len(dr_context)} chars of RAG context from {len(dr_urls)} scraped pages")
+                else:
+                    print("[DeepResearch] Pipeline produced vectors but no matching chunks — falling back to empty context")
+            else:
+                print("[DeepResearch] Pipeline returned no doc_id — no context injected")
+
         # Build single-turn payload
         if request.image_base64:
             # Multimodal: wrap last user message with image
@@ -838,8 +927,19 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         system_content = SYSTEM_PROMPT
         extra_context_parts = []
         if rag_context:
+            # Check whether this context came from deep research or PDF
+            dr_label = ""
+            if request.deep_research:
+                dr_label = (
+                    "The following context was retrieved via DEEP RESEARCH: "
+                    "real web pages were scraped and vectorised, then the top-3 most relevant chunks "
+                    "were retrieved for your query. "
+                    "Base your answer ONLY on these chunks. Do NOT answer from your training data alone. "
+                    "Cite the [Source: ...] labels where relevant.\n\n"
+                )
             extra_context_parts.append(
-                "IMPORTANT CONSTRAINT: Each retrieved chunk below contains at most 1000 tokens. "
+                dr_label
+                + "IMPORTANT CONSTRAINT: Each retrieved chunk below contains at most 1000 tokens. "
                 "Use ONLY the following document excerpts to answer the user's question. "
                 "If the excerpts don't contain the answer, say so honestly.\n\n"
                 "=== RETRIEVED DOCUMENT CONTEXT ===\n"
