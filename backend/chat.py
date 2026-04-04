@@ -595,34 +595,50 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
     # ── First-time user: send welcome email once ───────────────────────────────
-    # Trigger condition: user has no notebooks yet AND we haven't sent before.
-    # The 'welcomed' flag is set BEFORE the thread to prevent duplicate sends
-    # even if loadNotebooks fires multiple times in quick succession.
+    # Two-signal check for a truly new user:
+    #   1. No welcomed flag in users_meta (primary gate against duplicates)
+    #   2. Zero "role: user" messages across ALL notebooks (your idea — catches
+    #      accounts where the flag was set before the email actually sent)
     if user_email:
         meta = await users_meta_col.find_one({"user_id": user_id})
-        if not meta or not meta.get("welcomed"):
-            # Mark as welcomed now to prevent race-condition duplicates
+        already_welcomed = meta.get("welcomed", False) if meta else False
+
+        # Count total user messages across all notebooks
+        total_user_messages = sum(
+            1
+            for doc in docs
+            for msg in (doc.get("messages") or [])
+            if msg.get("role") == "user"
+        )
+
+        is_new_user = not already_welcomed and total_user_messages == 0
+
+        print(
+            f"[Welcome email] user={user_id[:12]}… | welcomed={already_welcomed} | "
+            f"user_msgs={total_user_messages} | will_send={is_new_user}"
+        )
+
+        if is_new_user:
+            # Set flag BEFORE spawning thread to prevent race-condition duplicate sends
             await users_meta_col.update_one(
                 {"user_id": user_id},
                 {"$set": {"user_id": user_id, "welcomed": True,
                           "welcomed_at": datetime.now(timezone.utc)}},
                 upsert=True,
             )
-            print(f"[Welcome email] New user detected: {user_id[:12]}… — launching email thread to {user_email}")
             threading.Thread(
                 target=_send_welcome_email_sync, args=(user_email, user_id), daemon=True
             ).start()
-        else:
-            print(f"[Welcome email] User {user_id[:12]}… already welcomed — skipping")
     else:
-        print(f"[Welcome email] No email address available for user {user_id[:12]}… — skipping")
+        print(f"[Welcome email] No email for user {user_id[:12]}… — skipping")
     # ───────────────────────────────────────────────────────────────────────────
 
+    # Strip messages from the response (frontend doesn't need them here)
     return {"notebooks": [fmt_notebook(d) for d in docs]}
 
 
