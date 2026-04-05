@@ -26,6 +26,7 @@ import {
   ArrowUp
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import mindpadLogo from './mindpad_ai_logo.png';
 
 const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
   <motion.div 
@@ -47,13 +48,74 @@ export default function LandingPage({ onGetStarted, onLogin }) {
     { role: 'ai', text: 'Hi there! 👋 How can I help you learn more about Mindpad AI?' }
   ]);
 
-  const handleSendMessage = () => {
+  const BACKEND = import.meta.env.VITE_API_URL || 'https://mindpad-ai.onrender.com';
+
+  const handleSendMessage = async () => {
     if (!chatMessage.trim()) return;
-    setChatMessages(prev => [...prev, { role: 'user', text: chatMessage }]);
+    const userText = chatMessage.trim();
+    const updatedMessages = [...chatMessages, { role: 'user', text: userText }];
+    setChatMessages(updatedMessages);
     setChatMessage('');
-    setTimeout(() => {
-      setChatMessages(prev => [...prev, { role: 'ai', text: "Thanks for your message! Our team will get back to you shortly. In the meantime, feel free to explore our features." }]);
-    }, 1000);
+
+    // Add a typing placeholder for the AI
+    setChatMessages(prev => [...prev, { role: 'ai', text: '…', typing: true }]);
+
+    try {
+      const response = await fetch(`${BACKEND}/support-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updatedMessages.map(m => ({
+            role: m.role === 'ai' ? 'assistant' : 'user',
+            content: m.text,
+          })),
+        }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let aiText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content || '';
+            aiText += delta;
+            // Update the typing bubble in real-time
+            setChatMessages(prev => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: aiText };
+              return copy;
+            });
+          } catch { /* partial JSON — skip */ }
+        }
+      }
+      // Finalise (remove typing flag if still present)
+      setChatMessages(prev => {
+        const copy = [...prev];
+        const last = copy[copy.length - 1];
+        if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: aiText || 'Sorry, I had trouble responding.' };
+        return copy;
+      });
+    } catch (err) {
+      setChatMessages(prev => {
+        const copy = [...prev];
+        const last = copy[copy.length - 1];
+        if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: 'Sorry, something went wrong. Please try again!' };
+        return copy;
+      });
+    }
   };
 
   return (
@@ -61,8 +123,11 @@ export default function LandingPage({ onGetStarted, onLogin }) {
       {/* Top Navigation Bar */}
       <nav className="bg-white/70 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-100">
         <div className="flex justify-between items-center px-8 py-4 max-w-screen-2xl mx-auto">
-          <div className="text-xl font-black tracking-tighter text-slate-900 font-display uppercase">
-            Mindpad AI
+          <div className="flex items-center gap-2">
+            <img src={mindpadLogo} alt="Mindpad AI" className="h-7 w-auto object-contain" />
+            <span className="text-xl font-black tracking-tighter text-slate-900 font-display uppercase">
+              Mindpad AI
+            </span>
           </div>
 
           <div className="flex items-center gap-4">
@@ -323,7 +388,10 @@ export default function LandingPage({ onGetStarted, onLogin }) {
       <footer className="bg-white py-16 px-8 border-t border-slate-100">
         <div className="max-w-screen-2xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="space-y-4">
-            <div className="text-xl font-black text-slate-900 font-display uppercase tracking-tighter">Mindpad AI</div>
+            <div className="flex items-center gap-2 mb-1">
+              <img src={mindpadLogo} alt="Mindpad AI" className="h-6 w-auto object-contain" />
+              <div className="text-xl font-black text-slate-900 font-display uppercase tracking-tighter">Mindpad AI</div>
+            </div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">© 2024 Mindpad AI. The Intellectual Workspace.</p>
           </div>
           <div className="flex flex-wrap md:justify-end gap-x-8 gap-y-4">

@@ -1,0 +1,151 @@
+MINDPAD AI — COMPLETE FEATURE REFERENCE
+========================================
+
+## What is Mindpad AI?
+Mindpad AI is an intelligent research workspace designed for students, scholars, researchers, and lifelong learners. It combines a notebook-style interface with a powerful AI assistant (Midy AI) that can answer questions, summarise documents, generate images, and conduct deep web research — all within a single, beautiful UI.
+
+---
+
+## CORE FEATURES
+
+### 1. Notebooks
+- Users can create unlimited notebooks to organise research topics, projects, or subjects.
+- Each notebook has a persistent AI chat history that survives page refreshes.
+- Notebooks can be renamed by double-clicking the name.
+- Notebooks are sorted by creation time (most recent at top).
+
+### 2. AI Chat — Midy AI
+- Powered by Groq (LLaMA-based models) for fast, streaming responses.
+- Responds in clean, formatted HTML (headings, tables, code blocks, lists, blockquotes).
+- Full conversation history is persisted to MongoDB so chats survive refreshes.
+- Supports multimodal input: users can attach images and ask questions about them.
+- Supports text-to-speech (TTS) — click the speaker icon on any AI message.
+- Users can copy any message with a single click.
+- Messages can be shared or read aloud.
+
+### 3. Voice Input (Speech-to-Text)
+- Record voice messages directly in the chat.
+- Uses Groq Whisper large-v3-turbo for fast, accurate transcription.
+- Animated mic recording UI with live "Listening…" feedback.
+- Transcribed text is inserted into the chat input automatically.
+
+### 4. PDF Upload & RAG (Retrieval-Augmented Generation)
+- Upload one or more PDF documents per notebook.
+- Documents are dynamically chunked (200–1000 tokens per chunk) using Groq to decide optimal chunk count.
+- Chunks are embedded using `multilingual-e5-large` and stored in Pinecone (user-isolated namespace).
+- SHA-256 deduplication: re-uploading the same PDF reuses existing vectors instantly.
+- An automatic AI summary is generated for each PDF immediately after upload.
+- Users can select multiple PDFs; the AI answers from all selected PDF vectors combined.
+- When multiple PDFs are selected, each PDF is guaranteed at least one chunk in the top-3 results.
+- PDF metadata (token count, chunks, tokens/chunk) is visible via an info icon tooltip.
+
+### 5. Web Search
+- Toggle "Web Search" in the chat input bar to enable live web results via Serper.dev.
+- Search results are injected as context so Midy AI answers with up-to-date information.
+
+### 6. Deep Research Mode
+- Toggle "Deep Research" in the chat input bar (or Settings).
+- Workflow: Serper API (5 URLs) → Firecrawl web scraping → dynamic chunking → Pinecone upsert → top-3 RAG retrieval.
+- Scraped content is vectorised and stored in the user's Pinecone namespace.
+- The AI answers strictly from the retrieved vector chunks, not raw web snippets.
+- If PDFs are also selected, PDF chunks + scraped web chunks are unified in a single Pinecone query.
+- A multi-phase loading animation (Searching → Scraping → Chunking → Retrieving) shows progress.
+- Firecrawl caches pages for 1 hour; 403 pages (e.g., Reddit) are gracefully skipped.
+
+### 7. Image Generation
+- Uses NVIDIA Stable Diffusion (via NVIDIA API) to generate images from text prompts.
+- Detected automatically from natural language ("generate an image of…", "draw me…", etc.).
+- Generated images are uploaded to Firebase Storage for permanent storage.
+- Images persist in chat history across sessions and devices.
+- Users can copy or download generated images directly from the chat.
+
+### 8. Research Mode
+- Activate in Settings to switch the model to a higher-reasoning variant (`gpt-oss-120b`).
+- Optimised for complex, multi-step analytical tasks and long-form synthesis.
+
+### 9. Language Selection
+- Choose response language from the input bar: English, Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, Gujarati, Punjabi, Malayalam.
+- The AI responds entirely in the selected language.
+
+### 10. Settings Panel
+- Toggle Dark Mode, Black (OLED) Mode, or Light Mode.
+- Enable/disable Research Mode (advanced reasoning).
+- Enable/disable Deep Research (Serper + Firecrawl + RAG pipeline).
+- Settings are persisted in localStorage so they survive refreshes.
+
+### 11. AI Studio (Right Panel)
+- Accessible via the panel icon in the header (also available on mobile via a slide-in drawer).
+- Houses planned studio tools: Mind Map, Audio Podcast, Visual Podcast, Video Suggestions, Flashcards, Quiz Mode.
+
+### 12. Notifications
+- Admin can broadcast announcements to all users.
+- Users see unread count badge on the bell icon.
+- Notifications are dismissible.
+
+### 13. Welcome Email
+- New users receive a branded welcome email the first time they open a notebook.
+- Sent via Gmail SMTP; only fires once per account (tracked via MongoDB `users_meta` collection).
+- Trigger condition: `welcomed` flag is False AND user has zero chat messages across all notebooks.
+
+### 14. Mobile Support
+- Fully responsive layout optimised for phones and tablets.
+- Left sidebar opens as a slide-in drawer (hamburger menu).
+- Right AI Studio panel opens as a mobile drawer (panel icon in header).
+- Web Search and Deep Research collapse into a `+` button on mobile to save space.
+- Language selector always visible on mobile.
+
+---
+
+## TECHNICAL STACK
+
+### Frontend
+- React (Vite), Tailwind CSS v4, Framer Motion (motion/react)
+- Clerk for authentication (sign-in/sign-up modal)
+- Firebase Storage for image persistence
+- Deployed on Vercel
+
+### Backend
+- Python FastAPI, async/await throughout
+- MongoDB (motor async driver) for chat history, notebooks, PDF metadata, user meta
+- Pinecone for vector storage (multilingual-e5-large embeddings)
+- Groq API: LLaMA chat, Whisper STT, dynamic chunk-count decisions
+- NVIDIA API: image generation, support chat
+- Serper.dev: web search link retrieval
+- Firecrawl: async web scraping with 1-hour cache
+- Deployed on Render
+
+---
+
+## PRICING & ACCESS
+- Mindpad AI is currently in beta.
+- Free for registered scholarship students.
+- Pro features (AI Studio tools) coming soon.
+
+---
+
+## SUPPORT & CONTACT
+- For help, use the chat widget on the landing page (this chat!).
+- For feature requests or bugs, contact the Mindpad AI team.
+- Website: https://mindpad-ai.vercel.app
+
+---
+
+## FREQUENTLY ASKED QUESTIONS
+
+Q: Is my data private?
+A: Yes. All vectors are stored in a user-isolated Pinecone namespace. Your PDFs and chat history are tied to your Clerk user ID and never shared.
+
+Q: How long does Deep Research take?
+A: Typically 20–60 seconds depending on the number of pages Firecrawl needs to scrape. A loading animation shows progress.
+
+Q: Can I use multiple PDFs at once?
+A: Yes. Select any number of PDFs in your notebook sidebar. The AI will retrieve relevant chunks from all selected PDFs and synthesise an answer.
+
+Q: Does the AI remember my past conversations?
+A: Yes. Each notebook has its own persistent chat history stored in MongoDB.
+
+Q: What languages can the AI respond in?
+A: English, Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, Gujarati, Punjabi, and Malayalam.
+
+Q: Is there a mobile app?
+A: Not yet. The web app is fully mobile-optimised and works great on phone browsers.
