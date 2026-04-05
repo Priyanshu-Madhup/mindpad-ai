@@ -315,6 +315,10 @@ async def retrieve_rag_context(
       - formatted context string (for injection into system prompt)
       - list of source dicts (for frontend hover citations)
 
+    When multiple doc_ids are provided each doc is queried individually
+    (1 chunk per doc guaranteed), then all results are merged and the
+    top `top_k` by score are kept — ensuring every selected PDF contributes.
+
     Returns ("", []) if nothing relevant is found or an error occurs.
     """
     if not doc_ids:
@@ -323,21 +327,48 @@ async def retrieve_rag_context(
         q_vec = await embed_texts([query], "query")
         index = await asyncio.to_thread(get_index)
 
-        results = await asyncio.to_thread(
-            index.query,
-            vector=q_vec[0],
-            top_k=top_k,
-            namespace=user_id,          # ← user-isolated namespace
-            include_metadata=True,
-            filter={"doc_id": {"$in": doc_ids}},
-        )
+        all_matches = []
 
-        if not results.matches:
+        if len(doc_ids) == 1:
+            # Fast path: single doc — one query, top_k results
+            results = await asyncio.to_thread(
+                index.query,
+                vector=q_vec[0],
+                top_k=top_k,
+                namespace=user_id,
+                include_metadata=True,
+                filter={"doc_id": {"$in": doc_ids}},
+            )
+            all_matches = results.matches or []
+        else:
+            # Multi-doc path: query each doc_id independently (1 chunk guaranteed per doc)
+            # then merge and keep best top_k overall.
+            seen_ids = set()
+            for doc_id in doc_ids:
+                res = await asyncio.to_thread(
+                    index.query,
+                    vector=q_vec[0],
+                    top_k=1,          # 1 best chunk per doc
+                    namespace=user_id,
+                    include_metadata=True,
+                    filter={"doc_id": {"$eq": doc_id}},
+                )
+                for m in (res.matches or []):
+                    if m.id not in seen_ids:
+                        seen_ids.add(m.id)
+                        all_matches.append(m)
+
+            # Sort merged results by score descending, keep top_k
+            all_matches.sort(key=lambda m: m.score or 0.0, reverse=True)
+            all_matches = all_matches[:top_k]
+            print(f"[RAG] Multi-doc query: {len(doc_ids)} docs → {len(all_matches)} chunks merged")
+
+        if not all_matches:
             return "", []
 
         parts: List[str] = []
         sources: List[dict] = []
-        for match in results.matches:
+        for match in all_matches:
             meta = match.metadata or {}
             source = meta.get("pdf_name", "document")
             chunk_text = meta.get("text", "")

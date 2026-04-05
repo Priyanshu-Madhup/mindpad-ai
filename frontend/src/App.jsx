@@ -1807,7 +1807,7 @@ export default function App() {
               ))}
 
               {/* Thinking animation — shown while waiting for first streamed chunk */}
-              {(historyLoading || (isStreaming && !isGeneratingImage && (
+              {(historyLoading || (isStreaming && !isGeneratingImage && !isDeepResearching && (
                 chatHistory[chatHistory.length - 1]?.role === 'user' ||
                 chatHistory[chatHistory.length - 1]?.content === ''
               ))) && (

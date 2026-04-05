@@ -871,9 +871,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             return
 
         # ── RAG: retrieve relevant chunks from selected PDFs ─────────────────
+        # NOTE: when deep_research is on we skip this early retrieval and instead
+        # do ONE unified query after indexing (PDF chunks + scraped chunks together).
         rag_context = ""
         rag_sources = []
-        if request.selected_pdf_ids and not request.image_base64:
+        if request.selected_pdf_ids and not request.image_base64 and not request.deep_research:
             rag_context, rag_sources = await retrieve_rag_context(
                 query=last_user_msg.content,
                 user_id=user_id,
@@ -890,10 +892,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             if web_context:
                 print(f"[Web Search] Injecting {len(web_context)} chars of web context")
 
-        # ── Deep Research: Serper → Firecrawl → Pinecone → top-3 RAG chunks ──
-        # When enabled this REPLACES the raw web_context with proper RAG retrieval.
-        # The scraping step is slow (10-60 s) and happens inline so the response
-        # is grounded in the scraped + vectorised content, not raw snippets.
+        # ── Deep Research: Serper → Firecrawl → Pinecone → unified RAG ───────
+        # Scrape + index web content, then do ONE Pinecone query combining:
+        #   • all selected PDF doc_ids  (may be empty)
+        #   • the freshly-indexed deep-research doc_id
+        # → top-3 chunks ranked together across ALL sources by cosine similarity.
         if request.deep_research and not request.image_base64:
             print(f"[DeepResearch] Running pipeline for notebook={notebook_id}")
             dr_doc_id, dr_urls = await run_deep_research(
@@ -902,27 +905,36 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 notebook_id=notebook_id,
             )
             if dr_doc_id:
-                # Retrieve top-3 chunks from the freshly-indexed research doc
-                dr_context, dr_sources = await retrieve_rag_context(
+                # Combine PDF doc_ids + deep-research doc_id → single unified query
+                combined_doc_ids = list(request.selected_pdf_ids or []) + [dr_doc_id]
+                unified_context, unified_sources = await retrieve_rag_context(
                     query=last_user_msg.content,
                     user_id=user_id,
-                    doc_ids=[dr_doc_id],
+                    doc_ids=combined_doc_ids,
                     top_k=3,
                 )
-                if dr_context:
-                    # Deep research results take priority — override web_context
+                if unified_context:
                     web_context = ""  # don't double-inject web snippets
-                    # Inject as RAG context so LLM is grounded in scraped content
-                    rag_context = dr_context
-                    rag_sources = dr_sources
-                    # Annotate sources with the URLs that were scraped
+                    rag_context = unified_context
+                    rag_sources = unified_sources
                     for src in rag_sources:
                         src["scraped_urls"] = dr_urls
-                    print(f"[DeepResearch] Injecting {len(dr_context)} chars of RAG context from {len(dr_urls)} scraped pages")
+                    pdf_count = len(request.selected_pdf_ids or [])
+                    print(f"[DeepResearch] Unified RAG: {len(unified_context)} chars from "
+                          f"{pdf_count} PDF(s) + 1 deep-research doc → top-3 chunks")
                 else:
-                    print("[DeepResearch] Pipeline produced vectors but no matching chunks — falling back to empty context")
+                    print("[DeepResearch] Unified query returned no chunks — falling back to empty context")
             else:
-                print("[DeepResearch] Pipeline returned no doc_id — no context injected")
+                # Indexing failed — fall back to PDF-only RAG if PDFs are selected
+                print("[DeepResearch] Pipeline returned no doc_id — falling back to PDF-only RAG")
+                if request.selected_pdf_ids:
+                    rag_context, rag_sources = await retrieve_rag_context(
+                        query=last_user_msg.content,
+                        user_id=user_id,
+                        doc_ids=request.selected_pdf_ids,
+                        top_k=3,
+                    )
+
 
         # Build single-turn payload
         if request.image_base64:
