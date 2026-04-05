@@ -1,4 +1,5 @@
 anyio==4.12.1
+openai>=1.0.0
 cryptography==46.0.5
 dnspython==2.8.0
 fastapi==0.128.0

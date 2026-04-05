@@ -95,24 +95,24 @@ export default function LandingPage({ onGetStarted, onLogin }) {
             setChatMessages(prev => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
-              if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: aiText };
+              if (last?.typing || last?.streaming) copy[copy.length - 1] = { role: 'ai', text: aiText, streaming: true };
               return copy;
             });
           } catch { /* partial JSON — skip */ }
         }
       }
-      // Finalise (remove typing flag if still present)
+      // Finalise (remove typing/streaming flag if still present)
       setChatMessages(prev => {
         const copy = [...prev];
         const last = copy[copy.length - 1];
-        if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: aiText || 'Sorry, I had trouble responding.' };
+        if (last?.typing || last?.streaming) copy[copy.length - 1] = { role: 'ai', text: aiText || 'Sorry, I had trouble responding.' };
         return copy;
       });
     } catch (err) {
       setChatMessages(prev => {
         const copy = [...prev];
         const last = copy[copy.length - 1];
-        if (last?.typing) copy[copy.length - 1] = { role: 'ai', text: 'Sorry, something went wrong. Please try again!' };
+        if (last?.typing || last?.streaming) copy[copy.length - 1] = { role: 'ai', text: 'Sorry, something went wrong. Please try again!' };
         return copy;
       });
     }
