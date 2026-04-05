@@ -136,6 +136,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [leftOpen, setLeftOpen] = useState(true);         // desktop left sidebar
   const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false); // mobile right drawer
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false); // mobile input-bar tools popover
   const [showSettings, setShowSettings] = useState(false);
   // colorMode: 'light' | 'dark' (navy) | 'black' (OLED true black)
   const [colorMode, setColorMode] = useState(() => {
@@ -1149,6 +1151,14 @@ export default function App() {
             >
               <PanelRight className="w-5 h-5" />
             </button>
+            {/* AI Studio button — mobile only, opens right drawer */}
+            <button
+              className="flex lg:hidden items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              onClick={() => setRightDrawerOpen(prev => !prev)}
+              title="AI Studio"
+            >
+              <PanelRight className="w-5 h-5" />
+            </button>
             <Show when="signed-in">
               <UserButton afterSignOutUrl="/" />
             </Show>
@@ -1513,7 +1523,7 @@ export default function App() {
         {/* Center Column: AI Chat Interface */}
         <section className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
-            <div className="w-full space-y-8">
+            <div className="w-full max-w-full space-y-8 overflow-x-hidden">
               {/* Welcome / Analysing state — empty chat + no history loading */}
               {!historyLoading && chatHistory.length === 0 && (
                 uploadingPdf ? (
@@ -2074,9 +2084,9 @@ export default function App() {
 
                 {/* Bottom row: language pill + web search (left, adjacent) · mic + send (right) */}
                 <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                  {/* Left group: Language pill + Web Search pill side by side */}
+                  {/* Left group: Language pill + toggles */}
                   <div className="flex items-center gap-2">
-                    {/* Language pill */}
+                    {/* Language pill — always visible */}
                     <div className="relative">
                       <button
                         type="button"
@@ -2109,35 +2119,93 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Web Search toggle pill */}
-                    <button
-                      type="button"
-                      onClick={() => setIsWebSearch(prev => !prev)}
-                      title={isWebSearch ? 'Web Search ON — click to disable' : 'Enable Web Search'}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
-                        isWebSearch
-                          ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <Globe className="w-3 h-3" />
-                      Web Search
-                    </button>
+                    {/* Desktop: Web Search + Deep Research pills always visible */}
+                    <div className="hidden md:flex items-center gap-2">
+                      {/* Web Search toggle pill */}
+                      <button
+                        type="button"
+                        onClick={() => setIsWebSearch(prev => !prev)}
+                        title={isWebSearch ? 'Web Search ON — click to disable' : 'Enable Web Search'}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
+                          isWebSearch
+                            ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Globe className="w-3 h-3" />
+                        Web Search
+                      </button>
 
-                    {/* Deep Research toggle pill — always visible, click to enable/disable */}
-                    <button
-                      type="button"
-                      onClick={() => setIsDeepResearch(prev => !prev)}
-                      title={isDeepResearch ? 'Deep Research ON — click to disable' : 'Enable Deep Research (Serper + Firecrawl + RAG)'}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
-                        isDeepResearch
-                          ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <Microscope className="w-3 h-3" />
-                      Deep Research
-                    </button>
+                      {/* Deep Research toggle pill */}
+                      <button
+                        type="button"
+                        onClick={() => setIsDeepResearch(prev => !prev)}
+                        title={isDeepResearch ? 'Deep Research ON — click to disable' : 'Enable Deep Research'}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
+                          isDeepResearch
+                            ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Microscope className="w-3 h-3" />
+                        Deep Research
+                      </button>
+                    </div>
+
+                    {/* Mobile: + button that opens a popover with Web Search + Deep Research */}
+                    <div className="relative md:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setMobileToolsOpen(prev => !prev)}
+                        className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all border ${
+                          (isWebSearch || isDeepResearch)
+                            ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="More options"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+
+                      {mobileToolsOpen && (
+                        <>
+                          {/* Backdrop */}
+                          <div className="fixed inset-0 z-40" onClick={() => setMobileToolsOpen(false)} />
+                          {/* Popover */}
+                          <div className="absolute bottom-full mb-2 left-0 z-50 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2 min-w-[180px]">
+                            <p className="text-[9px] uppercase tracking-widest font-bold text-slate-400 px-1 mb-1">Search & Research</p>
+                            {/* Web Search option */}
+                            <button
+                              type="button"
+                              onClick={() => { setIsWebSearch(prev => !prev); setMobileToolsOpen(false); }}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                                isWebSearch
+                                  ? 'bg-primary text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              <Globe className="w-3.5 h-3.5 shrink-0" />
+                              Web Search
+                              {isWebSearch && <span className="ml-auto text-[9px] font-bold opacity-80">ON</span>}
+                            </button>
+                            {/* Deep Research option */}
+                            <button
+                              type="button"
+                              onClick={() => { setIsDeepResearch(prev => !prev); setMobileToolsOpen(false); }}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                                isDeepResearch
+                                  ? 'bg-primary text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              <Microscope className="w-3.5 h-3.5 shrink-0" />
+                              Deep Research
+                              {isDeepResearch && <span className="ml-auto text-[9px] font-bold opacity-80">ON</span>}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Mic + Send */}
@@ -2179,16 +2247,42 @@ export default function App() {
         </section>
 
 
-        {/* Right Column: AI Studio Panel — hidden on mobile, collapses on toggle */}
-        <aside className={`hidden lg:flex flex-shrink-0 flex-col bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden transition-[width] duration-300 ease-in-out ${rightOpen ? 'w-80' : 'w-0'}`}>
+        {/* Mobile overlay for right drawer */}
+        {rightDrawerOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setRightDrawerOpen(false)}
+          />
+        )}
+
+        {/* Right Column: AI Studio Panel */}
+        {/* Desktop: collapsible sidebar | Mobile: slide-in drawer from right */}
+        <aside className={`
+          fixed lg:relative inset-y-0 right-0 z-50
+          flex flex-shrink-0 flex-col
+          bg-slate-50 dark:bg-slate-900
+          border-l border-slate-100 dark:border-slate-800
+          overflow-hidden transition-all duration-300 ease-in-out
+          ${rightDrawerOpen ? 'translate-x-0 w-80' : 'translate-x-full w-80'}
+          ${rightOpen ? 'lg:translate-x-0 lg:w-80' : 'lg:translate-x-0 lg:w-0'}
+        `}>
           <div className="w-80 h-full flex flex-col flex-shrink-0">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
-              <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
+                <div className="flex items-center gap-2">
+                  <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
+                  {/* Mobile close button */}
+                  <button
+                    className="lg:hidden p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    onClick={() => setRightDrawerOpen(false)}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
             </div>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
-          </div>
 
           <div className="p-6 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-4">
