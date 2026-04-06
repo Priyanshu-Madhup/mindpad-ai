@@ -43,6 +43,8 @@ import {
   MicOff,
   Globe,
   Languages,
+  Upload,
+  Link,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -156,6 +158,9 @@ export default function App() {
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
   const [openNotebookId, setOpenNotebookId] = useState(null); // which notebook's PDF drawer is open
+  const [showSourceModal, setShowSourceModal] = useState(false);
+  const [sourceModalTargetId, setSourceModalTargetId] = useState(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -437,8 +442,9 @@ export default function App() {
       uploaded = pdf;
 
       // ── Upload raw PDF to Firebase Storage ─────────────────────────────────
-      // Skip if the backend reused existing vectors — Firebase URL already saved.
-      if (pdf.reused) {
+      // Skip Firebase upload only if the backend reused vectors AND a valid URL already exists.
+      // If firebase_pdf_url is empty (dedup anchor after notebook deletion), re-upload the file.
+      if (pdf.reused && pdf.firebase_pdf_url) {
         console.log('[Firebase] Skipping upload — PDF already indexed & stored (reused vectors).');
       } else if (pdf.doc_id && user?.id) {
         // Run in background so it doesn't block the summary display
@@ -993,6 +999,126 @@ export default function App() {
           onClick={() => { setShowNotifs(false); setShowSettings(false); setShowLangMenu(false); }}
         />
       )}
+
+      {/* ── Upload Source Modal ───────────────────────────────────────────── */}
+      {showSourceModal && (
+        <>
+          <div
+            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+            onClick={() => { setShowSourceModal(false); setShowUrlInput(false); }}
+          />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-2xl pointer-events-auto overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between px-10 pt-9 pb-2">
+                <div>
+                  <h2 className="text-2xl font-black font-display tracking-tight text-slate-900 dark:text-slate-100 leading-snug">
+                    Add a source
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5">
+                    Upload a file to your notebook — Midy AI will index it for chat.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setShowSourceModal(false); setShowUrlInput(false); }}
+                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-6 shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* URL input row — only visible when Website is toggled */}
+              {showUrlInput && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="px-10 pt-4"
+                >
+                  <div className="flex items-center gap-3 rounded-2xl border-2 border-primary/40 focus-within:border-primary bg-slate-50 dark:bg-slate-800 px-4 py-3 transition-colors">
+                    <Link className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      type="url"
+                      placeholder="Paste a website URL…"
+                      className="flex-1 bg-transparent text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none"
+                      autoFocus
+                    />
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">Coming&nbsp;soon</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Drop zone */}
+              <div className="px-10 py-5">
+                <div
+                  onClick={() => {
+                    setShowSourceModal(false);
+                    setShowUrlInput(false);
+                    pdfUploadTargetRef.current = sourceModalTargetId;
+                    pdfInputRef.current?.click();
+                  }}
+                  className="group flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-primary dark:hover:border-primary bg-slate-50 dark:bg-slate-800/50 hover:bg-primary/5 dark:hover:bg-primary/10 transition-all cursor-pointer py-14"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
+                    <Upload className="w-6 h-6 text-slate-500 dark:text-slate-300 group-hover:text-primary transition-colors" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Drop your file here</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">or click to browse &mdash; PDF supported</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom action pills */}
+              <div className="flex items-center gap-3 px-10 pb-9 flex-wrap">
+                {/* Upload PDF — active */}
+                <button
+                  onClick={() => {
+                    setShowSourceModal(false);
+                    setShowUrlInput(false);
+                    pdfUploadTargetRef.current = sourceModalTargetId;
+                    pdfInputRef.current?.click();
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Upload PDF
+                </button>
+                {/* MP3 — disabled */}
+                <button
+                  disabled
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-xs font-bold cursor-not-allowed opacity-50"
+                  title="Coming soon"
+                >
+                  <Podcast className="w-3.5 h-3.5" />
+                  MP3
+                  <span className="ml-1 text-[9px] font-bold uppercase tracking-wider opacity-70">Soon</span>
+                </button>
+                {/* Website — toggles URL input */}
+                <button
+                  onClick={() => setShowUrlInput(prev => !prev)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-bold transition-all ${
+                    showUrlInput
+                      ? 'border-primary bg-primary/10 dark:bg-primary/20 text-primary'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  Website
+                  <span className="ml-1 text-[9px] font-bold uppercase tracking-wider opacity-70">Soon</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
@@ -1351,17 +1477,17 @@ export default function App() {
                                 </label>
                               ))
                             )}
-                            {/* Upload PDF button */}
+                            {/* Upload Source button */}
                             <button
                               onClick={() => {
-                                pdfUploadTargetRef.current = nb.id;
-                                pdfInputRef.current?.click();
+                                setSourceModalTargetId(nb.id);
+                                setShowSourceModal(true);
                               }}
                               disabled={uploadingPdf}
                               className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full disabled:opacity-50"
                             >
                               <Plus className="w-3 h-3" />
-                              Upload PDF
+                              Upload Source
                             </button>
                           </div>
                         )}

@@ -782,11 +782,15 @@ async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
       Firebase Storage  → always collect URLs so the frontend can delete files
                           (storage is billed per byte; always clean up)
 
-      Pinecone vectors  → delete ONLY if no other notebook for this user still
-                          references the same doc_id.  If another notebook shares
-                          the vectors (dedup reuse), they must be preserved.
+      Pinecone vectors  → NEVER deleted — permanently preserved so that an
+                          identical PDF uploaded to any future notebook can skip
+                          re-embedding entirely (zero Pinecone write-units wasted).
 
-      MongoDB pdf_docs  → always delete all rows for this notebook
+      MongoDB pdf_docs  → rows that still have other notebook references are
+                          deleted normally.  Rows that are the LAST reference for
+                          a doc_id are converted into dedup anchors
+                          (notebook_id="__dedup__") instead of being deleted, so
+                          the pdf_hash → doc_id mapping survives for future uploads.
 
     Returns list[str] of firebase_pdf_urls so the frontend can call deleteObject().
     """
@@ -799,41 +803,45 @@ async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
         return []
 
     firebase_urls: list = []
-    orphaned_vectors: list = []  # (doc_id, chunk_count) — safe to delete from Pinecone
+    anchor_ids: list = []  # _id's of rows to keep as dedup anchors
 
     for doc in notebook_pdfs:
-        doc_id    = doc["doc_id"]
-        fb_url    = doc.get("firebase_pdf_url", "")
+        doc_id = doc["doc_id"]
+        fb_url = doc.get("firebase_pdf_url", "")
         if fb_url:
             firebase_urls.append(fb_url)
 
-        # Check if any OTHER notebook for this user still needs these vectors
+        # Check if any OTHER notebook for this user still references this doc_id
         other_refs = await pdf_docs_col.count_documents({
             "user_id":     user_id,
             "doc_id":      doc_id,
-            "notebook_id": {"$ne": notebook_id},   # exclude the one being deleted
+            "notebook_id": {"$ne": notebook_id},
         })
 
         if other_refs == 0:
-            # No other notebook references this doc_id → vectors are now orphaned
-            orphaned_vectors.append((doc_id, doc.get("chunk_count", 100)))
+            # Last reference — promote this row to a dedup anchor so that
+            # future uploads of the same PDF can still reuse existing vectors.
+            # ♻️  Pinecone vectors are NEVER deleted.
+            anchor_ids.append(doc["_id"])
 
-    # 2. Delete orphaned Pinecone vectors
-    if orphaned_vectors:
-        try:
-            index = await asyncio.to_thread(get_index)
-            for doc_id, chunk_count in orphaned_vectors:
-                vector_ids = [f"{doc_id}::chunk_{i}" for i in range(chunk_count)]
-                await asyncio.to_thread(index.delete, ids=vector_ids, namespace=user_id)
-                print(f"[RAG cleanup] Deleted {chunk_count} orphaned vectors for doc_id={doc_id}")
-        except Exception as exc:
-            print(f"[RAG cleanup] Pinecone error (non-fatal): {exc}")
+    # 2. Convert last-reference rows into dedup anchors.
+    #    Clear firebase_pdf_url because the Firebase file is about to be removed.
+    if anchor_ids:
+        await pdf_docs_col.update_many(
+            {"_id": {"$in": anchor_ids}},
+            {"$set": {
+                "notebook_id":      "__dedup__",  # sentinel — won't match any real notebook query
+                "firebase_pdf_url": "",           # Firebase file being deleted; URL no longer valid
+                "dedup_anchor":     True,
+            }},
+        )
+        print(
+            f"[RAG cleanup] Converted {len(anchor_ids)} doc(s) to dedup anchors "
+            f"(Pinecone vectors permanently preserved)"
+        )
 
-    kept = len(notebook_pdfs) - len(orphaned_vectors)
-    if kept:
-        print(f"[RAG cleanup] Kept {kept} shared doc_id(s) in Pinecone (still used by other notebooks)")
-
-    # 3. Remove all pdf_docs rows for this notebook
+    # 3. Delete all remaining rows for this notebook (anchor rows were already
+    #    re-parented to '__dedup__' so they won't be matched here).
     result = await pdf_docs_col.delete_many({"notebook_id": notebook_id, "user_id": user_id})
     print(f"[RAG cleanup] Deleted {result.deleted_count} pdf_docs rows for notebook {notebook_id}")
 
