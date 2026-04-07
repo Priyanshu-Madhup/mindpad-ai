@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 from groq import AsyncGroq, Groq
+from elevenlabs.client import ElevenLabs
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from jose import jwt as jose_jwt, JWTError
@@ -442,7 +443,6 @@ class NotebookUpdate(BaseModel):
 
 class SpeechRequest(BaseModel):
     text: str
-    voice: str = "autumn"
 
 class SaveImageRequest(BaseModel):
     messages: List[dict]
@@ -504,39 +504,35 @@ async def reset_welcome(authorization: Optional[str] = Header(None)):
 # ── Text-to-Speech ─────────────────────────────────────────────────────────────
 @app.post("/tts")
 async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Header(None)):
-    """Convert text to speech using Groq Orpheus TTS model. Returns base64 WAV data URL."""
-    # Auth check
+    """Convert text to speech using ElevenLabs. Returns base64 MP3 data URL."""
     await get_current_user(authorization)  # auth check only
 
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    # Strip HTML tags for TTS — the AI returns HTML-formatted content
+    # Strip HTML tags — the AI returns HTML-formatted content
     import re
     clean_text = re.sub(r"<[^>]+>", " ", text)
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
-    # Truncate to ~4000 chars to keep TTS fast
-    if len(clean_text) > 4000:
-        clean_text = clean_text[:4000] + "..."
+    # Truncate to ~5000 chars to keep TTS fast
+    if len(clean_text) > 5000:
+        clean_text = clean_text[:5000] + "..."
 
     try:
-        # Use the synchronous Groq client in a thread to avoid blocking the event loop
         def _synthesize():
-            sync_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-            response = sync_client.audio.speech.create(
-                model="canopylabs/orpheus-v1-english",
-                voice=body.voice,
-                response_format="wav",
-                input=clean_text,
+            client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
+            audio_generator = client.text_to_speech.convert(
+                text=clean_text,
+                voice_id="JBFqnCBsd6RMkjVDRZzb",  # George
+                model_id="eleven_v3",
+                output_format="mp3_44100_128",
             )
-            # Collect all bytes from the stream
-            audio_bytes = b"".join(response.iter_bytes())
-            return audio_bytes
+            return b"".join(audio_generator)
 
         audio_bytes = await asyncio.to_thread(_synthesize)
         audio_b64 = b64_lib.b64encode(audio_bytes).decode("utf-8")
-        data_url = f"data:audio/wav;base64,{audio_b64}"
+        data_url = f"data:audio/mpeg;base64,{audio_b64}"
         return JSONResponse({"audio": data_url})
     except Exception as e:
         print(f"[TTS error] {e}")

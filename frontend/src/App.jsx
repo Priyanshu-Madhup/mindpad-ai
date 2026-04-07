@@ -931,7 +931,7 @@ export default function App() {
       const resp = await fetch(`${BACKEND_URL}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ text: content, voice: 'autumn' }),
+        body: JSON.stringify({ text: content }),
       });
       if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
       const data = await resp.json();
@@ -2225,7 +2225,7 @@ export default function App() {
                       </button>
 
                       {showLangMenu && (
-                        <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50 min-w-[160px]">
+                        <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-[60] min-w-[160px]">
                           {LANGUAGES.map(lang => (
                             <button
                               key={lang.code}
