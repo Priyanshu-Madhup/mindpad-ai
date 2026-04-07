@@ -157,6 +157,7 @@ export default function App() {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
+  const [openSourceKey, setOpenSourceKey] = useState(null);   // "msgIdx-srcIdx" for source popover on touch
   const [openNotebookId, setOpenNotebookId] = useState(null); // which notebook's PDF drawer is open
   const [showSourceModal, setShowSourceModal] = useState(false);
   const [sourceModalTargetId, setSourceModalTargetId] = useState(null);
@@ -1759,7 +1760,7 @@ export default function App() {
                       </div>
                       {/* User action buttons — icon only, right-aligned */}
                       {msg.content && msg.content !== '(image attached)' && (
-                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
+                        <div className="flex items-center gap-1 justify-end sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
                           <button
                             onClick={() => copyMessage(msg.content, idx)}
                             title="Copy"
@@ -1811,7 +1812,7 @@ export default function App() {
                               onError={(e) => { e.target.style.opacity = '0.4'; }}
                             />
                             {/* Hover action buttons */}
-                            <div className="absolute bottom-3 right-3 flex gap-1.5 opacity-0 group-hover/img:opacity-100 transition-opacity duration-200">
+                            <div className="absolute bottom-3 right-3 flex gap-1.5 sm:opacity-0 sm:group-hover/img:opacity-100 transition-opacity duration-200">
                               {/* Copy image to clipboard */}
                               <button
                                 title="Copy image"
@@ -1884,17 +1885,21 @@ export default function App() {
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="flex items-center gap-1.5 pt-1 flex-wrap">
                           <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-600 mr-0.5">Sources</span>
-                          {msg.sources.map((src, si) => (
-                            <div key={si} className="relative group/dot">
+                          {msg.sources.map((src, si) => {
+                            const srcKey = `${idx}-${si}`;
+                            const isOpen = openSourceKey === srcKey;
+                            return (
+                            <div key={si} className="relative">
                               <button
                                 type="button"
+                                onClick={() => setOpenSourceKey(isOpen ? null : srcKey)}
                                 className="w-6 h-4 flex items-center justify-center rounded text-[11px] font-bold text-slate-400 dark:text-slate-500 hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-all tracking-widest leading-none"
                                 title={`${src.pdf_name} — chunk ${src.chunk_index + 1}`}
                               >
                                 ···
                               </button>
-                              {/* Hover popover — pb-2 fills the gap so cursor stays inside group/dot */}
-                              <div className="absolute bottom-full left-0 pb-2 hidden group-hover/dot:block w-80 z-50">
+                              {/* Click/hover popover */}
+                              <div className={`absolute bottom-full left-0 pb-2 w-72 sm:w-80 z-50 ${isOpen ? 'block' : 'hidden'}`}>
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
                                   <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                                     <span className="text-[10px] font-bold text-primary truncate flex-1">{src.pdf_name}</span>
@@ -1906,12 +1911,13 @@ export default function App() {
                                 </div>
                               </div>
                             </div>
-                          ))}
+                          );
+                          })}
                         </div>
                       )}
                       {/* Assistant action buttons — icon only, transparent */}
                       {msg.type !== 'image' && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
+                        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 pt-0.5">
                           <button
                             onClick={() => copyMessage(msg.content, idx)}
                             title="Copy"
