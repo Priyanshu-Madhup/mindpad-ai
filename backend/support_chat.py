@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from groq import AsyncGroq
 
 router = APIRouter()
@@ -23,7 +23,6 @@ _FEATURES_DOC  = _FEATURES_PATH.read_text(encoding="utf-8") if _FEATURES_PATH.ex
 
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-# ── System prompt — grounded in the feature doc ───────────────────────────────
 SUPPORT_SYSTEM_PROMPT = f"""You are the official Mindpad AI support assistant embedded on the Mindpad AI landing page.
 You are friendly, concise, and helpful.
 
@@ -37,6 +36,17 @@ RESPOND IN PLAIN TEXT (no markdown, no HTML). Keep answers short and conversatio
 {_FEATURES_DOC}
 === END REFERENCE ==="""
 
+# ── Lazy singleton client — created once on first request ─────────────────────
+_client: Optional[AsyncGroq] = None
+
+def _get_client() -> Optional[AsyncGroq]:
+    global _client
+    if _client is None:
+        key = os.getenv("GROQ_API_KEY", "")
+        if key:
+            _client = AsyncGroq(api_key=key)
+    return _client
+
 
 class SupportMessage(BaseModel):
     role: str    # "user" or "assistant"
@@ -48,23 +58,15 @@ class SupportRequest(BaseModel):
 
 @router.post("/support-chat")
 async def support_chat(body: SupportRequest):
-    """
-    Streams a response from Groq grounded in features.txt.
-    The frontend landing page chat widget calls this endpoint.
-    """
-    groq_api_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_api_key:
+    client = _get_client()
+    if not client:
         async def _no_key():
             yield "data: " + json.dumps({"choices": [{"delta": {"content": "Support chat is not configured yet."}}]}) + "\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(_no_key(), media_type="text/event-stream")
 
-    client = AsyncGroq(api_key=groq_api_key)
-
-    # Build messages array (system prompt + conversation history)
     messages = [{"role": "system", "content": SUPPORT_SYSTEM_PROMPT}]
-    for msg in body.messages[-10:]:   # keep last 10 turns to stay within context
-        messages.append({"role": msg.role, "content": msg.content})
+    messages += [{"role": m.role, "content": m.content} for m in body.messages[-10:]]
 
     async def stream_groq():
         stream = await client.chat.completions.create(
