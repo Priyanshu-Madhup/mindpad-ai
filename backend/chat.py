@@ -4,6 +4,8 @@ import base64 as b64_lib
 import uuid
 import smtplib
 import threading
+import wave
+import io
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -15,7 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 from groq import AsyncGroq, Groq
-from elevenlabs.client import ElevenLabs
+from google import genai as google_genai
+from google.genai import types as google_genai_types
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from jose import jwt as jose_jwt, JWTError
@@ -504,7 +507,7 @@ async def reset_welcome(authorization: Optional[str] = Header(None)):
 # ── Text-to-Speech ─────────────────────────────────────────────────────────────
 @app.post("/tts")
 async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Header(None)):
-    """Convert text to speech using ElevenLabs. Returns base64 MP3 data URL."""
+    """Convert text to speech using Google Gemini TTS. Returns base64 WAV data URL."""
     await get_current_user(authorization)  # auth check only
 
     text = body.text.strip()
@@ -521,18 +524,34 @@ async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Hea
 
     try:
         def _synthesize():
-            client = ElevenLabs(api_key=os.environ.get("ELEVENLABS_API_KEY"))
-            audio_generator = client.text_to_speech.convert(
-                text=clean_text,
-                voice_id="JBFqnCBsd6RMkjVDRZzb",  # George
-                model_id="eleven_v3",
-                output_format="mp3_44100_128",
+            client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-tts",
+                contents=clean_text,
+                config=google_genai_types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=google_genai_types.SpeechConfig(
+                        voice_config=google_genai_types.VoiceConfig(
+                            prebuilt_voice_config=google_genai_types.PrebuiltVoiceConfig(
+                                voice_name="Kore",
+                            )
+                        )
+                    ),
+                ),
             )
-            return b"".join(audio_generator)
+            pcm_data = response.candidates[0].content.parts[0].inline_data.data
+            # Wrap raw PCM (16-bit, mono, 24 kHz) in a WAV container
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(pcm_data)
+            return buf.getvalue()
 
         audio_bytes = await asyncio.to_thread(_synthesize)
         audio_b64 = b64_lib.b64encode(audio_bytes).decode("utf-8")
-        data_url = f"data:audio/mpeg;base64,{audio_b64}"
+        data_url = f"data:audio/wav;base64,{audio_b64}"
         return JSONResponse({"audio": data_url})
     except Exception as e:
         print(f"[TTS error] {e}")
