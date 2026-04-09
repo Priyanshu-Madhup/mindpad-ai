@@ -1059,9 +1059,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             import json as _json
             yield f"\n__SOURCES_JSON__:{_json.dumps(rag_sources)}"
 
-        # Save only the clean text response (no sources marker) to MongoDB
+        # Save the clean text response to MongoDB; include sources so they
+        # survive page refresh and are restored by loadHistory on the frontend.
         save_messages = [{"role": m.role, "content": m.content} for m in messages]
-        save_messages.append({"role": "assistant", "content": full_response})
+        assistant_msg = {"role": "assistant", "content": full_response}
+        if rag_sources:
+            assistant_msg["sources"] = rag_sources
+        save_messages.append(assistant_msg)
         await save_to_db(save_messages)
 
     headers_out = {}

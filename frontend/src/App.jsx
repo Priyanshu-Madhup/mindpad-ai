@@ -254,6 +254,18 @@ export default function App() {
     localStorage.setItem('mindpad_deep_research', isDeepResearch);
   }, [isDeepResearch]);
 
+  // Close source popover when tapping outside (mobile)
+  useEffect(() => {
+    if (!openSourceKey) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-source-popover]')) {
+        setOpenSourceKey(null);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [openSourceKey]);
+
   // Fetch notifications when signed in
   useEffect(() => {
     if (isSignedIn) fetchNotifications();
@@ -1889,7 +1901,13 @@ export default function App() {
                             const srcKey = `${idx}-${si}`;
                             const isOpen = openSourceKey === srcKey;
                             return (
-                            <div key={si} className="relative">
+                            <div
+                              key={si}
+                              className="relative"
+                              data-source-popover
+                              onMouseEnter={() => setOpenSourceKey(srcKey)}
+                              onMouseLeave={() => setOpenSourceKey(null)}
+                            >
                               <button
                                 type="button"
                                 onClick={() => setOpenSourceKey(isOpen ? null : srcKey)}
@@ -1898,7 +1916,7 @@ export default function App() {
                               >
                                 ···
                               </button>
-                              {/* Click/hover popover */}
+                              {/* Hover (desktop) / click (mobile) popover */}
                               <div className={`absolute bottom-full left-0 pb-2 w-72 sm:w-80 z-50 ${isOpen ? 'block' : 'hidden'}`}>
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
                                   <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">

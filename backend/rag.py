@@ -45,6 +45,7 @@ _pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "mindpad-ai")
 EMBEDDING_MODEL = "multilingual-e5-large"   # 1024-dim, Pinecone-native
 EMBED_DIM = 1024
+EMBED_BATCH_SIZE = 90   # stay safely under multilingual-e5-large's 96-input limit
 
 _mongo = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 _db = _mongo["mindpad_ai"]
@@ -327,41 +328,19 @@ async def retrieve_rag_context(
         q_vec = await embed_texts([query], "query")
         index = await asyncio.to_thread(get_index)
 
-        all_matches = []
-
-        if len(doc_ids) == 1:
-            # Fast path: single doc — one query, top_k results
-            results = await asyncio.to_thread(
-                index.query,
-                vector=q_vec[0],
-                top_k=top_k,
-                namespace=user_id,
-                include_metadata=True,
-                filter={"doc_id": {"$in": doc_ids}},
-            )
-            all_matches = results.matches or []
-        else:
-            # Multi-doc path: query each doc_id independently (1 chunk guaranteed per doc)
-            # then merge and keep best top_k overall.
-            seen_ids = set()
-            for doc_id in doc_ids:
-                res = await asyncio.to_thread(
-                    index.query,
-                    vector=q_vec[0],
-                    top_k=1,          # 1 best chunk per doc
-                    namespace=user_id,
-                    include_metadata=True,
-                    filter={"doc_id": {"$eq": doc_id}},
-                )
-                for m in (res.matches or []):
-                    if m.id not in seen_ids:
-                        seen_ids.add(m.id)
-                        all_matches.append(m)
-
-            # Sort merged results by score descending, keep top_k
-            all_matches.sort(key=lambda m: m.score or 0.0, reverse=True)
-            all_matches = all_matches[:top_k]
-            print(f"[RAG] Multi-doc query: {len(doc_ids)} docs → {len(all_matches)} chunks merged")
+        # Unified query across all selected PDFs — cosine similarity decides
+        # relevance.  All PDFs in a notebook share the same user namespace so a
+        # single $in filter is all that's needed; no per-doc round-trips.
+        results = await asyncio.to_thread(
+            index.query,
+            vector=q_vec[0],
+            top_k=top_k,
+            namespace=user_id,
+            include_metadata=True,
+            filter={"doc_id": {"$in": doc_ids}},
+        )
+        all_matches = results.matches or []
+        print(f"[RAG] Unified query across {len(doc_ids)} doc(s) → {len(all_matches)} chunk(s) returned")
 
         if not all_matches:
             return "", []
@@ -528,9 +507,18 @@ async def upload_pdf(
     actual_chunks = len(chunks)
     print(f"[RAG] {actual_chunks} chunks @ ≤{tokens_per_chunk} tokens each")
 
-    # ── 5. Embed chunks ────────────────────────────────────────────────────────
+    # ── 5. Embed chunks (batched — multilingual-e5-large limit: 96 inputs/call) ──
+    # A 1-second pause between batches avoids Pinecone inference 429s on large PDFs.
     try:
-        embeddings = await embed_texts(chunks, "passage")
+        embeddings: List[List[float]] = []
+        for batch_idx, batch_start in enumerate(range(0, actual_chunks, EMBED_BATCH_SIZE)):
+            if batch_idx > 0:
+                await asyncio.sleep(1)   # rate-limit guard between batches
+            batch = chunks[batch_start : batch_start + EMBED_BATCH_SIZE]
+            batch_embeddings = await embed_texts(batch, "passage")
+            embeddings.extend(batch_embeddings)
+            print(f"[RAG] Embedded chunks {batch_start}–{batch_start + len(batch) - 1} "
+                  f"({len(batch_embeddings)} vectors)")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Embedding failed: {exc}")
 
