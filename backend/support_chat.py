@@ -1,9 +1,6 @@
 """
-support_chat.py
-───────────────
-Landing-page support chatbot powered by Groq.
-Model: llama-3.1-8b-instant (streaming)
-Grounded in features.txt — answers questions about Mindpad AI only.
+support_chat.py — Mindpad AI landing-page support chatbot (Groq, streaming).
+Answers questions about Mindpad AI based on features.txt only.
 """
 
 import os
@@ -12,44 +9,30 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from groq import AsyncGroq
 
 router = APIRouter()
 
-# ── Load feature reference doc once at startup ────────────────────────────────
-_FEATURES_PATH = Path(__file__).parent / "features.txt"
-_FEATURES_DOC  = _FEATURES_PATH.read_text(encoding="utf-8") if _FEATURES_PATH.exists() else ""
+# Load feature reference once at startup
+_FEATURES_DOC = (Path(__file__).parent / "features.txt").read_text(encoding="utf-8")
 
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-SUPPORT_SYSTEM_PROMPT = f"""You are the official Mindpad AI support assistant embedded on the Mindpad AI landing page.
-You are friendly, concise, and helpful.
+SYSTEM_PROMPT = f"""You are a support assistant for Mindpad AI. Answer questions about Mindpad AI only, using the reference below.
+Be brief and conversational. Plain text only — no markdown or HTML.
+If the question is unrelated to Mindpad AI, politely say so. If you don't know, say so.
 
-Your ONLY job is to answer questions about Mindpad AI based on the feature reference below.
-If a question is unrelated to Mindpad AI, politely redirect the user.
-If you don't know something, say so honestly — do not make things up.
+MINDPAD AI REFERENCE:
+{_FEATURES_DOC}"""
 
-RESPOND IN PLAIN TEXT (no markdown, no HTML). Keep answers short and conversational.
-
-=== MINDPAD AI FEATURE REFERENCE ===
-{_FEATURES_DOC}
-=== END REFERENCE ==="""
-
-# ── Lazy singleton client — created once on first request ─────────────────────
-_client: Optional[AsyncGroq] = None
-
-def _get_client() -> Optional[AsyncGroq]:
-    global _client
-    if _client is None:
-        key = os.getenv("GROQ_API_KEY", "")
-        if key:
-            _client = AsyncGroq(api_key=key)
-    return _client
+# Initialize client eagerly at import time to avoid first-request delay
+_GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+_client = AsyncGroq(api_key=_GROQ_KEY) if _GROQ_KEY else None
 
 
 class SupportMessage(BaseModel):
-    role: str    # "user" or "assistant"
+    role: str
     content: str
 
 class SupportRequest(BaseModel):
@@ -58,21 +41,21 @@ class SupportRequest(BaseModel):
 
 @router.post("/support-chat")
 async def support_chat(body: SupportRequest):
-    client = _get_client()
-    if not client:
+    if not _client:
         async def _no_key():
-            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Support chat is not configured yet."}}]}) + "\n\n"
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Support chat is unavailable."}}]}) + "\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(_no_key(), media_type="text/event-stream")
 
-    messages = [{"role": "system", "content": SUPPORT_SYSTEM_PROMPT}]
-    messages += [{"role": m.role, "content": m.content} for m in body.messages[-10:]]
+    # Keep last 6 messages for context; always include system prompt
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages += [{"role": m.role, "content": m.content} for m in body.messages[-6:]]
 
     async def stream_groq():
-        stream = await client.chat.completions.create(
+        stream = await _client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
-            max_tokens=512,
+            max_tokens=400,
             temperature=0.3,
             stream=True,
         )

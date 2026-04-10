@@ -834,3 +834,26 @@ async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
     print(f"[RAG cleanup] Deleted {result.deleted_count} pdf_docs rows for notebook {notebook_id}")
 
     return firebase_urls
+
+
+async def cleanup_user_all_data(user_id: str) -> None:
+    """
+    Called when a Clerk user is permanently deleted.
+    Wipes ALL data for the user:
+      • All pdf_docs rows (including dedup anchors)
+      • Entire Pinecone namespace (all vectors)
+    Notebooks and users_meta are deleted directly in chat.py before this is called.
+    """
+    # Delete all pdf_docs rows for this user (including dedup anchors)
+    result = await pdf_docs_col.delete_many({"user_id": user_id})
+    print(f"[RAG] Deleted {result.deleted_count} pdf_docs rows for user {user_id[:12]}…")
+
+    # Delete entire Pinecone namespace for this user
+    try:
+        index = get_index()
+        await asyncio.to_thread(index.delete, delete_all=True, namespace=user_id)
+        print(f"[RAG] Deleted Pinecone namespace for user {user_id[:12]}…")
+    except Exception as e:
+        print(f"[RAG] Pinecone namespace delete failed for user {user_id[:12]}…: {e}")
+
+    return firebase_urls

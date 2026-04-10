@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
@@ -28,7 +28,7 @@ import httpx
 load_dotenv()
 
 # RAG module — import after load_dotenv so env vars are available
-from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdfs
+from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdfs, cleanup_user_all_data
 
 # Deep Research module — Serper + Firecrawl + Pinecone RAG pipeline
 from deep_research import router as deep_research_router, run_deep_research
@@ -77,6 +77,7 @@ notifications_col = db["notifications"] # global broadcast notifications from ad
 users_meta_col = db["users_meta"]      # tracks per-user metadata (welcome email sent, etc.)
 
 CLERK_FRONTEND_API = os.environ.get("CLERK_FRONTEND_API", "").rstrip("/")
+CLERK_WEBHOOK_SECRET = os.environ.get("CLERK_WEBHOOK_SECRET", "")
 MAIL_USER = os.environ.get("MAIL_USER", "")
 MAIL_PASS = os.environ.get("MAIL_PASS", "")
 
@@ -471,6 +472,48 @@ def fmt_notebook(doc: dict) -> dict:
 async def health():
     """Health check — used by deployment platforms to verify the service is running."""
     return {"status": "ok", "service": "mindpad-ai-backend"}
+
+
+@app.post("/webhooks/clerk")
+async def clerk_webhook(request: Request):
+    """
+    Receives Clerk webhook events signed with Svix.
+    On user.deleted: purges all notebooks, pdf_docs, users_meta, and Pinecone vectors.
+    """
+    from svix.webhooks import Webhook, WebhookVerificationError
+
+    if not CLERK_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+    payload = await request.body()
+    svix_headers = {
+        "svix-id":        request.headers.get("svix-id", ""),
+        "svix-timestamp": request.headers.get("svix-timestamp", ""),
+        "svix-signature": request.headers.get("svix-signature", ""),
+    }
+
+    try:
+        wh = Webhook(CLERK_WEBHOOK_SECRET)
+        event = wh.verify(payload, svix_headers)
+    except WebhookVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    event_type = event.get("type")
+    if event_type == "user.deleted":
+        user_id = event.get("data", {}).get("id")
+        if user_id:
+            # Delete notebooks (chat history is embedded inside each notebook doc)
+            nb_result = await notebooks_col.delete_many({"user_id": user_id})
+            # Delete users_meta (welcome email flag, etc.)
+            await users_meta_col.delete_many({"user_id": user_id})
+            # Delete pdf_docs + Pinecone namespace
+            await cleanup_user_all_data(user_id)
+            print(
+                f"[Webhook] user.deleted — purged {nb_result.deleted_count} notebook(s) "
+                f"for user {user_id[:12]}…"
+            )
+
+    return {"status": "ok"}
 
 
 @app.post("/test-email")

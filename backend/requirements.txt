@@ -18,3 +18,4 @@ pypdf2>=3.0.1
 tiktoken>=0.7.0
 firecrawl-py>=1.0.0
 google-genai>=1.0.0
+svix>=1.0.0
