@@ -803,43 +803,46 @@ export default function App() {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        const SOURCES_MARKER = '\n__SOURCES_JSON__:';
+        let rawAccumulated = ''; // full raw stream including sources marker
 
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
+          rawAccumulated += chunk;
           setChatHistory(prev => {
             const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            const combined = lastMsg.content + chunk;
+            // Strip the sources marker (and everything after) the moment it
+            // arrives so it never renders in the bubble even for a frame.
+            const markerIdx = combined.indexOf(SOURCES_MARKER);
             updated[updated.length - 1] = {
               role: 'assistant',
-              content: updated[updated.length - 1].content + chunk,
+              content: markerIdx !== -1 ? combined.slice(0, markerIdx) : combined,
             };
             return updated;
           });
         }
 
-        // ── Parse RAG sources marker emitted at end of stream ──────────────────
-        // The backend appends "\n__SOURCES_JSON__:[...]" after all LLM content.
-        // Strip it from the displayed text and store it as msg.sources.
-        const SOURCES_MARKER = '\n__SOURCES_JSON__:';
-        setChatHistory(prev => {
-          const updated = [...prev];
-          const lastMsg = updated[updated.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant') {
-            const markerIdx = lastMsg.content.lastIndexOf(SOURCES_MARKER);
-            if (markerIdx !== -1) {
-              try {
-                const sources = JSON.parse(lastMsg.content.slice(markerIdx + SOURCES_MARKER.length));
-                updated[updated.length - 1] = {
-                  ...lastMsg,
-                  content: lastMsg.content.slice(0, markerIdx),
-                  sources,
-                };
-              } catch {/* JSON parse failed — leave message as-is */}
-            }
-          }
-          return updated;
-        });
+        // ── Parse RAG sources from the raw accumulated response ────────────────
+        // The displayed content already has the marker stripped; parse it from
+        // rawAccumulated so sources are never lost even if they span chunk boundaries.
+        const markerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
+        if (markerIdx !== -1) {
+          try {
+            const sources = JSON.parse(rawAccumulated.slice(markerIdx + SOURCES_MARKER.length));
+            setChatHistory(prev => {
+              const updated = [...prev];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                updated[updated.length - 1] = { ...lastMsg, sources };
+              }
+              return updated;
+            });
+          } catch {/* malformed JSON — skip sources */}
+        }
       }
     } catch (err) {
       setChatHistory(prev => [
