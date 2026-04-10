@@ -1179,7 +1179,12 @@ export default function App() {
             {/* Bell / Notifications */}
             <div className="relative">
               <button
-                onClick={() => setShowNotifs(prev => !prev)}
+                onClick={() => {
+                  setShowNotifs(prev => {
+                    if (!prev) { setRightOpen(false); setRightDrawerOpen(false); }
+                    return !prev;
+                  });
+                }}
                 className="relative p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
               >
                 <Bell className="w-5 h-5" />
@@ -1285,7 +1290,7 @@ export default function App() {
             {/* Right sidebar toggle — desktop only */}
             <button
               className="hidden lg:flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-              onClick={() => setRightOpen(prev => !prev)}
+              onClick={() => { setRightOpen(prev => { if (!prev) setShowNotifs(false); return !prev; }); }}
               title={rightOpen ? 'Hide studio' : 'Show studio'}
             >
               <PanelRight className="w-5 h-5" />
@@ -1293,7 +1298,7 @@ export default function App() {
             {/* AI Studio button — mobile only, opens right drawer */}
             <button
               className="flex lg:hidden items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-              onClick={() => setRightDrawerOpen(prev => !prev)}
+              onClick={() => { setRightDrawerOpen(prev => { if (!prev) setShowNotifs(false); return !prev; }); }}
               title="AI Studio"
             >
               <PanelRight className="w-5 h-5" />
