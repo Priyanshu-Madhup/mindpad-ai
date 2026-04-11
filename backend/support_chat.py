@@ -1,13 +1,12 @@
 """
-support_chat.py — Mindpad AI landing-page support chatbot (Groq, streaming).
+support_chat.py — Mindpad AI landing-page support chatbot (Groq, non-streaming).
 Answers questions about Mindpad AI based on features.txt only.
 """
 
 import os
-import json
 from pathlib import Path
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
 from groq import AsyncGroq
@@ -26,7 +25,7 @@ If the question is unrelated to Mindpad AI, politely say so. If you don't know, 
 MINDPAD AI REFERENCE:
 {_FEATURES_DOC}"""
 
-# Initialize client eagerly at import time to avoid first-request delay
+# Initialize client eagerly at import time
 _GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 _client = AsyncGroq(api_key=_GROQ_KEY) if _GROQ_KEY else None
 
@@ -39,30 +38,40 @@ class SupportRequest(BaseModel):
     messages: List[SupportMessage]
 
 
+async def warm_up() -> None:
+    """Make a minimal Groq API call at startup to open the TCP/TLS connection."""
+    if not _client:
+        return
+    try:
+        await _client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+            temperature=0,
+        )
+        print("[Support chat] Groq connection warmed up.")
+    except Exception as e:
+        print(f"[Support chat] Warm-up failed (non-fatal): {e}")
+
+
 @router.post("/support-chat")
 async def support_chat(body: SupportRequest):
     if not _client:
-        async def _no_key():
-            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Support chat is unavailable."}}]}) + "\n\n"
-            yield "data: [DONE]\n\n"
-        return StreamingResponse(_no_key(), media_type="text/event-stream")
+        return JSONResponse({"reply": "Support chat is unavailable."})
 
-    # Keep last 6 messages for context; always include system prompt
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages += [{"role": m.role, "content": m.content} for m in body.messages[-6:]]
 
-    async def stream_groq():
-        stream = await _client.chat.completions.create(
+    try:
+        response = await _client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
             max_tokens=400,
             temperature=0.3,
-            stream=True,
         )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                yield "data: " + json.dumps({"choices": [{"delta": {"content": delta}}]}) + "\n\n"
-        yield "data: [DONE]\n\n"
+        reply = response.choices[0].message.content or ""
+        return JSONResponse({"reply": reply})
+    except Exception as e:
+        print(f"[Support chat] Groq error: {e}")
+        return JSONResponse({"reply": "Sorry, I'm having trouble connecting right now. Please try again shortly."}, status_code=200)
 
-    return StreamingResponse(stream_groq(), media_type="text/event-stream")

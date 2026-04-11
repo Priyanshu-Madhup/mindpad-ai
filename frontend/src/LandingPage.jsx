@@ -43,6 +43,28 @@ const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
 
 const SUGGESTIONS = ['What can Mindpad do?', 'How does Mind Map work?', 'Is it free?'];
 
+function mdToHtml(text) {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const lines = escaped.split('\n');
+  let html = '';
+  let inList = false;
+  for (const line of lines) {
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inList) { html += '<ul style="list-style:disc;padding-left:1.25em;margin:4px 0">'; inList = true; }
+      html += `<li>${line.replace(/^\s*[-*]\s+/, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')}</li>`;
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      const formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html += line.trim() === '' ? '<br>' : `<span>${formatted}</span><br>`;
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
 export default function LandingPage({ onGetStarted, onLogin }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -65,7 +87,7 @@ export default function LandingPage({ onGetStarted, onLogin }) {
     setIsStreaming(true);
 
     const history = [...chatMessages, { role: 'user', text }];
-    setChatMessages([...history, { role: 'ai', text: '' }]);
+    setChatMessages([...history, { role: 'ai', text: '...' }]);
 
     try {
       const res = await fetch(`${BACKEND}/support-chat`, {
@@ -80,25 +102,10 @@ export default function LandingPage({ onGetStarted, onLogin }) {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let aiText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6).trim();
-          if (raw === '[DONE]') break;
-          try {
-            aiText += JSON.parse(raw).choices?.[0]?.delta?.content || '';
-            setChatMessages(prev => [...prev.slice(0, -1), { role: 'ai', text: aiText }]);
-          } catch { /* partial JSON */ }
-        }
-      }
-      if (!aiText) throw new Error('empty response');
+      const data = await res.json();
+      const reply = data.reply || '';
+      if (!reply) throw new Error('empty response');
+      setChatMessages([...history, { role: 'ai', text: reply }]);
     } catch {
       setChatMessages(prev => [
         ...prev.slice(0, -1),
@@ -433,12 +440,14 @@ export default function LandingPage({ onGetStarted, onLogin }) {
                       ? 'bg-primary text-white rounded-br-sm'
                       : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'
                   }`}>
-                    {msg.text === '' ? (
+                    {msg.text === '...' ? (
                       <span className="flex gap-1 items-center h-4">
                         <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0ms]" />
                         <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:150ms]" />
                         <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:300ms]" />
                       </span>
+                    ) : msg.role === 'ai' ? (
+                      <span dangerouslySetInnerHTML={{ __html: mdToHtml(msg.text) }} />
                     ) : msg.text}
                   </div>
                 </div>
