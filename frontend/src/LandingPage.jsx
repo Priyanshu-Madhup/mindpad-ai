@@ -43,26 +43,43 @@ const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
 
 const SUGGESTIONS = ['What can Mindpad do?', 'How does Mind Map work?', 'Is it free?'];
 
-function mdToHtml(text) {
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const lines = escaped.split('\n');
-  let html = '';
-  let inList = false;
+function mdToHtml(raw) {
+  if (!raw) return '';
+  // 1. Escape HTML entities in the raw text
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // 2. Apply inline formatting (bold, italic) to an already-escaped string
+  const inline = (s) =>
+    s
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+
+  const lines = raw.split('\n');
+  const parts = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (listItems.length) {
+      parts.push(`<ul style="list-style:disc;padding-left:1.2em;margin:6px 0">${listItems.join('')}</ul>`);
+      listItems = [];
+    }
+  };
+
   for (const line of lines) {
-    if (/^\s*[-*]\s+/.test(line)) {
-      if (!inList) { html += '<ul style="list-style:disc;padding-left:1.25em;margin:4px 0">'; inList = true; }
-      html += `<li>${line.replace(/^\s*[-*]\s+/, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')}</li>`;
+    const listMatch = line.match(/^\s*[-*]\s+(.*)$/);
+    if (listMatch) {
+      listItems.push(`<li>${inline(esc(listMatch[1]))}</li>`);
     } else {
-      if (inList) { html += '</ul>'; inList = false; }
-      const formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
-      html += line.trim() === '' ? '<br>' : `<span>${formatted}</span><br>`;
+      flushList();
+      const trimmed = line.trim();
+      if (trimmed === '') {
+        parts.push('<br>');
+      } else {
+        parts.push(`<p style="margin:2px 0">${inline(esc(trimmed))}</p>`);
+      }
     }
   }
-  if (inList) html += '</ul>';
-  return html;
+  flushList();
+  return parts.join('');
 }
 
 export default function LandingPage({ onGetStarted, onLogin }) {
@@ -447,7 +464,7 @@ export default function LandingPage({ onGetStarted, onLogin }) {
                         <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:300ms]" />
                       </span>
                     ) : msg.role === 'ai' ? (
-                      <span dangerouslySetInnerHTML={{ __html: mdToHtml(msg.text) }} />
+                      <div dangerouslySetInnerHTML={{ __html: mdToHtml(msg.text) }} />
                     ) : msg.text}
                   </div>
                 </div>
