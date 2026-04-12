@@ -46,7 +46,7 @@ import {
   Upload,
   Link,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Show,
   UserButton,
@@ -334,6 +334,7 @@ export default function App() {
   };
 
   const chatEndRef = React.useRef(null);
+  const chatScrollRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
 
   const [attachedImage, setAttachedImage] = useState(null); // { dataUrl, base64, mimeType, name }
@@ -666,9 +667,16 @@ export default function App() {
     }
   };
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages.
+  // During streaming we scroll the container directly (instant) so repeated
+  // smooth-scroll animations don't fight each other and create a wobble.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isStreaming) {
+      const el = chatScrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    } else {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [chatHistory, isStreaming]);
 
   // Auth state drives view — sign in → workspace, sign out → landing.
@@ -811,16 +819,17 @@ export default function App() {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           rawAccumulated += chunk;
+          // Derive display content directly from rawAccumulated so a marker
+          // that spans a chunk boundary never appears in the bubble even briefly.
+          const displayMarkerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
+          const displayContent = displayMarkerIdx !== -1
+            ? rawAccumulated.slice(0, displayMarkerIdx)
+            : rawAccumulated;
           setChatHistory(prev => {
             const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            const combined = lastMsg.content + chunk;
-            // Strip the sources marker (and everything after) the moment it
-            // arrives so it never renders in the bubble even for a frame.
-            const markerIdx = combined.indexOf(SOURCES_MARKER);
             updated[updated.length - 1] = {
               role: 'assistant',
-              content: markerIdx !== -1 ? combined.slice(0, markerIdx) : combined,
+              content: displayContent,
             };
             return updated;
           });
@@ -1199,8 +1208,14 @@ export default function App() {
               </button>
 
               {/* Notifications dropdown */}
+              <AnimatePresence>
               {showNotifs && (
-                <div className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-full sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden">
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-full sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                     <span className="text-sm font-bold font-display text-slate-800 dark:text-slate-100">Notifications</span>
                     <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
@@ -1275,8 +1290,9 @@ export default function App() {
                       ))
                     )}
                   </div>
-                </div>
+                </motion.div>
               )}
+              </AnimatePresence>
             </div>
             <Show when="signed-out">
               <SignInButton mode="modal">
@@ -1319,14 +1335,17 @@ export default function App() {
         {sidebarOpen && (
           <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
         )}
-        <aside className={`
-          fixed md:relative inset-y-0 left-0 z-50 flex-shrink-0
-          flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800
-          overflow-hidden transition-all duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72'}
-          ${leftOpen ? 'md:translate-x-0 md:w-64' : 'md:translate-x-0 md:w-0'}
-        `}>
-          <div className="w-72 md:w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
+        <motion.aside
+          initial={false}
+          animate={{ width: leftOpen ? 256 : 0 }}
+          transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
+          className={`
+            fixed md:relative inset-y-0 left-0 z-50 flex-shrink-0
+            flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800
+            overflow-hidden
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          `}>
+          <div className="w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-end mb-6 px-2">
               <button
                 className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
@@ -1583,8 +1602,14 @@ export default function App() {
 
               {/* Settings with dark mode popover */}
               <div className="relative">
+                <AnimatePresence>
                 {showSettings && (
-                  <div className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
 
                     {/* ── 3-way colour mode toggle ─────────────────── */}
@@ -1654,8 +1679,9 @@ export default function App() {
                         }`} />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
                 <SidebarItem
                   icon={Settings}
                   label="Settings"
@@ -1665,11 +1691,11 @@ export default function App() {
               </div>
             </div>
           </div>
-        </aside>
+        </motion.aside>
 
         {/* Center Column: AI Chat Interface */}
         <section className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full max-w-full space-y-8 overflow-x-hidden">
               {/* Welcome / Analysing state — empty chat + no history loading */}
               {!historyLoading && chatHistory.length === 0 && (
@@ -1818,11 +1844,11 @@ export default function App() {
                     <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
                       <Sparkles className="w-5 h-5 text-white fill-white" />
                     </div>
-                    <div className="flex-1 space-y-2">
+                    <div className="flex-1 space-y-2 min-w-0">
                       <header className="flex items-center justify-between">
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                       </header>
-                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50 overflow-hidden min-w-0">
                         {msg.type === 'image' ? (
                           <div className="space-y-3 relative group/img">
                             <img
@@ -2256,8 +2282,14 @@ export default function App() {
                         <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showLangMenu ? 'rotate-180' : ''}`} />
                       </button>
 
+                      <AnimatePresence>
                       {showLangMenu && (
-                        <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-[60] min-w-[160px]">
+                        <motion.div
+                          initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-[60] min-w-[160px]">
                           {LANGUAGES.map(lang => (
                             <button
                               key={lang.code}
@@ -2273,8 +2305,9 @@ export default function App() {
                               <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
                             </button>
                           ))}
-                        </div>
+                        </motion.div>
                       )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Desktop: Web Search + Deep Research pills always visible */}
@@ -2415,15 +2448,18 @@ export default function App() {
 
         {/* Right Column: AI Studio Panel */}
         {/* Desktop: collapsible sidebar | Mobile: slide-in drawer from right */}
-        <aside className={`
-          fixed lg:relative inset-y-0 right-0 z-50
-          flex flex-shrink-0 flex-col
-          bg-slate-50 dark:bg-slate-900
-          border-l border-slate-100 dark:border-slate-800
-          overflow-hidden transition-all duration-300 ease-in-out
-          ${rightDrawerOpen ? 'translate-x-0 w-80' : 'translate-x-full w-80'}
-          ${rightOpen ? 'lg:translate-x-0 lg:w-80' : 'lg:translate-x-0 lg:w-0'}
-        `}>
+        <motion.aside
+          initial={false}
+          animate={{ width: rightOpen ? 320 : 0 }}
+          transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
+          className={`
+            fixed lg:relative inset-y-0 right-0 z-50
+            flex flex-shrink-0 flex-col
+            bg-slate-50 dark:bg-slate-900
+            border-l border-slate-100 dark:border-slate-800
+            overflow-hidden
+            ${rightDrawerOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+          `}>
           <div className="w-80 h-full flex flex-col flex-shrink-0">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-2">
@@ -2470,7 +2506,7 @@ export default function App() {
             </div>
           </div>
           </div>
-        </aside>
+        </motion.aside>
       </main>
     </div>
   );

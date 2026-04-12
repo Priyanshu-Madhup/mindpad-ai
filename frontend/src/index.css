@@ -80,7 +80,7 @@
 .dark textarea::placeholder { color: #475569; }
 
 /* ── Chat HTML prose renderer ─────────────────────────────────────────────── */
-.chat-html { font-size: 0.875rem; line-height: 1.75; color: #1e293b; }
+.chat-html { font-size: 0.875rem; line-height: 1.75; color: #1e293b; overflow-x: auto; word-break: break-word; overflow-wrap: anywhere; }
 .dark .chat-html { color: #cbd5e1; }
 
 .chat-html h2 { font-size: 1.125rem; font-weight: 800; color: #0f172a; margin: 1rem 0 0.4rem; font-family: var(--font-display); letter-spacing: -0.02em; }
@@ -102,7 +102,7 @@
 .chat-html ol { list-style-type: decimal; }
 .chat-html li { margin: 0.2rem 0; }
 
-.chat-html table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.8rem; }
+.chat-html table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.8rem; }
 .chat-html th { background: var(--color-primary, #0D1B2A); color: #fff; font-weight: 700; padding: 0.5rem 0.75rem; text-align: left; font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.03em; }
 .dark .chat-html th { background: #1e293b; }
 .chat-html td { padding: 0.45rem 0.75rem; border-bottom: 1px solid #e2e8f0; color: #334155; }
