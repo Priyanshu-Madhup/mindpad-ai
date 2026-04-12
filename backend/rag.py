@@ -144,9 +144,9 @@ async def decide_chunk_count(total_tokens: int, pdf_name: str) -> int:
     prompt = (
         f"You are a RAG chunking expert.\n"
         f"PDF: \"{pdf_name}\" | Total tokens: {total_tokens}\n"
-        f"Constraints: each chunk must be 200–1000 tokens.\n"
-        f"Goal: choose a chunk count that keeps chunks semantically coherent "
-        f"and precisely retrievable.\n"
+        f"Constraints: each chunk must be 100–1000 tokens.\n"
+        f"Goal: choose a chunk count that gives precise, retrievable chunks. "
+        f"Prefer more, smaller chunks over fewer large ones when the document permits.\n"
         f"Reply with ONLY a single integer. No explanation."
     )
 
@@ -165,8 +165,8 @@ async def decide_chunk_count(total_tokens: int, pdf_name: str) -> int:
 
     # Hard-floor: need at least ⌈tokens/1000⌉ chunks to stay under 1000/chunk
     min_n = max(1, -(-total_tokens // 1000))        # ceiling division
-    # Hard-ceiling: no more than ⌊tokens/200⌋ chunks (would produce tiny scraps)
-    max_n = max(1, total_tokens // 200)
+    # Hard-ceiling: no more than ⌊tokens/100⌋ chunks (100-token min per chunk)
+    max_n = max(1, total_tokens // 100)
 
     clamped = max(min_n, min(max(n, min_n), max_n, 50))
     print(f"[RAG] Groq suggested {n} chunks → clamped to {clamped}")
@@ -328,6 +328,7 @@ async def retrieve_rag_context(
         q_vec = await embed_texts([query], "query")
         index = await asyncio.to_thread(get_index)
 
+        print(f"[RAG] retrieve_rag_context called: top_k={top_k}, doc_ids={doc_ids}")
         # Unified query across all selected PDFs — cosine similarity decides
         # relevance.  All PDFs in a notebook share the same user namespace so a
         # single $in filter is all that's needed; no per-doc round-trips.
@@ -340,7 +341,7 @@ async def retrieve_rag_context(
             filter={"doc_id": {"$in": doc_ids}},
         )
         all_matches = results.matches or []
-        print(f"[RAG] Unified query across {len(doc_ids)} doc(s) → {len(all_matches)} chunk(s) returned")
+        print(f"[RAG] Pinecone returned {len(all_matches)} chunk(s) for top_k={top_k} across {len(doc_ids)} doc(s)")
 
         if not all_matches:
             return "", []

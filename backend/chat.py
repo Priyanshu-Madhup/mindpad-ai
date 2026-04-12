@@ -945,12 +945,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         # do ONE unified query after indexing (PDF chunks + scraped chunks together).
         rag_context = ""
         rag_sources = []
+        rag_top_k = 5 if request.research_mode else 3
+        print(f"[RAG] research_mode={request.research_mode} -> top_k={rag_top_k}")
         if request.selected_pdf_ids and not request.image_base64 and not request.deep_research:
             rag_context, rag_sources = await retrieve_rag_context(
                 query=last_user_msg.content,
                 user_id=user_id,
                 doc_ids=request.selected_pdf_ids,
-                top_k=3,
+                top_k=rag_top_k,
             )
             if rag_context:
                 print(f"[RAG] Injecting {len(rag_context)} chars of context, {len(rag_sources)} sources for user {user_id[:8]}…")
@@ -981,7 +983,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                     query=last_user_msg.content,
                     user_id=user_id,
                     doc_ids=combined_doc_ids,
-                    top_k=3,
+                    top_k=rag_top_k,
                 )
                 if unified_context:
                     web_context = ""  # don't double-inject web snippets
@@ -1002,7 +1004,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                         query=last_user_msg.content,
                         user_id=user_id,
                         doc_ids=request.selected_pdf_ids,
-                        top_k=3,
+                        top_k=rag_top_k,
                     )
 
 
@@ -1055,6 +1057,28 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         if extra_context_parts:
             system_content = SYSTEM_PROMPT + "\n\n" + "\n\n".join(extra_context_parts)
 
+        # Research Mode: replace the base system prompt with a version that demands verbosity
+        if request.research_mode:
+            research_system = (
+                "You are Midy AI, a scholarly research assistant inside Mindpad AI operating in RESEARCH MODE.\n"
+                "FORMAT: Respond in clean HTML only — no Markdown. "
+                "Use <h2>, <h3>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <blockquote>, <hr>. "
+                "No <html>/<head>/<body> tags, no inline styles or classes.\n\n"
+                "RESEARCH MODE — MANDATORY RULES (NON-NEGOTIABLE):\n"
+                "  • LENGTH: Write AT LEAST 400 words. Do NOT produce short summaries or bullet-only answers.\n"
+                "  • DEPTH: For every key point, write 2–4 full sentences of analysis and explanation — not just a label.\n"
+                "  • STRUCTURE: Use multiple <h2> and <h3> section headings. Each section must have substantial prose.\n"
+                "  • SYNTHESIS: Go beyond the retrieved chunks — connect ideas, discuss implications, and provide context.\n"
+                "  • QUOTES: Use <blockquote> to highlight significant passages from the source material.\n"
+                "  • NO EARLY ENDING: You must write until every sub-topic of the question is fully addressed.\n"
+                "  • CONCISENESS IS FORBIDDEN in this mode. Thoroughness is the only acceptable standard."
+            )
+            # Rebuild system_content replacing the base prompt with the research-mode version
+            if extra_context_parts:
+                system_content = research_system + "\n\n" + "\n\n".join(extra_context_parts)
+            else:
+                system_content = research_system
+
         full_messages = [
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
@@ -1066,6 +1090,22 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 "role": "system",
                 "content": f"IMPORTANT: You must respond entirely in {request.response_language}. Do not use English unless quoting technical terms."
             })
+
+        # Research mode: append a length reminder to the user turn so the model cannot ignore it
+        if request.research_mode and not request.image_base64:
+            last_user_idx = next(
+                (i for i in range(len(full_messages) - 1, -1, -1) if full_messages[i]["role"] == "user"),
+                None,
+            )
+            if last_user_idx is not None:
+                original_content = full_messages[last_user_idx]["content"]
+                if isinstance(original_content, str):
+                    full_messages[last_user_idx]["content"] = (
+                        original_content
+                        + "\n\n[RESEARCH MODE REMINDER: Write a detailed, comprehensive HTML response "
+                        "of at least 400 words. Use multiple headings and thorough paragraph explanations. "
+                        "Do NOT give a short or summarised answer.]"
+                    )
 
         # Vision model for images, reasoning model for text-only
         # NOTE: max_completion_tokens is capped at 1500 to stay within Groq's 8000 TPM
@@ -1082,12 +1122,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             )
         else:
             # Pick model: Research Mode → 120b, default → 20b
+            # Token budget: Detailed Responses → 4000, default → 1500
             text_model = "openai/gpt-oss-120b" if request.research_mode else "openai/gpt-oss-20b"
+            output_tokens = 2500 if request.research_mode else 1500
             completion = await groq_client.chat.completions.create(
                 model=text_model,
                 messages=full_messages,
                 temperature=1,
-                max_completion_tokens=1500,
+                max_completion_tokens=output_tokens,
                 top_p=1,
                 reasoning_effort="high" if request.research_mode else "medium",
                 stream=True,

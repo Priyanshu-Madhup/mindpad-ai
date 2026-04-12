@@ -1619,7 +1619,7 @@ export default function App() {
                         <Microscope className="w-4 h-4 text-primary/70" />
                         <div>
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Research Mode</span>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Uses GPT-OSS 120B — slower but deeper</p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">GPT-OSS 120B · top-5 chunks · detailed answers</p>
                         </div>
                       </div>
                       <button
