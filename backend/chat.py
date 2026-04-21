@@ -67,6 +67,7 @@ app.include_router(support_chat_router)
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
+gemini_client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))  # shared client — reused per process
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
 
@@ -300,8 +301,6 @@ def is_image_request(text: str) -> bool:
 
 async def generate_image_gemini(prompt: str) -> tuple:
     """Call Gemini image generation model. Returns (filename, base64_data_url)."""
-    gemini_client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
     def _sync_generate():
         return gemini_client.models.generate_content(
             model="gemini-3-pro-image-preview",
@@ -559,9 +558,8 @@ async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Hea
 
     try:
         def _synthesize():
-            client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-preview-tts",
+            response = gemini_client.models.generate_content(
+                model="gemini-3.1-flash-tts-preview",
                 contents=clean_text,
                 config=google_genai_types.GenerateContentConfig(
                     response_modalities=["AUDIO"],

@@ -45,6 +45,7 @@ import {
   Languages,
   Upload,
   Link,
+  StopCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -167,6 +168,7 @@ export default function App() {
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
+  const streamReaderRef = useRef(null); // holds active stream reader so it can be cancelled
   const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
   // ── Notifications ──────────────────────────────────────────────────────────
@@ -694,6 +696,13 @@ export default function App() {
     }
   }, [isSignedIn, isLoaded]);
 
+  const stopStreaming = () => {
+    if (streamReaderRef.current) {
+      streamReaderRef.current.cancel();
+      streamReaderRef.current = null;
+    }
+  };
+
   const sendMessage = async () => {
     const userText = message.trim();
     if ((!userText && !attachedImage) || isStreaming || !activeNotebookId) return;
@@ -810,6 +819,7 @@ export default function App() {
         setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
 
         const reader = response.body.getReader();
+        streamReaderRef.current = reader;
         const decoder = new TextDecoder();
         const SOURCES_MARKER = '\n__SOURCES_JSON__:';
         let rawAccumulated = ''; // full raw stream including sources marker
@@ -859,6 +869,7 @@ export default function App() {
         { role: 'assistant', content: `⚠️ Error: ${err.message}. Make sure the backend is running on port 8000.` },
       ]);
     } finally {
+      streamReaderRef.current = null;
       setIsStreaming(false);
       setIsGeneratingImage(false);
       setIsDeepResearching(false);
@@ -2423,12 +2434,20 @@ export default function App() {
                       type="button"
                       onPointerDown={(e) => {
                         e.preventDefault();
-                        sendMessage();
+                        if (isStreaming) { stopStreaming(); } else { sendMessage(); }
                       }}
-                      disabled={isStreaming || (!message.trim() && !attachedImage)}
-                      className="w-9 h-9 bg-primary dark:bg-white/15 dark:hover:bg-white/25 text-white rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={!isStreaming && !message.trim() && !attachedImage}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isStreaming
+                          ? colorMode === 'light'
+                            ? 'bg-slate-900 hover:opacity-80'
+                            : 'bg-white hover:opacity-80'
+                          : 'bg-primary dark:bg-white/15 dark:hover:bg-white/25 text-white hover:opacity-90 shadow-primary/20'
+                      }`}
                     >
-                      <ArrowUp className="w-4 h-4" />
+                      {isStreaming
+                        ? <StopCircle className={`w-4 h-4 ${colorMode === 'light' ? 'text-white' : 'text-slate-900'}`} />
+                        : <ArrowUp className="w-4 h-4 text-white" />}
                     </button>
                   </div>
                 </div>
