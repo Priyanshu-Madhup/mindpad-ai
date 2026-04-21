@@ -298,65 +298,51 @@ def is_image_request(text: str) -> bool:
         return True
     return bool(_IMAGE_VERB_RE.search(text))
 
-async def generate_image_nvidia(prompt: str) -> tuple:
-    """Call NVIDIA Stable Diffusion 3 Medium. Returns (filename, base64_data_url)."""
-    headers = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "prompt": prompt,
-        "cfg_scale": 5,
-        "aspect_ratio": "16:9",
-        "seed": 0,
-        "steps": 50,
-        "negative_prompt": "",
-    }
-    print(f"[NVIDIA] Sending request with prompt: {prompt[:80]}...")
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        resp = await client.post(
-            "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-medium",
-            headers=headers,
-            json=payload,
-        )
-        print(f"[NVIDIA] Response status: {resp.status_code}")
-        if not resp.is_success:
-            error_body = resp.text
-            print(f"[NVIDIA] Error body: {error_body}")
-            resp.raise_for_status()
-        data = resp.json()
-        print(f"[NVIDIA] Response keys: {list(data.keys())}")
+async def generate_image_gemini(prompt: str) -> tuple:
+    """Call Gemini image generation model. Returns (filename, base64_data_url)."""
+    gemini_client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-    # Extract base64 from response (handle multiple possible keys)
-    img_b64: str = ""
-    if "image" in data:
-        img_b64 = data["image"]
-    elif "artifacts" in data and data["artifacts"]:
-        img_b64 = data["artifacts"][0].get("base64", "")
-    elif "images" in data and data["images"]:
-        img_b64 = data["images"][0].get("base64") or data["images"][0].get("blob", "")
-    if not img_b64:
-        raise ValueError(f"No image data in NVIDIA response: {list(data.keys())}")
+    def _sync_generate():
+        return gemini_client.models.generate_content(
+            model="gemini-3-pro-image-preview",
+            contents=[prompt],
+        )
+
+    print(f"[Gemini Image] Sending request with prompt: {prompt[:80]}...")
+    response = await asyncio.to_thread(_sync_generate)
+
+    img_bytes: bytes = b""
+    mime_type: str = "image/png"
+    for part in response.parts:
+        if part.inline_data is not None:
+            img_bytes = part.inline_data.data
+            mime_type = part.inline_data.mime_type or "image/png"
+            break
+
+    if not img_bytes:
+        raise ValueError("No image data in Gemini response")
+
+    img_b64 = b64_lib.b64encode(img_bytes).decode()
+    ext = "png" if "png" in mime_type else "jpg"
 
     # Save to disk (best-effort — may not persist in production)
-    filename = f"{uuid.uuid4().hex}.jpg"
+    filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = IMAGES_DIR / filename
     try:
-        await asyncio.to_thread(filepath.write_bytes, b64_lib.b64decode(img_b64))
-        print(f"[Image saved] {filepath} ({len(img_b64)} b64 chars)")
+        await asyncio.to_thread(filepath.write_bytes, img_bytes)
+        print(f"[Image saved] {filepath} ({len(img_bytes)} bytes)")
     except Exception as e:
         print(f"[Image save skipped] {e}")
 
-    data_url = f"data:image/jpeg;base64,{img_b64}"
+    data_url = f"data:{mime_type};base64,{img_b64}"
     return filename, data_url
 
 
-@app.get("/test-nvidia")
-async def test_nvidia():
-    """Debug endpoint: test NVIDIA image generation with a fixed prompt."""
+@app.get("/test-image")
+async def test_image():
+    """Debug endpoint: test Gemini image generation with a fixed prompt."""
     try:
-        filename, data_url = await generate_image_nvidia("a beautiful sunset over the ocean, photorealistic")
+        filename, data_url = await generate_image_gemini("a beautiful sunset over the ocean, photorealistic")
         return {"status": "ok", "filename": filename, "data_url_length": len(data_url)}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
@@ -909,7 +895,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     last_user_text = next((m.content for m in reversed(messages) if m.role == "user"), "")
     if is_image_request(last_user_text) and not request.image_base64:
         try:
-            filename, data_url = await generate_image_nvidia(last_user_text)
+            filename, data_url = await generate_image_gemini(last_user_text)
             # Return base64 data URL to frontend — frontend will upload to Firebase
             # and then call /notebooks/{id}/save-image to persist the Firebase URL
             return JSONResponse({"type": "image", "url": data_url, "prompt": last_user_text})
