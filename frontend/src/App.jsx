@@ -2437,16 +2437,16 @@ export default function App() {
                         if (isStreaming) { stopStreaming(); } else { sendMessage(); }
                       }}
                       disabled={!isStreaming && !message.trim() && !attachedImage}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
-                        isStreaming
-                          ? colorMode === 'light'
-                            ? 'bg-slate-900 hover:opacity-80'
-                            : 'bg-white hover:opacity-80'
-                          : 'bg-primary dark:bg-white/15 dark:hover:bg-white/25 text-white hover:opacity-90 shadow-primary/20'
-                      }`}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 shadow-md disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-80"
+                      style={{
+                        backgroundColor: isStreaming
+                          ? (colorMode === 'light' ? '#0f172a' : '#ffffff')
+                          : 'var(--color-primary)',
+                        transition: 'background-color 0ms',
+                      }}
                     >
                       {isStreaming
-                        ? <StopCircle className={`w-4 h-4 ${colorMode === 'light' ? 'text-white' : 'text-slate-900'}`} />
+                        ? <StopCircle className="w-4 h-4" style={{ color: colorMode === 'light' ? '#ffffff' : '#0f172a' }} />
                         : <ArrowUp className="w-4 h-4 text-white" />}
                     </button>
                   </div>
