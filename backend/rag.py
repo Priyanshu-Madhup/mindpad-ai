@@ -22,6 +22,7 @@ import os
 import uuid
 import asyncio
 import io
+import base64
 import hashlib
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -374,6 +375,7 @@ async def upload_pdf(
     file: UploadFile = File(...),
     authorization: Optional[str] = Header(None),
     x_notebook_id: Optional[str] = Header(None, alias="X-Notebook-Id"),
+    x_multimedia_retrieval: Optional[str] = Header(None, alias="X-Multimedia-Retrieval"),
 ):
     """
     Full RAG ingestion pipeline with deduplication:
@@ -594,6 +596,15 @@ async def upload_pdf(
     except Exception as exc:
         print(f"[RAG] Warning: pdf_hash backfill failed (non-fatal): {exc}")
 
+    # ── 8a. Multimedia retrieval: extract images, describe with Llama 4 Scout,
+    #          embed descriptions, upsert into same Pinecone namespace ─────────
+    multimedia_enabled = (x_multimedia_retrieval or "").lower() in ("true", "1", "yes")
+    if multimedia_enabled:
+        img_count = await extract_and_index_images(
+            pdf_bytes, doc_id, user_id, notebook_id, filename
+        )
+        print(f"[RAG] Multimedia retrieval: {img_count} image vectors added for '{filename}'")
+
     # ── 8. Query Pinecone for indexed vectors → single LLM call produces:
     #         • suggested_name  (parsed from first line: "NOTEBOOK_NAME: ...")
     #         • summary         (the rest of the response — clean HTML)
@@ -647,6 +658,147 @@ async def upload_pdf(
         "suggested_name":   suggested_name, # parsed from same LLM response — no race condition
         "reused":           False,
     }
+
+
+# ── Multimedia: extract images from PDF and index descriptions ──────────────────
+async def extract_and_index_images(
+    pdf_bytes: bytes,
+    doc_id: str,
+    user_id: str,
+    notebook_id: str,
+    filename: str,
+) -> int:
+    """
+    Extract images from a PDF using PyMuPDF, describe each image with
+    Llama 4 Scout (Groq vision), embed the descriptions, and upsert them
+    into the same Pinecone namespace/doc_id as the text chunks.
+
+    Returns the number of image description vectors added.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        print("[RAG] PyMuPDF not installed — skipping image extraction")
+        return 0
+
+    try:
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        print(f"[RAG] PyMuPDF could not open PDF: {exc}")
+        return 0
+
+    image_vectors: List[dict] = []
+    seen_xrefs: set = set()
+    img_global_idx = 0
+
+    for page_index in range(len(pdf_doc)):
+        page = pdf_doc[page_index]
+        image_list = page.get_images(full=True)
+
+        for img in image_list:
+            xref = img[0]
+            if xref in seen_xrefs:
+                continue  # skip duplicate image references across pages
+            seen_xrefs.add(xref)
+
+            try:
+                base_image = pdf_doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                image_ext = base_image["ext"].lower()
+                width = base_image.get("width", 0)
+                height = base_image.get("height", 0)
+
+                # Skip tiny images (icons / decorative elements)
+                if width < 50 or height < 50:
+                    continue
+
+                # Build base64 data URL for the Groq vision call
+                b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+                mime = "image/jpeg" if image_ext in ("jpg", "jpeg") else f"image/{image_ext}"
+
+                resp = await _groq.chat.completions.create(
+                    model="meta-llama/llama-4-scout-17b-16e-instruct",
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime};base64,{b64}"},
+                            },
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Describe this image in detail. Include: what type of visual "
+                                    "it is (chart, table, diagram, photo, illustration, etc.), "
+                                    "all visible text, data values, labels, axes, legends, and "
+                                    "key insights. Be thorough — this description will be used "
+                                    "for semantic search retrieval."
+                                ),
+                            },
+                        ],
+                    }],
+                    max_completion_tokens=512,
+                    temperature=0.2,
+                )
+
+                description = resp.choices[0].message.content.strip()
+                if not description:
+                    continue
+
+                print(
+                    f"[RAG] Image {img_global_idx + 1} (page {page_index + 1}, "
+                    f"{width}×{height}px): {description[:80]}…"
+                )
+
+                # Embed description using the same model as text chunks
+                embeddings = await embed_texts([description], "passage")
+                if not embeddings or not embeddings[0]:
+                    continue
+
+                image_vectors.append({
+                    "id": f"{doc_id}::img_{img_global_idx}",
+                    "values": embeddings[0],
+                    "metadata": {
+                        "doc_id":      doc_id,
+                        "notebook_id": notebook_id,
+                        "user_id":     user_id,
+                        "pdf_name":    filename,
+                        "chunk_index": img_global_idx,
+                        "chunk_type":  "image",
+                        "page":        page_index + 1,
+                        "text":        description[:2000],
+                    },
+                })
+                img_global_idx += 1
+
+                # Brief pause between vision calls to stay within Groq rate limits
+                await asyncio.sleep(0.5)
+
+            except Exception as exc:
+                print(f"[RAG] Image description failed for xref={xref}: {exc}")
+                continue
+
+    pdf_doc.close()
+
+    if not image_vectors:
+        print(f"[RAG] No suitable images found in '{filename}'")
+        return 0
+
+    # Upsert image-description vectors into the same Pinecone namespace as text chunks
+    try:
+        index = await asyncio.to_thread(get_index)
+        for batch_start in range(0, len(image_vectors), 100):
+            await asyncio.to_thread(
+                index.upsert,
+                vectors=image_vectors[batch_start : batch_start + 100],
+                namespace=user_id,
+            )
+        print(f"[RAG] Upserted {len(image_vectors)} image-description vectors → namespace='{user_id}'")
+    except Exception as exc:
+        print(f"[RAG] Image vector upsert failed: {exc}")
+        return 0
+
+    return len(image_vectors)
 
 
 # ── GET /pdfs/{notebook_id} ────────────────────────────────────────────────────

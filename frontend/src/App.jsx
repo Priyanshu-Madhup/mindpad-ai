@@ -151,6 +151,7 @@ export default function App() {
   });
   const [isResearchMode, setIsResearchMode] = useState(() => localStorage.getItem('mindpad_research') === 'true');
   const [isDeepResearch, setIsDeepResearch] = useState(() => localStorage.getItem('mindpad_deep_research') === 'true');
+  const [isMultimediaRetrieval, setIsMultimediaRetrieval] = useState(() => localStorage.getItem('mindpad_multimedia_retrieval') === 'true');
   const [isDeepResearching, setIsDeepResearching] = useState(false); // true while scraping pipeline runs
   const [isWebSearch, setIsWebSearch] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
@@ -441,6 +442,7 @@ export default function App() {
         headers: {
           Authorization: `Bearer ${token}`,
           'X-Notebook-Id': notebookId,
+          ...(isMultimediaRetrieval ? { 'X-Multimedia-Retrieval': 'true' } : {}),
         },
         body: form,
       });
@@ -1687,6 +1689,31 @@ export default function App() {
                       >
                         <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
                           isDeepResearch ? 'translate-x-5' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+
+                    {/* ── Multimedia Retrieval toggle ─────────────────── */}
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-primary/70" />
+                        <div>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Multimedia Retrieval</span>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Extracts & indexes PDF images via Llama 4 Scout</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const next = !isMultimediaRetrieval;
+                          setIsMultimediaRetrieval(next);
+                          localStorage.setItem('mindpad_multimedia_retrieval', String(next));
+                        }}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
+                          isMultimediaRetrieval ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                        }`}
+                      >
+                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
+                          isMultimediaRetrieval ? 'translate-x-5' : 'translate-x-0'
                         }`} />
                       </button>
                     </div>
