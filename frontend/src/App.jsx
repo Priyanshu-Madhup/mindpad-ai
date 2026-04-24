@@ -37,6 +37,7 @@ import {
   Volume2,
   Loader2,
   ChevronDown,
+  ChevronRight,
   FileText,
   Download,
   Microscope,
@@ -46,6 +47,7 @@ import {
   Upload,
   Link,
   StopCircle,
+  LayoutDashboard,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -92,10 +94,18 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   </button>
 );
 
-const StudioTool = ({ icon: Icon, label }) => (
-  <button className="aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group">
+const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false }) => (
+  <button
+    onClick={onClick}
+    className="relative aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group"
+  >
+    {done && (
+      <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-800" />
+    )}
     <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700/60 flex items-center justify-center group-hover:bg-primary/5 dark:group-hover:bg-slate-600/60 transition-colors">
-      <Icon className="w-6 h-6 text-primary dark:text-slate-300" />
+      {loading
+        ? <Loader2 className="w-6 h-6 text-primary animate-spin" />
+        : <Icon className="w-6 h-6 text-primary dark:text-slate-300" />}
     </div>
     <span className="text-[10px] font-bold font-display text-primary dark:text-slate-300 uppercase tracking-tight">{label}</span>
   </button>
@@ -164,12 +174,19 @@ export default function App() {
   const [showSourceModal, setShowSourceModal] = useState(false);
   const [sourceModalTargetId, setSourceModalTargetId] = useState(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
+
+  // ── Insight Canvas ──────────────────────────────────────────────────────────
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  // insightCanvasImages: { [notebookId]: imageUrl } — persists per notebook while session is active
+  const [insightCanvasImages, setInsightCanvasImages] = useState({});
+  const [showInsightModal, setShowInsightModal] = useState(false);
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
   const streamReaderRef = useRef(null); // holds active stream reader so it can be cancelled
+  const studioScrollRef = useRef(null); // right sidebar scrollable container
   const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
   // ── Notifications ──────────────────────────────────────────────────────────
@@ -373,6 +390,13 @@ export default function App() {
       const data = await resp.json();
       const list = data.notebooks || [];
       setNotebooks(list);
+
+      // Restore persisted Insight Canvas URLs for all notebooks
+      const savedCanvases = {};
+      list.forEach(nb => { if (nb.insight_canvas_url) savedCanvases[nb.id] = nb.insight_canvas_url; });
+      if (Object.keys(savedCanvases).length > 0) {
+        setInsightCanvasImages(prev => ({ ...savedCanvases, ...prev }));
+      }
 
       if (list.length === 0) {
         // Auto-create first notebook
@@ -983,6 +1007,79 @@ export default function App() {
     }
   }, [speakingMsgIdx, getToken]);
 
+  // ── Insight Canvas ──────────────────────────────────────────────────────────
+  const generateInsightCanvas = async () => {
+    if (isGeneratingInsight || !activeNotebookId) return;
+
+    const selectedPdfIds = (notebookPdfs[activeNotebookId] || [])
+      .filter(p => p.selected)
+      .map(p => p.doc_id)
+      .filter(Boolean);
+
+    if (selectedPdfIds.length === 0) {
+      alert('Please select at least one PDF source in the left sidebar to generate an Insight Canvas.');
+      return;
+    }
+
+    const notebookId = activeNotebookId; // capture for async closure
+    setIsGeneratingInsight(true);
+
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/insight-canvas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          notebook_id: notebookId,
+          selected_pdf_ids: selectedPdfIds,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // Upload infographic to Firebase Storage
+      const base64 = data.data_url.split(',')[1];
+      const mimeType = data.data_url.split(';')[0].split(':')[1] || 'image/png';
+      const byteChars = atob(base64);
+      const byteArr = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArr], { type: mimeType });
+
+      const filename = `insight-canvas/${notebookId}/${Date.now()}.png`;
+      const storageRef = ref(storage, filename);
+      await uploadBytes(storageRef, blob);
+      const firebaseUrl = await getDownloadURL(storageRef);
+
+      console.log('[Insight Canvas] Uploaded to Firebase:', firebaseUrl);
+      setInsightCanvasImages(prev => ({ ...prev, [notebookId]: firebaseUrl }));
+
+      // Persist to MongoDB so it survives page refresh
+      const saveToken = await getToken();
+      fetch(`${BACKEND_URL}/notebooks/${notebookId}/insight-canvas`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+        body: JSON.stringify({ url: firebaseUrl }),
+      }).catch(e => console.warn('[Insight Canvas] Failed to persist URL:', e));
+    } catch (err) {
+      console.error('[Insight Canvas]', err);
+      alert(`Insight Canvas generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingInsight(false);
+    }
+  };
+
+  // Auto-scroll right sidebar to bottom when an insight canvas image becomes ready
+  useEffect(() => {
+    if (activeNotebookId && insightCanvasImages[activeNotebookId] && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [insightCanvasImages, activeNotebookId]);
+
   // Show nothing while Clerk loads auth state
   if (!isLoaded) return null;
 
@@ -1156,6 +1253,79 @@ export default function App() {
           </div>
         </>
       )}
+
+      {/* ── Insight Canvas Modal ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+      {showInsightModal && insightCanvasImages[activeNotebookId] && (
+        <>
+          <div
+            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowInsightModal(false)}
+          />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-3xl pointer-events-auto overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                    <LayoutDashboard className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">Insight Canvas</h2>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">AI-generated infographic from your selected PDFs</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    title="Download infographic"
+                    onClick={async () => {
+                      const imgUrl = insightCanvasImages[activeNotebookId];
+                      try {
+                        const res = await fetch(imgUrl);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `insight-canvas-${activeNotebookId}-${Date.now()}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch {
+                        window.open(imgUrl, '_blank');
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setShowInsightModal(false)}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              {/* Image */}
+              <div className="overflow-y-auto p-6">
+                <img
+                  src={insightCanvasImages[activeNotebookId]}
+                  alt="Insight Canvas infographic"
+                  className="w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700"
+                />
+              </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+      </AnimatePresence>
 
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
@@ -2524,7 +2694,7 @@ export default function App() {
               <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
             </div>
 
-          <div className="p-6 overflow-y-auto flex-1">
+          <div ref={studioScrollRef} className="p-6 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-4">
               <StudioTool icon={Network} label="Mind Map" />
               <StudioTool icon={Podcast} label="Audio Podcast" />
@@ -2532,6 +2702,11 @@ export default function App() {
               <StudioTool icon={Film} label="Video Suggestions" />
               <StudioTool icon={Layers} label="Flashcards" />
               <StudioTool icon={QuizIcon} label="Quiz Mode" />
+              <StudioTool
+                icon={LayoutDashboard}
+                label="Insight Canvas"
+                onClick={generateInsightCanvas}
+              />
             </div>
 
             <div className="mt-8 space-y-4">
@@ -2549,6 +2724,41 @@ export default function App() {
                   referrerPolicy="no-referrer"
                 />
               </motion.div>
+
+              {/* ── Insight Canvas result box — per notebook ───────────── */}
+              <AnimatePresence>
+              {(isGeneratingInsight || insightCanvasImages[activeNotebookId]) && (
+                <motion.button
+                  key={`ic-${activeNotebookId}`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  disabled={isGeneratingInsight}
+                  onClick={() => !isGeneratingInsight && setShowInsightModal(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                >
+                  {/* Icon area */}
+                  <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                    <LayoutDashboard className="w-5 h-5 text-primary" />
+                    {isGeneratingInsight && (
+                      <span className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                    )}
+                  </div>
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Insight Canvas</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                      {isGeneratingInsight ? 'Crafting infographic…' : 'Tap to view infographic'}
+                    </p>
+                  </div>
+                  {/* Arrow when ready */}
+                  {!isGeneratingInsight && (
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                  )}
+                </motion.button>
+              )}
+              </AnimatePresence>
             </div>
           </div>
           </div>

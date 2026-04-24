@@ -448,6 +448,10 @@ class NotificationCreate(BaseModel):
     title: str
     message: str
 
+class InsightCanvasRequest(BaseModel):
+    notebook_id: str
+    selected_pdf_ids: List[str]
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
     updated = doc.get("updated_at")
@@ -455,6 +459,7 @@ def fmt_notebook(doc: dict) -> dict:
         "id": str(doc["_id"]),
         "name": doc.get("name", "Untitled Notebook"),
         "updated_at": updated.isoformat() if updated else "",
+        "insight_canvas_url": doc.get("insight_canvas_url") or None,
     }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -649,7 +654,7 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
@@ -722,6 +727,29 @@ async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization:
     await notebooks_col.update_one(
         {"_id": oid, "user_id": user_id},
         {"$set": {"name": body.name, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"status": "ok"}
+
+
+class InsightCanvasUrlUpdate(BaseModel):
+    url: str
+
+
+@app.patch("/notebooks/{notebook_id}/insight-canvas")
+async def save_insight_canvas_url(
+    notebook_id: str,
+    body: InsightCanvasUrlUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    """Persist the Firebase Storage URL for this notebook's Insight Canvas infographic."""
+    user_id, _ = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.update_one(
+        {"_id": oid, "user_id": user_id},
+        {"$set": {"insight_canvas_url": body.url, "updated_at": datetime.now(timezone.utc)}}
     )
     return {"status": "ok"}
 
@@ -1147,6 +1175,107 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     if image_gen_failed:
         headers_out["X-Image-Fallback"] = "1"
     return StreamingResponse(stream_response(), media_type="text/plain", headers=headers_out)
+
+
+# ─── Insight Canvas ──────────────────────────────────────────────────────────
+
+@app.post("/insight-canvas")
+async def generate_insight_canvas(
+    body: InsightCanvasRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Generate an AI infographic from selected PDFs.
+    1. Retrieves top-5 RAG chunks (research mode) with a predefined summary query.
+    2. Feeds retrieved context to Gemini Pro (text) to craft a detailed infographic prompt.
+    3. Uses Gemini image model to generate the infographic.
+    Returns base64 data URL for the frontend to upload to Firebase.
+    """
+    user_id, _ = await get_current_user(authorization)
+
+    if not body.selected_pdf_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No PDFs selected. Please select at least one PDF.",
+        )
+
+    # Step 1 — Retrieve top-5 most relevant chunks across selected PDFs (research mode)
+    CANVAS_QUERY = (
+        "Provide a comprehensive overview of all key topics, concepts, theories, methodologies, "
+        "data, findings, arguments, statistics, and conclusions present in this document. "
+        "Cover every major section and highlight the most important insights."
+    )
+    rag_context, _ = await retrieve_rag_context(
+        query=CANVAS_QUERY,
+        user_id=user_id,
+        doc_ids=body.selected_pdf_ids,
+        top_k=5,
+    )
+
+    if not rag_context:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not retrieve content from the selected PDFs. Ensure at least one PDF is indexed.",
+        )
+
+    print(f"[InsightCanvas] Retrieved {len(rag_context)} chars of context for user {user_id[:8]}…")
+
+    # Step 2 — Use Gemini Pro to craft a detailed infographic image prompt
+    def _generate_image_prompt():
+        prompt_response = gemini_client.models.generate_content(
+            model="gemini-3.1-pro-preview",
+            contents=[
+                f"""You are an expert visual designer and prompt engineer specializing in educational infographics.
+
+TASK: Analyze the research content below and write an extremely detailed image generation prompt for a professional infographic that visually summarizes all key information.
+
+The prompt must describe:
+- Overall layout (e.g., top-to-bottom flow, circular hub-and-spoke, structured grid of sections)
+- Each content section with its heading and specific visual treatment
+- Exact data visualizations (bar charts, pie charts, timelines, comparison tables, process flows)
+- Specific icons and illustrations representing each major concept
+- Color palette: specify exact colors per section for visual hierarchy (e.g., deep navy header, teal section 1, amber section 2)
+- Typography: large bold headline at the top, section headers, caption-sized data labels
+- Visual connectors, arrows, and flow indicators between sections
+- Any key statistics or numbers displayed as large callout boxes
+- Background style (clean white with subtle grid, or soft gradient)
+- Overall aesthetic: modern academic, professional, visually rich
+- Designed as a WIDE LANDSCAPE infographic (16:9 aspect ratio, much wider than tall, like a horizontal presentation slide or dashboard)
+- The layout flows LEFT-TO-RIGHT across the full width, not top-to-bottom
+- Ample horizontal space for each section so text labels are large, clear and legible — NO cramped text
+- The infographic must be information-dense with every chunk of retrieved data visually represented
+
+The prompt must be at least 300 words and extremely descriptive so the image model generates a rich, detailed infographic.
+
+RESEARCH CONTENT:
+{rag_context}
+
+OUTPUT: Only the image generation prompt text, nothing else. Start directly with the visual description."""
+            ],
+        )
+        return prompt_response.text
+
+    try:
+        image_prompt = await asyncio.to_thread(_generate_image_prompt)
+        print(f"[InsightCanvas] Generated image prompt ({len(image_prompt)} chars): {image_prompt[:120]}…")
+    except Exception as e:
+        print(f"[InsightCanvas] Prompt generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate infographic prompt: {str(e)}")
+
+    # Step 3 — Generate the infographic image via Gemini image model
+    # Prepend a hard landscape constraint so the image model honours the aspect ratio
+    landscape_image_prompt = (
+        "ASPECT RATIO: wide landscape 16:9 (horizontal, wider than tall). "
+        "ALL text must be large and clearly legible. "
+        + image_prompt
+    )
+    try:
+        _, data_url = await generate_image_gemini(landscape_image_prompt)
+    except Exception as e:
+        print(f"[InsightCanvas] Image generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Infographic generation failed: {str(e)}")
+
+    return JSONResponse({"data_url": data_url, "prompt": image_prompt})
 
 
 if __name__ == "__main__":
