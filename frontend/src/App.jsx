@@ -48,6 +48,10 @@ import {
   Link,
   StopCircle,
   LayoutDashboard,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -180,6 +184,13 @@ export default function App() {
   // insightCanvasImages: { [notebookId]: imageUrl } — persists per notebook while session is active
   const [insightCanvasImages, setInsightCanvasImages] = useState({});
   const [showInsightModal, setShowInsightModal] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
+  const canvasDragRef = useRef(null); // { startX, startY, originPanX, originPanY }
+  const canvasContainerRef = useRef(null);
+  const canvasPinchRef = useRef(null); // { startDist, startZoom }
+  const canvasModalRef = useRef(null); // ref to the modal element for fullscreen API
+  const [canvasIsFullscreen, setCanvasIsFullscreen] = useState(false);
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -1080,6 +1091,26 @@ export default function App() {
     }
   }, [insightCanvasImages, activeNotebookId]);
 
+  // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
+  useEffect(() => {
+    const handler = () => setCanvasIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el || !showInsightModal) return;
+    const handler = e => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setCanvasZoom(z => Math.min(5, Math.max(0.25, parseFloat((z + delta).toFixed(2)))));
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [showInsightModal]);
+
   // Show nothing while Clerk loads auth state
   if (!isLoaded) return null;
 
@@ -1260,7 +1291,7 @@ export default function App() {
         <>
           <div
             className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
-            onClick={() => setShowInsightModal(false)}
+            onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
           />
           <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
             <motion.div
@@ -1268,7 +1299,8 @@ export default function App() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-3xl pointer-events-auto overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl pointer-events-auto overflow-hidden flex flex-col max-h-[92vh]"
+              ref={canvasModalRef}
             >
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
@@ -1282,6 +1314,40 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {/* Zoom controls */}
+                  <button
+                    title="Zoom out"
+                    onClick={() => setCanvasZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 w-10 text-center tabular-nums">
+                    {Math.round(canvasZoom * 100)}%
+                  </span>
+                  <button
+                    title="Zoom in"
+                    onClick={() => setCanvasZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    title={canvasIsFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                    onClick={() => {
+                      if (!canvasIsFullscreen) {
+                        canvasModalRef.current?.requestFullscreen();
+                        setCanvasZoom(1);
+                        setCanvasPan({ x: 0, y: 0 });
+                      } else {
+                        document.exitFullscreen();
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    {canvasIsFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                  <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
                   <button
                     title="Download infographic"
                     onClick={async () => {
@@ -1306,20 +1372,77 @@ export default function App() {
                     <Download className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => setShowInsightModal(false)}
+                    onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
                     className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              {/* Image */}
-              <div className="overflow-y-auto p-6">
-                <img
-                  src={insightCanvasImages[activeNotebookId]}
-                  alt="Insight Canvas infographic"
-                  className="w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700"
-                />
+              {/* Image viewport — zoom + pan */}
+              <div
+                ref={canvasContainerRef}
+                className="overflow-hidden flex-1 relative bg-slate-50 dark:bg-slate-950"
+                style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: 0 }}
+                /* ── Mouse scroll wheel zoom handled via non-passive native listener in useEffect ── */
+                /* ── Mouse drag pan ── */
+                onMouseDown={e => {
+                  if (canvasZoom <= 1) return;
+                  e.preventDefault();
+                  canvasDragRef.current = { startX: e.clientX, startY: e.clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
+                }}
+                onMouseMove={e => {
+                  if (!canvasDragRef.current) return;
+                  const dx = e.clientX - canvasDragRef.current.startX;
+                  const dy = e.clientY - canvasDragRef.current.startY;
+                  setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
+                }}
+                onMouseUp={() => { canvasDragRef.current = null; }}
+                onMouseLeave={() => { canvasDragRef.current = null; }}
+                /* ── Touch pinch-to-zoom + drag ── */
+                onTouchStart={e => {
+                  if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    canvasPinchRef.current = { startDist: Math.hypot(dx, dy), startZoom: canvasZoom };
+                    canvasDragRef.current = null;
+                  } else if (e.touches.length === 1 && canvasZoom > 1) {
+                    canvasDragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
+                  }
+                }}
+                onTouchMove={e => {
+                  e.preventDefault();
+                  if (e.touches.length === 2 && canvasPinchRef.current) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.hypot(dx, dy);
+                    const newZoom = Math.min(5, Math.max(0.25, parseFloat((canvasPinchRef.current.startZoom * (dist / canvasPinchRef.current.startDist)).toFixed(2))));
+                    setCanvasZoom(newZoom);
+                  } else if (e.touches.length === 1 && canvasDragRef.current) {
+                    const dx = e.touches[0].clientX - canvasDragRef.current.startX;
+                    const dy = e.touches[0].clientY - canvasDragRef.current.startY;
+                    setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
+                  }
+                }}
+                onTouchEnd={() => { canvasDragRef.current = null; canvasPinchRef.current = null; }}
+              >
+                <div
+                  style={{
+                    transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+                    transformOrigin: 'center center',
+                    transition: canvasDragRef.current ? 'none' : 'transform 0.1s ease-out',
+                    willChange: 'transform',
+                  }}
+                  className="w-full h-full flex items-center justify-center p-6"
+                >
+                  <img
+                    src={insightCanvasImages[activeNotebookId]}
+                    alt="Insight Canvas infographic"
+                    draggable={false}
+                    className="max-w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700 select-none"
+                    style={{ userSelect: 'none', WebkitUserDrag: 'none' }}
+                  />
+                </div>
               </div>
             </motion.div>
           </div>
@@ -2735,7 +2858,7 @@ export default function App() {
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
                   disabled={isGeneratingInsight}
-                  onClick={() => !isGeneratingInsight && setShowInsightModal(true)}
+                  onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                 >
                   {/* Icon area */}
