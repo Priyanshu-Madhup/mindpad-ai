@@ -731,7 +731,7 @@ async def extract_and_index_images(
                                     "Describe this image in detail. Include: what type of visual "
                                     "it is (chart, table, diagram, photo, illustration, etc.), "
                                     "all visible text, data values, labels, axes, legends, and "
-                                    "key insights. Be thorough — this description will be used "
+                                    "key insights also make sure if there is codes and algorithm be an OCR AI and extract all. Be thorough — this description will be used "
                                     "for semantic search retrieval."
                                 ),
                             },
@@ -771,8 +771,8 @@ async def extract_and_index_images(
                 })
                 img_global_idx += 1
 
-                # Brief pause between vision calls to stay within Groq rate limits
-                await asyncio.sleep(0.5)
+                # 2-second pause between vision calls to stay within Groq 30 RPM rate limit
+                await asyncio.sleep(2)
 
             except Exception as exc:
                 print(f"[RAG] Image description failed for xref={xref}: {exc}")
