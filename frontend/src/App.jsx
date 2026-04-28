@@ -2148,11 +2148,17 @@ export default function App() {
                           onClick={card.action}
                           className="h-36 overflow-hidden p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 text-left group"
                         >
-                          <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3 group-hover:bg-primary/10 dark:group-hover:bg-primary/10 transition-colors">
-                            {card.icon}
-                          </div>
-                          <h3 className="font-semibold text-sm text-slate-800 dark:text-white mb-1 whitespace-nowrap overflow-hidden text-ellipsis">{card.title}</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{card.desc}</p>
+                          <motion.div
+                            initial={{ x: i % 4 < 2 ? -20 : 20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: i * 0.05 }}
+                          >
+                            <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3 group-hover:bg-primary/10 dark:group-hover:bg-primary/10 transition-colors">
+                              {card.icon}
+                            </div>
+                            <h3 className="font-semibold text-sm text-slate-800 dark:text-white mb-1 whitespace-nowrap overflow-hidden text-ellipsis">{card.title}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{card.desc}</p>
+                          </motion.div>
                         </button>
                       ))}
                     </div>
