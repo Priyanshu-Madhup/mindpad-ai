@@ -64,6 +64,7 @@ import {
   useClerk,
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
+import MindMapModal from './MindMapModal.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -193,6 +194,12 @@ export default function App() {
   const canvasPinchRef = useRef(null); // { startDist, startZoom }
   const canvasModalRef = useRef(null); // ref to the modal element for fullscreen API
   const [canvasIsFullscreen, setCanvasIsFullscreen] = useState(false);
+
+  // ── Mind Map ────────────────────────────────────────────────────────────────
+  const [isGeneratingMindMap, setIsGeneratingMindMap] = useState(false);
+  // mindMapData: { [notebookId]: treeObject }
+  const [mindMapData, setMindMapData] = useState({});
+  const [showMindMapModal, setShowMindMapModal] = useState(false);
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -420,6 +427,13 @@ export default function App() {
       list.forEach(nb => { if (nb.insight_canvas_url) savedCanvases[nb.id] = nb.insight_canvas_url; });
       if (Object.keys(savedCanvases).length > 0) {
         setInsightCanvasImages(prev => ({ ...savedCanvases, ...prev }));
+      }
+
+      // Restore persisted Mind Map data for all notebooks
+      const savedMaps = {};
+      list.forEach(nb => { if (nb.mind_map_data) savedMaps[nb.id] = nb.mind_map_data; });
+      if (Object.keys(savedMaps).length > 0) {
+        setMindMapData(prev => ({ ...savedMaps, ...prev }));
       }
 
       if (list.length === 0) {
@@ -1097,6 +1111,53 @@ export default function App() {
     }
   };
 
+  const generateMindMap = async () => {
+    if (isGeneratingMindMap || !activeNotebookId) return;
+
+    const selectedPdfIds = (notebookPdfs[activeNotebookId] || [])
+      .filter(p => p.selected)
+      .map(p => p.doc_id)
+      .filter(Boolean);
+
+    if (selectedPdfIds.length === 0) {
+      alert('Please select at least one PDF source in the left sidebar to generate a Mind Map.');
+      return;
+    }
+
+    const notebookId = activeNotebookId;
+    setIsGeneratingMindMap(true);
+
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/mind-map`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ notebook_id: notebookId, selected_pdf_ids: selectedPdfIds }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setMindMapData(prev => ({ ...prev, [notebookId]: data.tree }));
+
+      // Persist to MongoDB
+      const saveToken = await getToken();
+      fetch(`${BACKEND_URL}/notebooks/${notebookId}/mind-map`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+        body: JSON.stringify({ tree: data.tree }),
+      }).catch(e => console.warn('[MindMap] Failed to persist:', e));
+    } catch (err) {
+      console.error('[MindMap]', err);
+      alert(`Mind Map generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingMindMap(false);
+    }
+  };
+
   // Auto-scroll right sidebar to bottom when an insight canvas image becomes ready
   useEffect(() => {
     if (activeNotebookId && insightCanvasImages[activeNotebookId] && studioScrollRef.current) {
@@ -1155,12 +1216,12 @@ export default function App() {
       {/* ── Fixed PDF info tooltip — renders outside sidebar overflow ───────── */}
       {pdfInfoTooltip && (
         <div
-          className="fixed z-[9999] pointer-events-none"
+          className="fixed z-9999 pointer-events-none"
           style={{ top: pdfInfoTooltip.y, left: pdfInfoTooltip.x }}
         >
           <div className="flex items-center">
             <div className="w-0 h-0 border-t-[5px] border-b-[5px] border-r-[6px] border-t-transparent border-b-transparent border-r-white dark:border-r-slate-800 shrink-0" />
-            <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-[11px] rounded-lg px-3 py-2 shadow-2xl border border-slate-200 dark:border-slate-700 min-w-[165px]">
+            <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-[11px] rounded-lg px-3 py-2 shadow-2xl border border-slate-200 dark:border-slate-700 min-w-41.25">
               <p className="font-semibold text-slate-900 dark:text-white text-[11px] mb-1 break-all leading-tight">{pdfInfoTooltip.pdf.name}</p>
               <div className="space-y-0.5 text-slate-500 dark:text-slate-400">
                 <p>{(pdfInfoTooltip.pdf.total_tokens || 0).toLocaleString()} tokens</p>
@@ -1183,10 +1244,10 @@ export default function App() {
       {showSourceModal && (
         <>
           <div
-            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-100 bg-black/60 backdrop-blur-sm"
             onClick={() => { setShowSourceModal(false); setShowUrlInput(false); }}
           />
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+          <div className="fixed inset-0 z-101 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1303,10 +1364,10 @@ export default function App() {
       {showInsightModal && insightCanvasImages[activeNotebookId] && (
         <>
           <div
-            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-100 bg-black/70 backdrop-blur-sm"
             onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
           />
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+          <div className="fixed inset-0 z-101 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1463,6 +1524,16 @@ export default function App() {
       )}
       </AnimatePresence>
 
+      {/* ── Mind Map Modal ───────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showMindMapModal && mindMapData[activeNotebookId] && (
+          <MindMapModal
+            data={mindMapData[activeNotebookId]}
+            onClose={() => setShowMindMapModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
@@ -1570,7 +1641,7 @@ export default function App() {
                   )}
 
                   {/* Notifications list — scrollable after ~3 items */}
-                  <div className="max-h-[216px] overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
+                  <div className="max-h-54 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
                     {visibleNotifs.length === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
                     ) : (
@@ -1674,9 +1745,9 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -256, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed md:absolute inset-y-0 left-0 z-50 md:z-30 flex-shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
+              className="fixed md:absolute inset-y-0 left-0 z-50 md:z-30 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
             <div
-              className="w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
+              className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-end mb-6 px-2">
               <button
                 className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
@@ -1711,7 +1782,7 @@ export default function App() {
                           className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
                             isActive
                               ? 'bg-primary/10 dark:bg-primary/10 black:bg-white/[0.07]'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 black:hover:bg-white/[0.04]'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 black:hover:bg-white/4'
                           }`}
                         >
                           <BookOpen className={`w-3.5 h-3.5 shrink-0 ${
@@ -2182,7 +2253,7 @@ export default function App() {
                       <header className="flex items-center justify-between flex-row-reverse">
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">You</span>
                       </header>
-                      <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 text-slate-800 dark:text-slate-200 leading-relaxed inline-block text-left border-r-4 border-primary shadow-sm">
+                      <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl p-5 text-slate-800 dark:text-slate-200 leading-relaxed inline-block text-left border-r-4 border-primary shadow-sm">
                         {msg.imageUrl && (
                           <img
                             src={msg.imageUrl}
@@ -2542,7 +2613,7 @@ export default function App() {
                         <motion.div
                           animate={{ x: ['-100%', '200%'] }}
                           transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent w-1/3"
+                          className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 dark:via-white/10 to-transparent w-1/3"
                         />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-30">
                           <ImageIcon className="w-8 h-8 text-slate-500 dark:text-slate-400" />
@@ -2603,7 +2674,7 @@ export default function App() {
                       <X className="w-3 h-3" />
                     </button>
                   </div>
-                  <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[140px]">{attachedImage.name}</span>
+                  <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-35">{attachedImage.name}</span>
                 </div>
               )}
               {/* Input box — flex-col: top row has paperclip + textarea, bottom row has lang pill + buttons */}
@@ -2680,7 +2751,7 @@ export default function App() {
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 6, scale: 0.97 }}
                           transition={{ duration: 0.15, ease: 'easeOut' }}
-                          className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-[60] min-w-[160px]">
+                          className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-60 min-w-40">
                           {LANGUAGES.map(lang => (
                             <button
                               key={lang.code}
@@ -2754,7 +2825,7 @@ export default function App() {
                           {/* Backdrop */}
                           <div className="fixed inset-0 z-40" onClick={() => setMobileToolsOpen(false)} />
                           {/* Popover */}
-                          <div className="absolute bottom-full mb-2 left-0 z-50 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2 min-w-[180px]">
+                          <div className="absolute bottom-full mb-2 left-0 z-50 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2 min-w-45">
                             <p className="text-[9px] uppercase tracking-widest font-bold text-slate-400 px-1 mb-1">Search & Research</p>
                             {/* Web Search option */}
                             <button
@@ -2861,9 +2932,9 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 320, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-30 flex flex-shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
+              className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-30 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
             <div
-              className="w-80 h-full flex flex-col flex-shrink-0">
+              className="w-80 h-full flex flex-col shrink-0">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
@@ -2883,7 +2954,11 @@ export default function App() {
 
           <div ref={studioScrollRef} className="p-6 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-4">
-              <StudioTool icon={Network} label="Mind Map" />
+              <StudioTool
+                icon={Network}
+                label="Mind Map"
+                onClick={generateMindMap}
+              />
               <StudioTool icon={Podcast} label="Audio Podcast" />
               <StudioTool icon={Video} label="Visual Podcast" />
               <StudioTool icon={Film} label="Video Suggestions" />
@@ -2900,7 +2975,7 @@ export default function App() {
               <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500">Contextual Reference</h4>
               <motion.div
                 whileHover={{ y: -2 }}
-                className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-primary shadow-sm border border-slate-100 dark:border-slate-700"
+                className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-l-primary shadow-sm border border-slate-100 dark:border-slate-700"
               >
                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
@@ -2941,6 +3016,38 @@ export default function App() {
                   </div>
                   {/* Arrow when ready */}
                   {!isGeneratingInsight && (
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                  )}
+                </motion.button>
+              )}
+              </AnimatePresence>
+
+              {/* ── Mind Map result box — per notebook ─────────────────── */}
+              <AnimatePresence>
+              {(isGeneratingMindMap || mindMapData[activeNotebookId]) && (
+                <motion.button
+                  key={`mm-${activeNotebookId}`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  disabled={isGeneratingMindMap}
+                  onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                >
+                  <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                    <Network className="w-5 h-5 text-primary dark:text-slate-300" />
+                    {isGeneratingMindMap && (
+                      <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Mind Map</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                      {isGeneratingMindMap ? 'Building mind map…' : 'Tap to explore map'}
+                    </p>
+                  </div>
+                  {!isGeneratingMindMap && (
                     <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                   )}
                 </motion.button>

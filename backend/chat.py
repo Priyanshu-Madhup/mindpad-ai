@@ -452,6 +452,13 @@ class InsightCanvasRequest(BaseModel):
     notebook_id: str
     selected_pdf_ids: List[str]
 
+class MindMapRequest(BaseModel):
+    notebook_id: str
+    selected_pdf_ids: List[str]
+
+class MindMapDataUpdate(BaseModel):
+    tree: dict
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
     updated = doc.get("updated_at")
@@ -460,6 +467,7 @@ def fmt_notebook(doc: dict) -> dict:
         "name": doc.get("name", "Untitled Notebook"),
         "updated_at": updated.isoformat() if updated else "",
         "insight_canvas_url": doc.get("insight_canvas_url") or None,
+        "mind_map_data": doc.get("mind_map_data") or None,
     }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -654,7 +662,7 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
@@ -750,6 +758,120 @@ async def save_insight_canvas_url(
     await notebooks_col.update_one(
         {"_id": oid, "user_id": user_id},
         {"$set": {"insight_canvas_url": body.url, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"status": "ok"}
+
+
+@app.post("/mind-map")
+async def generate_mind_map(
+    body: MindMapRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Generate an interactive mind map JSON tree from selected PDFs.
+    1. Retrieves top-5 RAG chunks with a comprehensive topic-extraction query.
+    2. Feeds context to Gemini Flash to produce a hierarchical JSON tree.
+    Returns the tree JSON for the frontend to render with D3.
+    """
+    import json as _json
+    user_id, _ = await get_current_user(authorization)
+
+    if not body.selected_pdf_ids:
+        raise HTTPException(status_code=400, detail="No PDFs selected. Please select at least one PDF.")
+
+    MINDMAP_QUERY = (
+        "Extract all key topics, concepts, subtopics, categories, hierarchical relationships, "
+        "themes, theories, methodologies, and major findings present in the document. "
+        "Identify the central theme and all major and minor branches of knowledge."
+    )
+    rag_context, _ = await retrieve_rag_context(
+        query=MINDMAP_QUERY,
+        user_id=user_id,
+        doc_ids=body.selected_pdf_ids,
+        top_k=5,
+    )
+
+    if not rag_context:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not retrieve content from the selected PDFs. Ensure at least one PDF is indexed.",
+        )
+
+    print(f"[MindMap] Retrieved {len(rag_context)} chars of context for user {user_id[:8]}…")
+
+    SYSTEM_PROMPT = (
+        "You are an expert knowledge organizer. "
+        "You always respond with ONLY valid JSON and nothing else — no markdown, no fences, no explanation."
+    )
+    USER_PROMPT = f"""Analyze the research content and build a comprehensive mind map as a JSON tree.
+
+REQUIREMENTS:
+- Root node: the central topic or document title (2–5 words)
+- 4–7 main branches (depth 1): major themes or categories
+- 2–5 sub-nodes per branch (depth 2): specific concepts or subtopics
+- Optional 2–3 leaf nodes per sub-node (depth 3): key details or terms
+- Keep ALL labels concise: 2–6 words maximum
+- Total nodes: 30–60 for a rich, informative map
+
+OUTPUT FORMAT — ONLY valid JSON, no markdown fences, no explanation:
+{{
+  "label": "Central Topic",
+  "children": [
+    {{
+      "label": "Main Branch",
+      "children": [
+        {{
+          "label": "Sub-topic",
+          "children": [
+            {{"label": "Detail A"}},
+            {{"label": "Detail B"}}
+          ]
+        }}
+      ]
+    }}
+  ]
+}}
+
+RESEARCH CONTENT:
+{rag_context}"""
+
+    try:
+        completion = await groq_client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": USER_PROMPT},
+            ],
+            temperature=0.3,
+            max_tokens=4096,
+        )
+        import json as _json
+        raw = completion.choices[0].message.content.strip()
+        # Strip any accidental markdown fences
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        tree_data = _json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mind map generation failed: {str(e)}")
+
+    return {"tree": tree_data}
+
+
+@app.patch("/notebooks/{notebook_id}/mind-map")
+async def save_mind_map_data(
+    notebook_id: str,
+    body: MindMapDataUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    """Persist the mind map tree JSON for this notebook."""
+    user_id, _ = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.update_one(
+        {"_id": oid, "user_id": user_id},
+        {"$set": {"mind_map_data": body.tree, "updated_at": datetime.now(timezone.utc)}}
     )
     return {"status": "ok"}
 
