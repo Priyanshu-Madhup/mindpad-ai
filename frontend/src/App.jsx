@@ -99,22 +99,58 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   </button>
 );
 
-const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false }) => (
-  <button
-    onClick={onClick}
-    className="relative aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group"
-  >
-    {done && (
-      <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-800" />
-    )}
-    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700/60 flex items-center justify-center group-hover:bg-primary/5 dark:group-hover:bg-slate-600/60 transition-colors">
-      {loading
-        ? <Loader2 className="w-6 h-6 text-primary animate-spin" />
-        : <Icon className="w-6 h-6 text-primary dark:text-slate-300" />}
-    </div>
-    <span className="text-[10px] font-bold font-display text-primary dark:text-slate-300 uppercase tracking-tight">{label}</span>
-  </button>
-);
+const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false, onAnimationComplete }) => {
+  const [flash, setFlash] = React.useState(false);
+  const handleClick = () => {
+    setFlash(true);
+    setTimeout(() => {
+      setFlash(false);
+      onAnimationComplete?.();
+    }, 900);
+    onClick?.();
+  };
+  return (
+    <button
+      onClick={handleClick}
+      className="relative aspect-square bg-white dark:bg-slate-800 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 hover:shadow-md transition-all border border-slate-100 dark:border-slate-700 group"
+    >
+      {done && (
+        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-800" />
+      )}
+      {/* One-shot perimeter trace on click */}
+      <AnimatePresence>
+        {flash && (
+          <motion.svg
+            key="flash"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', borderRadius: '0.5rem', overflow: 'hidden' }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <motion.path
+              d="M 10,1.5 H 90 Q 98.5,1.5 98.5,10 V 90 Q 98.5,98.5 90,98.5 H 10 Q 1.5,98.5 1.5,90 V 10 Q 1.5,1.5 10,1.5 Z"
+              fill="none"
+              stroke="#0D1B2A"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 0.85, ease: 'easeInOut' }}
+            />
+          </motion.svg>
+        )}
+      </AnimatePresence>
+      <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700/60 flex items-center justify-center group-hover:bg-primary/5 dark:group-hover:bg-slate-600/60 transition-colors">
+        {loading
+          ? <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          : <Icon className="w-6 h-6 text-primary dark:text-slate-300" />}
+      </div>
+      <span className="text-[10px] font-bold font-display text-primary dark:text-slate-300 uppercase tracking-tight">{label}</span>
+    </button>
+  );
+};
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -1164,6 +1200,13 @@ export default function App() {
       studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [insightCanvasImages, activeNotebookId]);
+
+  // Auto-scroll right sidebar to bottom when mind map data becomes ready
+  useEffect(() => {
+    if (activeNotebookId && mindMapData[activeNotebookId] && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [mindMapData, activeNotebookId]);
 
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
@@ -2954,21 +2997,18 @@ export default function App() {
 
           <div ref={studioScrollRef} className="p-6 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-4">
-              <StudioTool
-                icon={Network}
-                label="Mind Map"
-                onClick={generateMindMap}
-              />
-              <StudioTool icon={Podcast} label="Audio Podcast" />
-              <StudioTool icon={Video} label="Visual Podcast" />
-              <StudioTool icon={Film} label="Video Suggestions" />
-              <StudioTool icon={Layers} label="Flashcards" />
-              <StudioTool icon={QuizIcon} label="Quiz Mode" />
-              <StudioTool
-                icon={LayoutDashboard}
-                label="Insight Canvas"
-                onClick={generateInsightCanvas}
-              />
+              {(() => {
+                const scrollDown = () => setTimeout(() => studioScrollRef.current?.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' }), 950);
+                return (<>
+                  <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
+                  <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
+                  <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
+                  <StudioTool icon={Film} label="Video Suggestions" onClick={scrollDown} />
+                  <StudioTool icon={Layers} label="Flashcards" onClick={scrollDown} />
+                  <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
+                  <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
+                </>);
+              })()}
             </div>
 
             <div className="mt-8 space-y-4">
