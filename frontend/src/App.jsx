@@ -154,6 +154,8 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(true);         // desktop left sidebar
   const [rightOpen, setRightOpen] = useState(true);       // desktop right sidebar
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false); // mobile right drawer
+  const [isMd, setIsMd] = useState(() => window.innerWidth >= 768);  // ≥md breakpoint
+  const [isLg, setIsLg] = useState(() => window.innerWidth >= 1024); // ≥lg breakpoint
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false); // mobile input-bar tools popover
   const [showSettings, setShowSettings] = useState(false);
   // colorMode: 'light' | 'dark' (navy) | 'black' (OLED true black)
@@ -267,6 +269,17 @@ export default function App() {
       setSendingNotif(false);
     }
   };
+
+  // Track breakpoints for sidebar spring-margin push
+  useEffect(() => {
+    const md = window.matchMedia('(min-width: 768px)');
+    const lg = window.matchMedia('(min-width: 1024px)');
+    const onMd = (e) => setIsMd(e.matches);
+    const onLg = (e) => setIsLg(e.matches);
+    md.addEventListener('change', onMd);
+    lg.addEventListener('change', onLg);
+    return () => { md.removeEventListener('change', onMd); lg.removeEventListener('change', onLg); };
+  }, []);
 
   // Apply color mode classes on mount and toggle
   useEffect(() => {
@@ -1637,21 +1650,33 @@ export default function App() {
 
       <main className="flex flex-1 overflow-hidden relative">
         {/* Left Column: Notebooks Sidebar */}
-        {/* Mobile overlay */}
-        {sidebarOpen && (
-          <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
-        )}
-        <motion.aside
-          initial={false}
-          animate={{ width: leftOpen ? 256 : 0 }}
-          transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
-          className={`
-            fixed md:relative inset-y-0 left-0 z-50 flex-shrink-0
-            flex flex-col bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800
-            overflow-hidden
-            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          `}>
-          <div className="w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
+        {/* Left sidebar — mobile overlay */}
+        <AnimatePresence>
+          {(!isMd && sidebarOpen) && (
+            <motion.div
+              key="left-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 bg-black/40"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Left sidebar panel */}
+        <AnimatePresence>
+          {(isMd ? leftOpen : sidebarOpen) && (
+            <motion.aside
+              key="left-sidebar"
+              initial={{ x: -256, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -256, opacity: 0 }}
+              transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed md:absolute inset-y-0 left-0 z-50 md:z-30 flex-shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
+            <div
+              className="w-64 flex-shrink-0 flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-end mb-6 px-2">
               <button
                 className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
@@ -2022,11 +2047,21 @@ export default function App() {
               </div>
             </div>
           </div>
-        </motion.aside>
+          </motion.aside>
+          )}
+        </AnimatePresence>
 
         {/* Center Column: AI Chat Interface */}
-        <section className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden">
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
+        <motion.section
+          animate={{ marginLeft: (isMd && leftOpen) ? 256 : 0, marginRight: (isLg && rightOpen) ? 320 : 0 }}
+          transition={{
+            marginLeft: { type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+            marginRight: { type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+          }}
+          className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden" style={{ willChange: 'margin-left, margin-right' }}>
+          <div
+            ref={chatScrollRef}
+            className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full max-w-full space-y-8 overflow-x-hidden">
               {/* Welcome / Analysing state — empty chat + no history loading */}
               {!historyLoading && chatHistory.length === 0 && (
@@ -2086,24 +2121,42 @@ export default function App() {
                     </div>
                   </motion.div>
                 ) : (
-                  /* ── Default welcome message ────────────────────────────── */
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex gap-6 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
-                      <Sparkles className="w-5 h-5 text-white fill-white" />
+                  /* ── Default welcome dashboard ───────────────────────────── */
+                  <div className="w-full space-y-8">
+                    {/* Greeting */}
+                    <div>
+                      <h1 className="text-4xl font-bold font-display text-slate-800 dark:text-white">
+                        {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()}
+                      </h1>
+                      <p className="mt-2 text-base text-slate-500 dark:text-slate-400">What would you like to do?</p>
                     </div>
-                    <div className="flex-1 space-y-4">
-                      <header className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
-                      </header>
-                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50">
-                        <p>Hello! I'm Midy AI, your research curator. Ask me anything — I can help you synthesize research, explain concepts, generate study aids, and more.</p>
-                      </div>
+
+                    {/* Feature grid */}
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        { icon: <Sparkles className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'AI Chat', desc: 'Ask Midy AI anything about your notebooks', action: () => document.querySelector('textarea')?.focus() },
+                        { icon: <FileText className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Upload PDF', desc: 'Chat with your research documents via RAG', action: () => pdfInputRef.current?.click() },
+                        { icon: <Globe className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Web Search', desc: 'Get real-time answers from the live web', action: () => { setIsWebSearch(true); document.querySelector('textarea')?.focus(); } },
+                        { icon: <Microscope className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Deep Research', desc: 'Multi-source web scraping with AI synthesis', action: () => { setIsDeepResearch(true); document.querySelector('textarea')?.focus(); } },
+                        { icon: <ImageIcon className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Image Generation', desc: 'Generate images from text descriptions', action: () => { setMessage('Generate an image of '); document.querySelector('textarea')?.focus(); } },
+                        { icon: <Network className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Mind Map', desc: 'Visualize concepts and relationships', action: () => setRightOpen(true) },
+                        { icon: <Layers className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Flashcards', desc: 'Create AI-generated study flashcards', action: () => setRightOpen(true) },
+                        { icon: <QuizIcon className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Quiz Mode', desc: 'Test your knowledge with AI-generated quizzes', action: () => setRightOpen(true) },
+                      ].map((card, i) => (
+                        <button
+                          key={i}
+                          onClick={card.action}
+                          className="h-36 overflow-hidden p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 text-left group"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3 group-hover:bg-primary/10 dark:group-hover:bg-primary/10 transition-colors">
+                            {card.icon}
+                          </div>
+                          <h3 className="font-semibold text-sm text-slate-800 dark:text-white mb-1 whitespace-nowrap overflow-hidden text-ellipsis">{card.title}</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{card.desc}</p>
+                        </button>
+                      ))}
                     </div>
-                  </motion.div>
+                  </div>
                 )
               )}
 
@@ -2502,7 +2555,8 @@ export default function App() {
           </div>
 
           {/* Input Area */}
-          <div className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
+          <div
+            className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
             {/* Hidden file input — images only */}
             <input
               ref={fileInputRef}
@@ -2774,32 +2828,36 @@ export default function App() {
               </div>
             </div>
           </div>
-        </section>
+        </motion.section>
 
 
-        {/* Mobile overlay for right drawer */}
-        {rightDrawerOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setRightDrawerOpen(false)}
-          />
-        )}
+        {/* Right panel — mobile overlay */}
+        <AnimatePresence>
+          {(!isLg && rightDrawerOpen) && (
+            <motion.div
+              key="right-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 bg-black/40"
+              onClick={() => setRightDrawerOpen(false)}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Right Column: AI Studio Panel */}
-        {/* Desktop: collapsible sidebar | Mobile: slide-in drawer from right */}
-        <motion.aside
-          initial={false}
-          animate={{ width: rightOpen ? 320 : 0 }}
-          transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
-          className={`
-            fixed lg:relative inset-y-0 right-0 z-50
-            flex flex-shrink-0 flex-col
-            bg-slate-50 dark:bg-slate-900
-            border-l border-slate-100 dark:border-slate-800
-            overflow-hidden
-            ${rightDrawerOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-          `}>
-          <div className="w-80 h-full flex flex-col flex-shrink-0">
+        <AnimatePresence>
+          {(isLg ? rightOpen : rightDrawerOpen) && (
+            <motion.aside
+              key="right-sidebar"
+              initial={{ x: 320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 320, opacity: 0 }}
+              transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-30 flex flex-shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
+            <div
+              className="w-80 h-full flex flex-col flex-shrink-0">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
@@ -2885,7 +2943,9 @@ export default function App() {
             </div>
           </div>
           </div>
-        </motion.aside>
+          </motion.aside>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
