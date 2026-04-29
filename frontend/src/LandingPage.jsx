@@ -28,6 +28,300 @@ import {
 import { motion } from 'motion/react';
 import mindpadLogo from './mindpad_ai_logo.png';
 
+// ─── Knowledge Graph ──────────────────────────────────────────────────────────
+const KnowledgeGraph = () => {
+  const svgRef = useRef(null);
+  const animFrameRef = useRef(null);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const W = 500, H = 500;
+
+    const nodeDefs = [
+      { id: 'center',        hx: 250, hy: 250, r: 48, label: 'YOUR NOTES',    centre: true  },
+      { id: 'mindmap',       hx:  75, hy:  80, r: 30, label: 'MIND MAP',      centre: false },
+      { id: 'podcast',       hx: 430, hy: 100, r: 30, label: 'PODCAST',       centre: false },
+      { id: 'flashcards',    hx:  55, hy: 300, r: 30, label: 'FLASHCARDS',    centre: false },
+      { id: 'quiz',          hx: 440, hy: 340, r: 30, label: 'QUIZ',          centre: false },
+      { id: 'chat',          hx: 140, hy: 450, r: 30, label: 'CHAT',          centre: false },
+      { id: 'video',         hx: 380, hy: 460, r: 30, label: 'VIDEO',         centre: false },
+      { id: 'deep-research', hx: 310, hy:  55, r: 20, label: 'DEEP RESEARCH', centre: false },
+      { id: 'web-search',    hx: 170, hy: 160, r: 20, label: 'WEB SEARCH',    centre: false },
+      { id: 'insight',       hx: 420, hy: 230, r: 30, label: 'INSIGHT CANVAS',centre: false },
+    ];
+
+    const nodes = nodeDefs.map(d => ({ ...d, x: d.hx, y: d.hy, vx: 0, vy: 0 }));
+
+    const linksContainer = svg.querySelector('#mp-graph-links');
+    const linkEls = [];
+    nodes.filter(n => !n.centre).forEach(n => {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('stroke', '#0D1B2A');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-opacity', '0.18');
+      if (n.id === 'podcast' || n.id === 'video') line.setAttribute('stroke-dasharray', '5 5');
+      if (n.id === 'deep-research' || n.id === 'web-search' || n.id === 'insight') line.setAttribute('stroke-dasharray', '4 4');
+      linksContainer.appendChild(line);
+      linkEls.push({ source: nodes[0], target: n, el: line });
+    });
+
+    const toSVG = (cx, cy) => {
+      const pt = svg.createSVGPoint();
+      pt.x = cx; pt.y = cy;
+      return pt.matrixTransform(svg.getScreenCTM().inverse());
+    };
+
+    const mouse = { x: null, y: null, inside: false };
+    let draggedNode = null;
+    let hoveredNode = null;
+
+    const render = () => {
+      nodes.forEach(n => {
+        const el = svg.querySelector(`#mp-gnode-${n.id}`);
+        if (!el) return;
+        const circle = el.querySelector('circle');
+        const texts = el.querySelectorAll('text');
+        circle.setAttribute('cx', n.x);
+        circle.setAttribute('cy', n.y);
+        texts.forEach(t => t.setAttribute('x', n.x));
+        if (n.centre) {
+          texts[0] && texts[0].setAttribute('y', n.y - 5);
+          texts[1] && texts[1].setAttribute('y', n.y + 9);
+        } else if (texts.length > 1) {
+          // two-line small label
+          texts[0] && texts[0].setAttribute('y', n.y - 3);
+          texts[1] && texts[1].setAttribute('y', n.y + 8);
+        } else {
+          texts[0] && texts[0].setAttribute('y', n.y + 3);
+        }
+      });
+      linkEls.forEach(l => {
+        l.el.setAttribute('x1', l.source.x); l.el.setAttribute('y1', l.source.y);
+        l.el.setAttribute('x2', l.target.x); l.el.setAttribute('y2', l.target.y);
+      });
+    };
+
+    const updateCursor = () => {
+      svg.style.cursor = draggedNode ? 'grabbing' : hoveredNode ? 'grab' : 'default';
+    };
+
+    const tick = () => {
+      const centre = nodes[0];
+      nodes.forEach(n => {
+        if (n === draggedNode) return;
+
+        n.vx *= 0.97;
+        n.vy *= 0.97;
+
+        n.vx += (Math.random() - 0.5) * 0.18;
+        n.vy += (Math.random() - 0.5) * 0.18;
+
+        if (n.centre) {
+          n.vx += (250 - n.x) * 0.003;
+          n.vy += (250 - n.y) * 0.003;
+        } else {
+          n.vx += (n.hx - n.x) * 0.006;
+          n.vy += (n.hy - n.y) * 0.006;
+          const dx = n.x - centre.x;
+          const dy = n.y - centre.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const minDist = n.r + centre.r + 20;
+          if (dist < minDist) {
+            n.vx += (dx / dist) * 0.5;
+            n.vy += (dy / dist) * 0.5;
+          }
+        }
+
+        if (mouse.inside && mouse.x !== null) {
+          const dx = mouse.x - n.x;
+          const dy = mouse.y - n.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+
+          if (draggedNode) {
+            // When dragging → push nearby nodes away from the dragged node
+            const ddx = draggedNode.x - n.x;
+            const ddy = draggedNode.y - n.y;
+            const dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.001;
+            if (dd < 90 && n !== draggedNode) {
+              const push = ((90 - dd) / 90) * 0.7;
+              n.vx -= (ddx / dd) * push;
+              n.vy -= (ddy / dd) * push;
+            }
+          } else {
+            // Idle hover → wide magnetic attraction toward cursor
+            if (dist < 200) {
+              const pull = ((200 - dist) / 200) * 0.00007 * dist;
+              n.vx += (dx / dist) * pull;
+              n.vy += (dy / dist) * pull;
+            }
+          }
+        }
+
+        if (n.x < n.r) n.vx += 0.5;
+        if (n.x > W - n.r) n.vx -= 0.5;
+        if (n.y < n.r) n.vy += 0.5;
+        if (n.y > H - n.r) n.vy -= 0.5;
+
+        n.x += n.vx;
+        n.y += n.vy;
+      });
+
+      if (draggedNode && mouse.x !== null) {
+        draggedNode.x += (mouse.x - draggedNode.x) * 0.35;
+        draggedNode.y += (mouse.y - draggedNode.y) * 0.35;
+      }
+
+      render();
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    const onMouseEnter = () => { mouse.inside = true; };
+    const onMouseLeave = () => {
+      if (!draggedNode) { mouse.inside = false; mouse.x = null; mouse.y = null; hoveredNode = null; }
+      updateCursor();
+    };
+    const onMove = (e) => {
+      const c = toSVG(e.clientX, e.clientY);
+      mouse.x = c.x; mouse.y = c.y;
+      if (!draggedNode) hoveredNode = nodes.find(n => Math.hypot(n.x - c.x, n.y - c.y) < n.r + 6) || null;
+      updateCursor();
+    };
+    const onDown = (e) => {
+      e.preventDefault();
+      const c = toSVG(e.clientX, e.clientY);
+      draggedNode = nodes.find(n => Math.hypot(n.x - c.x, n.y - c.y) < n.r + 6) || null;
+      if (draggedNode) { draggedNode.vx = 0; draggedNode.vy = 0; }
+      updateCursor();
+    };
+    const onUp = () => {
+      if (draggedNode) {
+        // Give released node a small fling velocity
+        draggedNode.vx *= 0.4;
+        draggedNode.vy *= 0.4;
+        draggedNode = null;
+      }
+      hoveredNode = null;
+      updateCursor();
+    };
+    const onTouchStart = (e) => {
+      const t = e.touches[0];
+      const c = toSVG(t.clientX, t.clientY);
+      mouse.x = c.x; mouse.y = c.y; mouse.inside = true;
+      draggedNode = nodes.find(n => Math.hypot(n.x - c.x, n.y - c.y) < n.r + 14) || null;
+      if (draggedNode) { draggedNode.vx = 0; draggedNode.vy = 0; }
+    };
+    const onTouchMove = (e) => {
+      e.preventDefault();
+      const c = toSVG(e.touches[0].clientX, e.touches[0].clientY);
+      mouse.x = c.x; mouse.y = c.y;
+    };
+    const onTouchEnd = () => { draggedNode = null; mouse.inside = false; };
+
+    svg.addEventListener('mouseenter', onMouseEnter);
+    svg.addEventListener('mouseleave', onMouseLeave);
+    svg.addEventListener('mousemove', onMove);
+    svg.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    svg.addEventListener('touchstart', onTouchStart, { passive: false });
+    svg.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    svg.addEventListener('touchend',   onTouchEnd);
+
+    animFrameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animFrameRef.current);
+      svg.removeEventListener('mouseenter', onMouseEnter);
+      svg.removeEventListener('mouseleave', onMouseLeave);
+      svg.removeEventListener('mousemove', onMove);
+      svg.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      svg.removeEventListener('touchstart', onTouchStart);
+      svg.removeEventListener('touchmove',  onTouchMove);
+      svg.removeEventListener('touchend',   onTouchEnd);
+      while (linksContainer.firstChild) linksContainer.removeChild(linksContainer.firstChild);
+    };
+  }, []);
+
+  const outerNodes = [
+    { id: 'mindmap',       cx:  75, cy:  80, r: 30, lines: ['MIND MAP']           },
+    { id: 'podcast',       cx: 430, cy: 100, r: 30, lines: ['PODCAST']            },
+    { id: 'flashcards',    cx:  55, cy: 300, r: 30, lines: ['FLASHCARDS']         },
+    { id: 'quiz',          cx: 440, cy: 340, r: 30, lines: ['QUIZ']               },
+    { id: 'chat',          cx: 140, cy: 450, r: 30, lines: ['CHAT']               },
+    { id: 'video',         cx: 380, cy: 460, r: 30, lines: ['VIDEO']              },
+    { id: 'deep-research', cx: 310, cy:  55, r: 20, lines: ['DEEP', 'RESEARCH']   },
+    { id: 'web-search',    cx: 170, cy: 160, r: 20, lines: ['WEB', 'SEARCH']      },
+    { id: 'insight',       cx: 420, cy: 230, r: 30, lines: ['INSIGHT', 'CANVAS']  },
+  ];
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox="0 0 500 500"
+      className="w-full h-full select-none"
+      style={{ touchAction: 'none', overflow: 'visible' }}
+    >
+      <g id="mp-graph-links" />
+      <g id="mp-graph-nodes">
+        {/* Central node */}
+        <g id="mp-gnode-center">
+          <circle cx="250" cy="250" r="48" fill="#0D1B2A" />
+          <text x="250" y="245" textAnchor="middle" fontSize="9" fontWeight="800"
+            fill="white" fontFamily="Manrope, sans-serif" letterSpacing="0.1em"
+            style={{ pointerEvents: 'none', userSelect: 'none' }}>YOUR</text>
+          <text x="250" y="259" textAnchor="middle" fontSize="9" fontWeight="800"
+            fill="white" fontFamily="Manrope, sans-serif" letterSpacing="0.1em"
+            style={{ pointerEvents: 'none', userSelect: 'none' }}>NOTES</text>
+        </g>
+        {/* Outer nodes */}
+        {outerNodes.map(n => (
+          <g key={n.id} id={`mp-gnode-${n.id}`}>
+            <circle
+              cx={n.cx} cy={n.cy} r={n.r}
+              fill="#0D1B2A" stroke="#cbd5e1" strokeWidth="1.5"
+              onMouseEnter={e => { e.currentTarget.setAttribute('fill', '#1e3a5f'); e.currentTarget.setAttribute('r', String(n.r + 2)); }}
+              onMouseLeave={e => { e.currentTarget.setAttribute('fill', '#0D1B2A'); e.currentTarget.setAttribute('r', String(n.r)); }}
+            />
+            {n.lines.length === 1 ? (
+              <text
+                x={n.cx} y={n.cy + 3} textAnchor="middle"
+                fontSize={n.r <= 20 ? '6' : '7.5'} fontWeight="800"
+                fill="white" fontFamily="Manrope, sans-serif" letterSpacing="0.08em"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                {n.lines[0]}
+              </text>
+            ) : (
+              <>
+                <text
+                  x={n.cx} y={n.cy - 3} textAnchor="middle"
+                  fontSize={n.r <= 20 ? '6' : '7.5'} fontWeight="800"
+                  fill="white" fontFamily="Manrope, sans-serif" letterSpacing="0.08em"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {n.lines[0]}
+                </text>
+                <text
+                  x={n.cx} y={n.cy + 8} textAnchor="middle"
+                  fontSize={n.r <= 20 ? '6' : '7.5'} fontWeight="800"
+                  fill="white" fontFamily="Manrope, sans-serif" letterSpacing="0.08em"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {n.lines[1]}
+                </text>
+              </>
+            )}
+          </g>
+        ))}
+      </g>
+    </svg>
+  );
+};
+
 const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
   <motion.div 
     whileHover={{ y: -5 }}
@@ -323,15 +617,20 @@ export default function LandingPage({ onGetStarted, onLogin }) {
         <section className="py-16 sm:py-32 bg-slate-50">
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-8">
             <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-20">
-              <div className="flex-1">
-                <div className="relative">
-                  <img 
-                    alt="Research workspace" 
-                    className="rounded-2xl shadow-2xl grayscale hover:grayscale-0 transition-all duration-700 border border-slate-200" 
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHGBs6ImQsOPT-wfaZIXnRTacG4gWcObOB5nHg2CX8uW1NYZUDIL005xIu7CwBjSSxfcy_f7GCq_r3xCE7IVRP9AOjaOIaeQu0AcodGf_dRvw9iWQEIdWlNTOMAu8mH_JsUZryaq_-l4VsFLxmDdm3uqSMxbz3qIrG3NURB0jclIruOu7P7NK2nHWi77kU6p07GhDAsP2xgAK0kPHnwgsUVljtftu6FZwKanC8Vc19NFTjwbySxLyR4ndq05kby_Yv1VtamJPNiyUR"
-                    referrerPolicy="no-referrer"
+              <div className="flex-1 flex justify-center">
+                <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden w-[85%]" style={{ aspectRatio: '1 / 1', minHeight: '272px' }}>
+                  {/* Hairline grid background */}
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      backgroundImage: 'linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)',
+                      backgroundSize: '36px 36px',
+                      opacity: 0.5,
+                    }}
                   />
-                  <div className="absolute inset-0 bg-primary/5 rounded-2xl pointer-events-none"></div>
+                  <div className="absolute inset-0 p-4">
+                    <KnowledgeGraph />
+                  </div>
                 </div>
               </div>
               <div className="flex-1 space-y-8">
