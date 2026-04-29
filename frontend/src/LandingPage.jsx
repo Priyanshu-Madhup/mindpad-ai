@@ -152,7 +152,7 @@ const KnowledgeGraph = () => {
           } else {
             // Idle hover → wide magnetic attraction toward cursor
             if (dist < 200) {
-              const pull = ((200 - dist) / 200) * 0.00007 * dist;
+              const pull = ((200 - dist) / 200) * 0.07 * dist;
               n.vx += (dx / dist) * pull;
               n.vy += (dy / dist) * pull;
             }
