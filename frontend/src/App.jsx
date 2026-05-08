@@ -154,28 +154,6 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
-// Mirror of backend IMAGE_INTENT_KEYWORDS
-const IMAGE_INTENT_KEYWORDS = [
-  'generate an image', 'generate a image', 'generate image',
-  'create an image', 'create a image', 'create image',
-  'make an image', 'make a image', 'make image',
-  'draw an image', 'draw a image', 'draw an', 'draw a ',
-  'draw the ', 'draw me ',
-  'generate a picture', 'generate a photo', 'generate an illustration',
-  'create a picture', 'create a photo', 'create an illustration',
-  'make a picture', 'make a photo', 'make a drawing', 'make an illustration',
-  'show me an image', 'show me a picture', 'show me a photo',
-  'visualize this', 'illustrate this',
-  'explain with an image', 'explain with image',
-  'with a diagram', 'with a picture',
-  'generate a drawing', 'create a drawing',
-  'paint a ', 'paint an ',
-  'sketch a ', 'sketch an ',
-];
-const _IMAGE_VERB_RE = /\b(generate|create|make|draw|paint|sketch|produce|render)\s+(a |an |me |the )?(image|picture|photo|photograph|illustration|drawing|artwork|visual|diagram)\b/i;
-const isImageRequest = (text) =>
-  IMAGE_INTENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw)) || _IMAGE_VERB_RE.test(text);
-
 
 export default function App() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -209,7 +187,6 @@ export default function App() {
   const [isWebSearch, setIsWebSearch] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [showLangMenu, setShowLangMenu] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
   const [openSourceKey, setOpenSourceKey] = useState(null);   // "msgIdx-srcIdx" for source popover on touch
@@ -821,9 +798,7 @@ export default function App() {
     setAttachedImage(null);
     setIsStreaming(true);
     // Deep research mode: show special searching indicator
-    if (isDeepResearch && !attachedImage && !isImageRequest(userText)) setIsDeepResearching(true);
-    // If this looks like an image generation request, show crafting indicator
-    if (isImageRequest(userText) && !attachedImage) setIsGeneratingImage(true);
+    if (isDeepResearch && !attachedImage) setIsDeepResearching(true);
 
     try {
       const token = await getToken();
@@ -851,74 +826,7 @@ export default function App() {
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
-      const contentType = response.headers.get('content-type') || '';
-      const imageFallback = response.headers.get('x-image-fallback') === '1';
-
-      if (contentType.includes('application/json')) {
-        // Image generation response
-        const data = await response.json();
-        if (data.type === 'image') {
-          // Show image immediately from base64 while we upload to Firebase in background
-          setChatHistory(prev => [...prev, {
-            role: 'assistant',
-            type: 'image',
-            content: '',
-            src: data.url,   // base64 data URL — shown instantly
-            prompt: data.prompt,
-          }]);
-
-          // Upload to Firebase Storage and persist URL to MongoDB
-          (async () => {
-            try {
-              // Convert base64 data URL → Blob
-              const base64 = data.url.split(',')[1];
-              const mimeType = data.url.split(';')[0].split(':')[1] || 'image/jpeg';
-              const byteChars = atob(base64);
-              const byteArr = new Uint8Array(byteChars.length);
-              for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
-              const blob = new Blob([byteArr], { type: mimeType });
-
-              // Upload to Firebase Storage
-              const filename = `generated/${activeNotebookId}/${Date.now()}.jpg`;
-              const storageRef = ref(storage, filename);
-              await uploadBytes(storageRef, blob);
-              const firebaseUrl = await getDownloadURL(storageRef);
-              console.log('[Firebase] Uploaded image:', firebaseUrl);
-
-              // Replace base64 src in chat with Firebase URL
-              setChatHistory(prev => {
-                const updated = [...prev];
-                for (let i = updated.length - 1; i >= 0; i--) {
-                  if (updated[i].type === 'image' && updated[i].src === data.url) {
-                    updated[i] = { ...updated[i], src: firebaseUrl };
-                    break;
-                  }
-                }
-                return updated;
-              });
-
-              // Save Firebase URL to MongoDB via backend
-              const token = await getToken();
-              await fetch(`${BACKEND_URL}/notebooks/${activeNotebookId}/save-image`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
-                  messages: newHistory.map(m => ({ role: m.role, content: m.content })),
-                  firebase_url: firebaseUrl,
-                  prompt: data.prompt,
-                }),
-              });
-              console.log('[MongoDB] Saved Firebase URL');
-            } catch (fbErr) {
-              console.error('[Firebase upload failed]', fbErr);
-              // Image still displays from base64 — no UX disruption
-            }
-          })();
-        }
-      } else {
-        // Streaming text response (or image-gen fallback)
-        if (imageFallback) setIsGeneratingImage(false);
-        setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
 
         const reader = response.body.getReader();
         streamReaderRef.current = reader;
@@ -2307,7 +2215,6 @@ export default function App() {
                         { icon: <FileText className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Upload PDF', desc: 'Chat with your research documents via RAG', action: () => pdfInputRef.current?.click() },
                         { icon: <Globe className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Web Search', desc: 'Get real-time answers from the live web', action: () => { setIsWebSearch(true); document.querySelector('textarea')?.focus(); } },
                         { icon: <Microscope className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Deep Research', desc: 'Multi-source web scraping with AI synthesis', action: () => { setIsDeepResearch(true); document.querySelector('textarea')?.focus(); } },
-                        { icon: <ImageIcon className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Image Generation', desc: 'Generate images from text descriptions', action: () => { setMessage('Generate an image of '); document.querySelector('textarea')?.focus(); } },
                         { icon: <Network className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Mind Map', desc: 'Visualize concepts and relationships', action: () => setRightOpen(true) },
                         { icon: <Layers className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Flashcards', desc: 'Create AI-generated study flashcards', action: () => setRightOpen(true) },
                         { icon: <QuizIcon className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Quiz Mode', desc: 'Test your knowledge with AI-generated quizzes', action: () => setRightOpen(true) },
@@ -2408,83 +2315,7 @@ export default function App() {
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                       </header>
                       <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50 overflow-hidden min-w-0">
-                        {msg.type === 'image' ? (
-                          <div className="space-y-3 relative group/img">
-                            <img
-                              src={msg.src}
-                              alt={msg.prompt || 'Generated image'}
-                              className="w-full rounded-xl shadow-md border border-slate-100 dark:border-slate-700"
-                              onError={(e) => { e.target.style.opacity = '0.4'; }}
-                            />
-                            {/* Hover action buttons */}
-                            <div className="absolute bottom-3 right-3 flex gap-1.5 sm:opacity-0 sm:group-hover/img:opacity-100 transition-opacity duration-200">
-                              {/* Copy image to clipboard */}
-                              <button
-                                title="Copy image"
-                                onClick={() => {
-                                  const image = new Image();
-                                  image.crossOrigin = 'anonymous';
-                                  image.onload = () => {
-                                    const canvas = document.createElement('canvas');
-                                    canvas.width = image.naturalWidth;
-                                    canvas.height = image.naturalHeight;
-                                    canvas.getContext('2d').drawImage(image, 0, 0);
-                                    canvas.toBlob(async (blob) => {
-                                      try {
-                                        await navigator.clipboard.write([
-                                          new ClipboardItem({ 'image/png': blob })
-                                        ]);
-                                      } catch {
-                                        // Clipboard API not supported — copy URL as fallback
-                                        navigator.clipboard.writeText(msg.src);
-                                      }
-                                      setCopiedMsgIdx(idx);
-                                      setTimeout(() => setCopiedMsgIdx(null), 2000);
-                                    }, 'image/png');
-                                  };
-                                  image.onerror = () => {
-                                    navigator.clipboard.writeText(msg.src);
-                                    setCopiedMsgIdx(idx);
-                                    setTimeout(() => setCopiedMsgIdx(null), 2000);
-                                  };
-                                  // Cache-bust to bypass CORS preflight cache
-                                  image.src = msg.src + (msg.src.includes('?') ? '&' : '?') + '_cb=' + Date.now();
-                                }}
-                                className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
-                              >
-                                {copiedMsgIdx === idx
-                                  ? <Check className="w-3.5 h-3.5 text-green-400" />
-                                  : <Copy className="w-3.5 h-3.5" />}
-                              </button>
-                              {/* Download image */}
-                              <button
-                                title="Download image"
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch(msg.src);
-                                    const blob = await res.blob();
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = `mindpad-image-${Date.now()}.jpg`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                    URL.revokeObjectURL(url);
-                                  } catch {
-                                    // Fallback: open in new tab
-                                    window.open(msg.src, '_blank');
-                                  }
-                                }}
-                                className="p-1.5 rounded-lg bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-all"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
                           <div className="chat-html" dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
-                        )}
                       </div>
                       {/* RAG source citation dots */}
                       {msg.sources && msg.sources.length > 0 && (
@@ -2674,55 +2505,6 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* Crafting image animation — shown while NVIDIA Stable Diffusion generates */}
-              {isGeneratingImage && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex gap-6 pl-0.5"
-                >
-                  <motion.div
-                    animate={{ scale: [1, 1.12, 1], opacity: [1, 0.7, 1] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                    className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
-                  >
-                    <Wand2 className="w-5 h-5 text-white" />
-                  </motion.div>
-                  <div className="flex-1 space-y-2">
-                    <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
-                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-4">
-                      <div className="flex items-center gap-2">
-                        <motion.span
-                          animate={{ opacity: [0.4, 1, 0.4] }}
-                          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-                          className="text-xs font-semibold text-primary/70 font-display tracking-wide"
-                        >
-                          Crafting image
-                        </motion.span>
-                        <div className="flex gap-1">
-                          {[0, 0.2, 0.4].map((delay, i) => (
-                            <motion.span key={i} animate={{ opacity: [0, 1, 0] }} transition={{ duration: 1.2, repeat: Infinity, delay }} className="text-primary/70 text-sm font-bold leading-none">.</motion.span>
-                          ))}
-                        </div>
-                      </div>
-                      {/* Shimmering image canvas placeholder */}
-                      <div className="w-full aspect-video rounded-xl bg-slate-200 dark:bg-slate-700 overflow-hidden relative">
-                        <motion.div
-                          animate={{ x: ['-100%', '200%'] }}
-                          transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
-                          className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 dark:via-white/10 to-transparent w-1/3"
-                        />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-30">
-                          <ImageIcon className="w-8 h-8 text-slate-500 dark:text-slate-400" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Crafting your image</span>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500">This may take up to 60 seconds…</p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
 
 
               <div ref={chatEndRef} />
