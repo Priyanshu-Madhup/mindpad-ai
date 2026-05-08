@@ -1843,7 +1843,7 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -256, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed md:absolute inset-y-0 left-0 z-50 md:z-30 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
+              className="fixed md:absolute inset-y-0 left-0 z-50 md:z-50 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
             <div
               className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
             <div className="flex items-center justify-end mb-6 px-2">
@@ -3030,7 +3030,7 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 320, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-30 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
+              className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-50 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
             <div
               className="w-80 h-full flex flex-col shrink-0">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
