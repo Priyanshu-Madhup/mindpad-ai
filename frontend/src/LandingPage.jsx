@@ -341,54 +341,58 @@ const MARQUEE_FEATURES = [
 
 const MarqueeFeatures = () => {
   const doubled = [...MARQUEE_FEATURES, ...MARQUEE_FEATURES];
-  const wrapRef = useRef(null);
+  const [paused, setPaused] = useState(false);
+  const wrapRef  = useRef(null);
   const trackRef = useRef(null);
-  const rafRef = useRef(null);
+  const rafRef   = useRef(null);
+
+  const MIN_SCALE = 0.62;
+  const MAX_SCALE = 1.05;
+  const FADE_ZONE = 0.14; // fraction of half-width where opacity starts dropping
 
   useEffect(() => {
-    const wrap = wrapRef.current;
-    const track = trackRef.current;
-    if (!wrap || !track) return;
+    const applyScales = () => {
+      const wrap  = wrapRef.current;
+      const track = trackRef.current;
+      if (!wrap || !track) { rafRef.current = requestAnimationFrame(applyScales); return; }
 
-    // Per-card lerp state so each card smoothly chases its target
-    const state = Array.from(track.children).map(() => ({ scale: 0.58, glow: 0 }));
-    const LERP = 0.08; // lower = smoother/slower catch-up; 0.08 feels silky
+      const wRect   = wrap.getBoundingClientRect();
+      const centerX = wRect.left + wRect.width / 2;
+      const halfW   = wRect.width / 2;
 
-    const tick = () => {
-      const wrapRect = wrap.getBoundingClientRect();
-      const centerX = wrapRect.left + wrapRect.width / 2;
-      const slots = track.children;
+      Array.from(track.children).forEach(card => {
+        const r       = card.getBoundingClientRect();
+        const cardCX  = r.left + r.width / 2;
+        const dist    = Math.abs(cardCX - centerX);
+        const norm    = Math.min(dist / halfW, 1); // 0 = center, 1 = edge
 
-      for (let i = 0; i < slots.length; i++) {
-        const inner = slots[i].firstElementChild;
-        if (!inner) continue;
+        // cosine S-curve: smooth at both ends, natural in the middle
+        const t     = (1 - Math.cos(Math.PI * norm)) / 2;
+        const scale = MAX_SCALE - (MAX_SCALE - MIN_SCALE) * t;
 
-        const r = slots[i].getBoundingClientRect();
-        const cardCenter = r.left + r.width / 2;
-        const dist = Math.abs(cardCenter - centerX);
-        const maxDist = wrapRect.width * 0.30;
-        const t = Math.max(0, 1 - dist / maxDist);
-        const tq = t * t;
+        // opacity: full until FADE_ZONE from edge, then fades
+        const opacity = norm > (1 - FADE_ZONE)
+          ? 1 - ((norm - (1 - FADE_ZONE)) / FADE_ZONE) * 0.55
+          : 1;
 
-        // target values
-        const targetScale = 0.58 + 0.47 * tq;
-        const targetGlow  = tq;
+        const glow      = 1 - t; // 1 at center, 0 at edge
+        const borderA   = (0.08 + glow * 0.28).toFixed(3);
+        const glowBlur  = Math.round(glow * 36);
+        const glowSprd  = Math.round(glow * 14);
 
-        // lerp current → target
-        state[i].scale += (targetScale - state[i].scale) * LERP;
-        state[i].glow  += (targetGlow  - state[i].glow)  * LERP;
+        card.style.transform   = `scale(${scale.toFixed(4)})`;
+        card.style.opacity     = opacity.toFixed(4);
+        card.style.zIndex      = Math.round(scale * 10);
+        card.style.borderColor = `rgba(100,116,139,${borderA})`;
+        card.style.boxShadow   = glow > 0.05
+          ? `0 0 ${glowBlur}px ${glowSprd}px rgba(100,116,139,${(glow * 0.14).toFixed(3)}), 0 4px 18px rgba(13,27,42,0.06)`
+          : '0 4px 18px rgba(13,27,42,0.06)';
+      });
 
-        const s  = state[i].scale;
-        const tg = state[i].glow;
-
-        inner.style.transform   = `scale(${s.toFixed(4)})`;
-        inner.style.boxShadow   = `0 0 ${(tg * 40).toFixed(1)}px ${(tg * 20).toFixed(1)}px rgba(100,116,139,${(tg * 0.18).toFixed(3)}), 0 4px 18px rgba(13,27,42,0.06)`;
-        inner.style.borderColor = `rgba(100,116,139,${(0.10 + tg * 0.30).toFixed(3)})`;
-      }
-      rafRef.current = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(applyScales);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(applyScales);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
@@ -406,10 +410,9 @@ const MarqueeFeatures = () => {
         .mp-marquee-wrap:hover .mp-marquee-track {
           animation-play-state: paused;
         }
-        .mp-marquee-inner {
-          /* NO transition on transform — RAF handles it at 60fps for smoothness */
-          transition: box-shadow 0.08s linear, border-color 0.08s linear;
-          will-change: transform;
+        .mp-marquee-card {
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+          will-change: transform, opacity;
         }
       `}</style>
 
@@ -422,6 +425,8 @@ const MarqueeFeatures = () => {
       <div
         ref={wrapRef}
         className="mp-marquee-wrap relative"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
         style={{
           maskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
           WebkitMaskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
@@ -429,30 +434,31 @@ const MarqueeFeatures = () => {
           paddingBottom: '48px',
         }}
       >
-        <div ref={trackRef} className="mp-marquee-track flex items-center" style={{ width: 'max-content' }}>
+        <div
+          ref={trackRef}
+          className="mp-marquee-track flex items-center"
+          style={{ width: 'max-content', animationPlayState: paused ? 'paused' : 'running' }}
+        >
           {doubled.map((f, i) => {
             const Icon = f.icon;
             return (
-              /* outer slot — only handles spacing, no transform */
-              <div key={i} className="flex-shrink-0 w-[332px] mx-3" style={{ transformOrigin: 'center center' }}>
-                {/* inner — receives scale + glow from RAF */}
+              <div
+                key={i}
+                className="mp-marquee-card flex-shrink-0 w-[332px] mx-3 rounded-2xl p-6 border border-slate-200"
+                style={{
+                  background: '#fff',
+                  boxShadow: '0 4px 18px rgba(13,27,42,0.06)',
+                  transformOrigin: 'center center',
+                }}
+              >
                 <div
-                  className="mp-marquee-inner rounded-2xl p-6 border border-slate-200 h-full"
-                  style={{
-                    background: '#fff',
-                    boxShadow: '0 4px 18px rgba(13,27,42,0.06)',
-                    transformOrigin: 'center center',
-                  }}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
+                  style={{ background: '#f8fafc' }}
                 >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
-                    style={{ background: '#f8fafc' }}
-                  >
-                    <Icon className="w-5 h-5 text-slate-700" />
-                  </div>
-                  <h3 className="text-slate-900 font-bold text-base mb-2">{f.title}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">{f.description}</p>
+                  <Icon className="w-5 h-5 text-slate-700" />
                 </div>
+                <h3 className="text-slate-900 font-bold text-base mb-2">{f.title}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">{f.description}</p>
               </div>
             );
           })}
