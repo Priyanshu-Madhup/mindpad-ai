@@ -612,7 +612,7 @@ export default function LandingPage({ onGetStarted, onLogin }) {
 
       <main>
         {/* Hero Section */}
-        <section className="relative pt-10 pb-16 sm:pt-20 sm:pb-32 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
+        <section className="relative pt-0 pb-16 sm:pt-5 sm:pb-32 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 items-center">
             <div className="lg:col-span-5 space-y-8">
               <motion.div 
@@ -661,9 +661,9 @@ export default function LandingPage({ onGetStarted, onLogin }) {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.4 }}
-              className="lg:col-span-7 relative h-[420px] sm:h-[540px] lg:h-[660px] overflow-hidden"
+              className="lg:col-span-7 relative h-[480px] sm:h-[600px] lg:h-[720px] overflow-hidden"
             >
-              <div className="absolute -right-64 top-1/2 -translate-y-[65%] w-[147%] h-[147%]">
+              <div className="absolute -right-64 top-1/2 -translate-y-[68%] w-[147%] h-[147%]">
                 <Spline scene="https://prod.spline.design/VbrCGKyoiSdZRD7p/scene.splinecode" />
               </div>
             </motion.div>
