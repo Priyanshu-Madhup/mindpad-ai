@@ -383,6 +383,14 @@ export default function LandingPage({ onGetStarted, onLogin }) {
 
   const BACKEND = import.meta.env.VITE_API_URL || 'https://mindpad-ai.onrender.com';
 
+  // When the chat widget opens, make a real 1-token Groq call so the connection
+  // is warm before the user sends their first message.
+  useEffect(() => {
+    if (chatOpen) {
+      fetch(`${BACKEND}/support-chat/warm`, { method: 'GET' }).catch(() => {});
+    }
+  }, [chatOpen]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
