@@ -872,7 +872,6 @@ export default function App() {
             });
           } catch {/* malformed JSON — skip sources */}
         }
-      }
     } catch (err) {
       setChatHistory(prev => [
         ...prev,
@@ -881,7 +880,6 @@ export default function App() {
     } finally {
       streamReaderRef.current = null;
       setIsStreaming(false);
-      setIsGeneratingImage(false);
       setIsDeepResearching(false);
     }
   };
@@ -2391,7 +2389,7 @@ export default function App() {
               ))}
 
               {/* Thinking animation — shown while waiting for first streamed chunk */}
-              {(historyLoading || (isStreaming && !isGeneratingImage && !isDeepResearching && (
+              {(historyLoading || (isStreaming && !isDeepResearching && (
                 chatHistory[chatHistory.length - 1]?.role === 'user' ||
                 chatHistory[chatHistory.length - 1]?.content === ''
               ))) && (

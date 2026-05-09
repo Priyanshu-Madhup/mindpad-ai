@@ -6,13 +6,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
-  Share2, 
-  MoreVertical, 
-  FileText, 
   Network, 
   MessageSquare, 
-  Settings, 
-  Mic, 
   Podcast, 
   Eye, 
   Film, 
@@ -26,6 +21,7 @@ import {
   ArrowUp
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import Spline from '@splinetool/react-spline';
 import mindpadLogo from './mindpad_ai_logo.png';
 
 // ─── Knowledge Graph ──────────────────────────────────────────────────────────
@@ -503,63 +499,14 @@ export default function LandingPage({ onGetStarted, onLogin }) {
               </motion.div>
             </div>
 
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.4 }}
-              className="lg:col-span-7 relative"
+              className="lg:col-span-7 relative h-[420px] sm:h-[540px] lg:h-[660px] overflow-hidden"
             >
-              <div className="bg-slate-100 p-2 rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
-                <div className="bg-white rounded-xl h-[260px] sm:h-[380px] lg:h-[500px] flex flex-col shadow-inner">
-                  {/* Workspace UI Header */}
-                  <div className="px-6 py-4 flex items-center justify-between bg-slate-50/50 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-400/20"></div>
-                      <div className="w-3 h-3 rounded-full bg-blue-400/20"></div>
-                      <div className="w-3 h-3 rounded-full bg-slate-200"></div>
-                    </div>
-                    <div className="bg-white border border-slate-100 px-4 py-1.5 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Research Project: Quantum Ethics.pdf
-                    </div>
-                    <div className="flex gap-2 text-slate-300">
-                      <Share2 className="w-4 h-4" />
-                      <MoreVertical className="w-4 h-4" />
-                    </div>
-                  </div>
-                  {/* Workspace Canvas */}
-                  <div className="flex-1 flex overflow-hidden">
-                    <div className="w-16 bg-slate-50/30 border-r border-slate-100 flex flex-col items-center py-6 gap-6 text-slate-300">
-                      <FileText className="w-5 h-5" />
-                      <Network className="w-5 h-5" />
-                      <MessageSquare className="w-5 h-5 text-primary" />
-                      <Settings className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 p-4 sm:p-8 lg:p-12 flex flex-col items-center justify-center relative">
-                      <div className="max-w-md w-full space-y-6">
-                        <div className="p-6 bg-slate-50 rounded-xl border-l-4 border-primary shadow-sm">
-                          <p className="text-sm italic text-slate-500">"Synthesize the core arguments regarding temporal displacement in the last three chapters..."</p>
-                        </div>
-                        <div className="bg-white/80 backdrop-blur-md p-6 rounded-xl shadow-lg border border-slate-100">
-                          <p className="text-sm font-bold text-slate-900">Mindpad AI is analyzing 42 sources...</p>
-                          <div className="mt-4 flex gap-2">
-                            <div className="h-1 bg-primary w-1/3 rounded-full"></div>
-                            <div className="h-1 bg-slate-100 flex-1 rounded-full"></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 space-y-3 hidden sm:block">
-                        <div className="p-3 bg-primary text-white rounded-xl shadow-lg flex items-center gap-3 scale-90 opacity-80">
-                          <Network className="w-4 h-4" />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">Generate Map</span>
-                        </div>
-                        <div className="p-3 bg-white text-slate-900 rounded-xl shadow-lg flex items-center gap-3 border border-slate-100">
-                          <Mic className="w-4 h-4 text-slate-400" />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">Audio Podcast</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <div className="absolute -right-64 top-1/2 -translate-y-[65%] w-[147%] h-[147%]">
+                <Spline scene="https://prod.spline.design/VbrCGKyoiSdZRD7p/scene.splinecode" />
               </div>
             </motion.div>
           </div>
