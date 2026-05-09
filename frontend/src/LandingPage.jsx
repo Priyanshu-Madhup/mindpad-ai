@@ -18,7 +18,12 @@ import {
   MessageCircle,
   X,
   Send,
-  ArrowUp
+  ArrowUp,
+  FileText,
+  Search,
+  Globe,
+  Mic,
+  Zap
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Spline from '@splinetool/react-spline';
@@ -318,6 +323,145 @@ const KnowledgeGraph = () => {
   );
 };
 
+// ─── Marquee Features ────────────────────────────────────────────────────────
+const MARQUEE_FEATURES = [
+  { icon: Network,      title: 'Mind Map Generation',    description: 'Visualize complex connections between your sources in an interactive knowledge graph.' },
+  { icon: Sparkles,     title: 'Dual-Pipeline RAG',      description: 'Hybrid dense + sparse retrieval for precise, grounded answers from your documents.' },
+  { icon: FileText,     title: 'PDF Intelligence',       description: 'Chat with any PDF — extract insights, summarize chapters, and cross-reference instantly.' },
+  { icon: Search,       title: 'Semantic Vector Search', description: 'Pinecone-powered vector search that understands meaning, not just keywords.' },
+  { icon: Podcast,      title: 'Audio Podcast',          description: 'Transform research papers into engaging spoken audio you can learn from on the go.' },
+  { icon: Eye,          title: 'Insight Canvas',         description: 'AI-generated visual summaries that map key ideas from your entire notebook.' },
+  { icon: Palette,      title: 'AI Image Generation',    description: 'Create professional diagrams and visuals from natural language prompts.' },
+  { icon: CheckSquare,  title: 'Flashcards & Quiz',      description: 'Automatically extract key concepts into active-recall sets and adaptive quizzes.' },
+  { icon: Globe,        title: 'Deep Web Research',      description: 'Serper + Firecrawl pipeline scrapes and synthesizes live web sources into your notes.' },
+  { icon: Mic,          title: 'Voice Input & TTS',      description: 'Dictate queries with Whisper transcription and hear responses via Orpheus TTS.' },
+  { icon: Film,         title: 'Visual Podcast',         description: 'Cinematic slides and visual aids synchronized with your research narrative.' },
+  { icon: Zap,          title: 'Multi-language Output',  description: 'Receive responses in Hindi, Tamil, Bengali, Marathi, and more — instantly.' },
+];
+
+const MarqueeFeatures = () => {
+  const doubled = [...MARQUEE_FEATURES, ...MARQUEE_FEATURES];
+  const wrapRef = useRef(null);
+  const trackRef = useRef(null);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const track = trackRef.current;
+    if (!wrap || !track) return;
+
+    // Per-card lerp state so each card smoothly chases its target
+    const state = Array.from(track.children).map(() => ({ scale: 0.58, glow: 0 }));
+    const LERP = 0.08; // lower = smoother/slower catch-up; 0.08 feels silky
+
+    const tick = () => {
+      const wrapRect = wrap.getBoundingClientRect();
+      const centerX = wrapRect.left + wrapRect.width / 2;
+      const slots = track.children;
+
+      for (let i = 0; i < slots.length; i++) {
+        const inner = slots[i].firstElementChild;
+        if (!inner) continue;
+
+        const r = slots[i].getBoundingClientRect();
+        const cardCenter = r.left + r.width / 2;
+        const dist = Math.abs(cardCenter - centerX);
+        const maxDist = wrapRect.width * 0.30;
+        const t = Math.max(0, 1 - dist / maxDist);
+        const tq = t * t;
+
+        // target values
+        const targetScale = 0.58 + 0.47 * tq;
+        const targetGlow  = tq;
+
+        // lerp current → target
+        state[i].scale += (targetScale - state[i].scale) * LERP;
+        state[i].glow  += (targetGlow  - state[i].glow)  * LERP;
+
+        const s  = state[i].scale;
+        const tg = state[i].glow;
+
+        inner.style.transform   = `scale(${s.toFixed(4)})`;
+        inner.style.boxShadow   = `0 0 ${(tg * 40).toFixed(1)}px ${(tg * 20).toFixed(1)}px rgba(100,116,139,${(tg * 0.18).toFixed(3)}), 0 4px 18px rgba(13,27,42,0.06)`;
+        inner.style.borderColor = `rgba(100,116,139,${(0.10 + tg * 0.30).toFixed(3)})`;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  return (
+    <section className="py-16 sm:py-28 bg-white overflow-hidden">
+      <style>{`
+        @keyframes mp-marquee {
+          from { transform: translate3d(0,0,0); }
+          to   { transform: translate3d(-50%,0,0); }
+        }
+        .mp-marquee-track {
+          animation: mp-marquee 55s linear infinite;
+          will-change: transform;
+        }
+        .mp-marquee-wrap:hover .mp-marquee-track {
+          animation-play-state: paused;
+        }
+        .mp-marquee-inner {
+          /* NO transition on transform — RAF handles it at 60fps for smoothness */
+          transition: box-shadow 0.08s linear, border-color 0.08s linear;
+          will-change: transform;
+        }
+      `}</style>
+
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-8 mb-10 sm:mb-16">
+        <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400 mb-3">Everything you need</p>
+        <h2 className="text-3xl sm:text-4xl font-black font-display tracking-tight text-slate-900">The AI Studio Suite</h2>
+        <p className="text-slate-500 mt-3 text-base sm:text-lg">Powerful transformation tools built for serious research.</p>
+      </div>
+
+      <div
+        ref={wrapRef}
+        className="mp-marquee-wrap relative"
+        style={{
+          maskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
+          WebkitMaskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
+          paddingTop: '48px',
+          paddingBottom: '48px',
+        }}
+      >
+        <div ref={trackRef} className="mp-marquee-track flex items-center" style={{ width: 'max-content' }}>
+          {doubled.map((f, i) => {
+            const Icon = f.icon;
+            return (
+              /* outer slot — only handles spacing, no transform */
+              <div key={i} className="flex-shrink-0 w-[332px] mx-3" style={{ transformOrigin: 'center center' }}>
+                {/* inner — receives scale + glow from RAF */}
+                <div
+                  className="mp-marquee-inner rounded-2xl p-6 border border-slate-200 h-full"
+                  style={{
+                    background: '#fff',
+                    boxShadow: '0 4px 18px rgba(13,27,42,0.06)',
+                    transformOrigin: 'center center',
+                  }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
+                    style={{ background: '#f8fafc' }}
+                  >
+                    <Icon className="w-5 h-5 text-slate-700" />
+                  </div>
+                  <h3 className="text-slate-900 font-bold text-base mb-2">{f.title}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed">{f.description}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
   <motion.div 
     whileHover={{ y: -5 }}
@@ -520,53 +664,8 @@ export default function LandingPage({ onGetStarted, onLogin }) {
           </div>
         </section>
 
-        {/* Features Grid */}
-        <section className="py-16 sm:py-32 bg-white">
-          <div className="max-w-screen-2xl mx-auto px-4 sm:px-8">
-            <div className="mb-10 sm:mb-16">
-              <h2 className="text-3xl sm:text-4xl font-black font-display tracking-tight text-slate-900">The AI Studio Suite</h2>
-              <p className="text-slate-500 mt-3 sm:mt-4 text-base sm:text-lg">Powerful transformation tools to reshape your research data.</p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
-              <FeatureCard 
-                icon={Network} 
-                title="Mind Map" 
-                description="Visualize complex connections between theories and sources in a dynamic graph layout."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-              <FeatureCard 
-                icon={Podcast} 
-                title="Audio Podcast" 
-                description="Turn your research papers into engaging audio summaries for learning on the go."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-              <FeatureCard 
-                icon={Eye} 
-                title="Visual Podcast" 
-                description="Generate cinematic slides and visual aids that synchronize with your research narrative."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-              <FeatureCard 
-                icon={Film} 
-                title="Video Suggestions" 
-                description="AI-curated video content from scholarly archives that deepens your understanding."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-              <FeatureCard 
-                icon={Palette} 
-                title="Flashcards" 
-                description="Automatically extract key terminology and concepts into active-recall study sets."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-              <FeatureCard 
-                icon={CheckSquare} 
-                title="Quiz Mode" 
-                description="Test your synthesis with AI-generated questions tailored to your specific source library."
-                colorClass="bg-slate-100 text-slate-800"
-              />
-            </div>
-          </div>
-        </section>
+        {/* Features Marquee */}
+        <MarqueeFeatures />
 
         {/* Value Prop Section */}
         <section className="py-16 sm:py-32 bg-slate-50">
