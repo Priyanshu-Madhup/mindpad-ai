@@ -218,7 +218,10 @@ export default function App() {
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
-  const streamReaderRef = useRef(null); // holds active stream reader so it can be cancelled
+  const streamReaderRef    = useRef(null); // holds active stream reader so it can be cancelled
+  const twQueueRef         = useRef([]);   // characters waiting to be typed
+  const twIntervalRef      = useRef(null); // 5ms typewriter interval
+  const twDisplayRef       = useRef('');   // accumulated displayed text
   const studioScrollRef = useRef(null); // right sidebar scrollable container
   const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
@@ -780,6 +783,24 @@ export default function App() {
       streamReaderRef.current.cancel();
       streamReaderRef.current = null;
     }
+    // Flush remaining queued chars instantly so message isn't truncated
+    if (twIntervalRef.current) {
+      clearInterval(twIntervalRef.current);
+      twIntervalRef.current = null;
+      const remaining = twQueueRef.current.join('');
+      twQueueRef.current = [];
+      if (remaining) {
+        const full = twDisplayRef.current + remaining;
+        twDisplayRef.current = full;
+        setChatHistory(prev => {
+          const updated = [...prev];
+          if (updated[updated.length - 1]?.role === 'assistant') {
+            updated[updated.length - 1] = { ...updated[updated.length - 1], content: full };
+          }
+          return updated;
+        });
+      }
+    }
   };
 
   const sendMessage = async () => {
@@ -828,6 +849,29 @@ export default function App() {
 
       setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
 
+        // Reset typewriter state for this response
+        twQueueRef.current = [];
+        twDisplayRef.current = '';
+        twIntervalRef.current = null;
+
+        // Start the 5ms drainer
+        const startDrainer = () => {
+          if (twIntervalRef.current) return;
+          twIntervalRef.current = setInterval(() => {
+            if (twQueueRef.current.length === 0) return;
+            const ch = twQueueRef.current.shift();
+            twDisplayRef.current += ch;
+            const snap = twDisplayRef.current;
+            setChatHistory(prev => {
+              const updated = [...prev];
+              if (updated[updated.length - 1]?.role === 'assistant') {
+                updated[updated.length - 1] = { ...updated[updated.length - 1], content: snap };
+              }
+              return updated;
+            });
+          }, 5);
+        };
+
         const reader = response.body.getReader();
         streamReaderRef.current = reader;
         const decoder = new TextDecoder();
@@ -845,15 +889,27 @@ export default function App() {
           const displayContent = displayMarkerIdx !== -1
             ? rawAccumulated.slice(0, displayMarkerIdx)
             : rawAccumulated;
-          setChatHistory(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: displayContent,
-            };
-            return updated;
-          });
+          // Push only new characters into the typewriter queue
+          const newChars = displayContent.slice(twDisplayRef.current.length + twQueueRef.current.length);
+          if (newChars) {
+            twQueueRef.current.push(...newChars);
+            startDrainer();
+          }
         }
+
+        // Wait for the typewriter queue to fully drain before parsing sources
+        await new Promise(resolve => {
+          const check = setInterval(() => {
+            if (twQueueRef.current.length === 0) {
+              clearInterval(check);
+              if (twIntervalRef.current) {
+                clearInterval(twIntervalRef.current);
+                twIntervalRef.current = null;
+              }
+              resolve();
+            }
+          }, 10);
+        });
 
         // ── Parse RAG sources from the raw accumulated response ────────────────
         // The displayed content already has the marker stripped; parse it from

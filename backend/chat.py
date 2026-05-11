@@ -33,9 +33,6 @@ from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdf
 # Deep Research module — Serper + Firecrawl + Pinecone RAG pipeline
 from deep_research import router as deep_research_router, run_deep_research
 
-# Landing-page support chat — grounded in features.txt
-from support_chat import router as support_chat_router, warm_up as warm_up_support_chat
-
 # ── Generated images storage ────────────────────────────────────────────────
 IMAGES_DIR = Path(__file__).parent / "generated_images"
 IMAGES_DIR.mkdir(exist_ok=True)
@@ -60,9 +57,6 @@ app.include_router(rag_router)
 
 # Mount the Deep Research router (/deep-research/index endpoint)
 app.include_router(deep_research_router)
-
-# Mount the Support Chat router (/support-chat endpoint)
-app.include_router(support_chat_router)
 
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -385,12 +379,6 @@ async def startup_event():
         await ensure_indexes()
     except Exception as exc:
         print(f"[Startup] Warning: could not ensure indexes: {exc}")
-
-    # Pre-warm Groq TCP connection for support chat
-    try:
-        await warm_up_support_chat()
-    except Exception:
-        pass
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     """Decode Clerk JWT and return (user_id, email). Email may be empty string."""
