@@ -341,15 +341,15 @@ const MARQUEE_FEATURES = [
 
 const MarqueeFeatures = () => {
   const doubled = [...MARQUEE_FEATURES, ...MARQUEE_FEATURES];
-  const [paused, setPaused] = useState(false);
   const wrapRef  = useRef(null);
   const trackRef = useRef(null);
   const rafRef   = useRef(null);
-  const ticking  = useRef(false);
+  const animRef  = useRef(null); // WAAPI animation handle
 
   const MIN_SCALE = 0.62;
   const MAX_SCALE = 1.05;
   const FADE_ZONE = 0.14;
+  const DURATION  = 38000; // ms — must match below
 
   useEffect(() => {
     const wrap  = wrapRef.current;
@@ -358,78 +358,103 @@ const MarqueeFeatures = () => {
 
     const cards = Array.from(track.children);
 
+    // Cache wrap geometry — updated only on resize, never in hot loop
+    let centerX = 0;
+    let halfW   = 0;
+    const updateWrapGeo = () => {
+      const r = wrap.getBoundingClientRect();
+      centerX = r.left + r.width / 2;
+      halfW   = r.width / 2;
+    };
+    updateWrapGeo();
+
+    // Cache card offsets relative to track start — never change
+    const cardOffsets = cards.map(c => c.offsetLeft + c.offsetWidth / 2);
+
+    // Total width of one set (track is doubled)
+    const totalWidth = track.scrollWidth / 2;
+
+    // ── WAAPI replaces CSS animation ──────────────────────────────────────
+    // Reading anim.currentTime never forces layout, unlike getBoundingClientRect
+    // on an element with an active CSS animation transform.
+    const anim = track.animate(
+      [
+        { transform: 'translate3d(0,0,0)' },
+        { transform: `translate3d(-${totalWidth}px,0,0)` },
+      ],
+      { duration: DURATION, iterations: Infinity, easing: 'linear' }
+    );
+    animRef.current = anim;
+
+    // ── RAF loop — zero layout reads ──────────────────────────────────────
     const applyScales = () => {
-      ticking.current = false;
+      const elapsed = (anim.currentTime ?? 0) % DURATION;
+      const tLeft   = -((elapsed / DURATION) * totalWidth);
 
-      const wRect   = wrap.getBoundingClientRect();
-      const tLeft   = track.getBoundingClientRect().left;
-      const centerX = wRect.left + wRect.width / 2;
-      const halfW   = wRect.width / 2;
-
-      for (let i = 0; i < cards.length; i++) {
-        const card   = cards[i];
-        const cardCX = tLeft + card.offsetLeft + card.offsetWidth / 2;
-        const dist   = Math.abs(cardCX - centerX);
-        const norm   = Math.min(dist / halfW, 1);
-        const t      = (1 - Math.cos(Math.PI * norm)) / 2;
-        const scale  = MAX_SCALE - (MAX_SCALE - MIN_SCALE) * t;
+      for (let i = 0; i < cardOffsets.length; i++) {
+        const dist  = Math.abs(tLeft + cardOffsets[i] - centerX);
+        const norm  = Math.min(dist / halfW, 1);
+        const t     = (1 - Math.cos(Math.PI * norm)) / 2;
+        const scale   = (MAX_SCALE - (MAX_SCALE - MIN_SCALE) * t).toFixed(4);
         const opacity = norm > (1 - FADE_ZONE)
-          ? 1 - ((norm - (1 - FADE_ZONE)) / FADE_ZONE) * 0.55
-          : 1;
+          ? (1 - ((norm - (1 - FADE_ZONE)) / FADE_ZONE) * 0.55).toFixed(4)
+          : '1';
+        const glow      = 1 - t;
+        const borderA   = (0.08 + glow * 0.30).toFixed(3);
+        const outerBlur = Math.round(glow * 32);
+        const outerSprd = Math.round(glow * 10);
 
-        card.style.transform = `scale(${scale.toFixed(3)})`;
-        card.style.opacity   = String(opacity.toFixed(3));
+        // Each card has its own compositor layer (via backdropFilter) so these
+        // paints are isolated per-layer — same pattern as MindNote AI.
+        cards[i].style.transform   = `scale(${scale})`;
+        cards[i].style.opacity     = opacity;
+        cards[i].style.zIndex      = Math.round(+scale * 10);
+        cards[i].style.borderColor = `rgba(100,116,139,${borderA})`;
+        cards[i].style.boxShadow   = glow > 0.08
+          ? `0 0 ${outerBlur}px ${outerSprd}px rgba(100,116,139,${(glow * 0.18).toFixed(3)}), 0 4px 18px rgba(13,27,42,0.06)`
+          : '0 4px 18px rgba(13,27,42,0.06)';
       }
+
+      rafRef.current = requestAnimationFrame(applyScales);
     };
 
-    // Throttled updater — runs at most once per animation frame
-    const scheduleUpdate = () => {
-      if (!ticking.current) {
-        ticking.current = true;
-        rafRef.current = requestAnimationFrame(applyScales);
-      }
-    };
+    rafRef.current = requestAnimationFrame(applyScales);
 
-    // Listen only to animation iteration events and resize to schedule updates
-    // instead of running rAF in a hot loop
-    const animHandler = () => scheduleUpdate();
-
-    // Use a polling interval synced to the CSS animation instead of hot-loop rAF.
-    // 30 fps is plenty for smooth scale transitions during marquee scroll.
-    const intervalId = setInterval(scheduleUpdate, 33);
-
-    // Also update on resize
-    const resizeObs = new ResizeObserver(() => scheduleUpdate());
-    resizeObs.observe(wrap);
-
-    // Initial paint
-    scheduleUpdate();
+    const ro = new ResizeObserver(updateWrapGeo);
+    ro.observe(wrap);
 
     return () => {
-      clearInterval(intervalId);
       cancelAnimationFrame(rafRef.current);
-      resizeObs.disconnect();
+      anim.cancel();
+      ro.disconnect();
     };
   }, []);
 
   return (
     <section className="py-16 sm:py-28 bg-white overflow-hidden">
       <style>{`
-        @keyframes mp-marquee {
-          from { transform: translate3d(0,0,0); }
-          to   { transform: translate3d(-50%,0,0); }
-        }
-        .mp-marquee-track {
-          animation: mp-marquee 38s linear infinite;
-          will-change: transform;
-          contain: layout style;
-        }
         .mp-marquee-card {
-          will-change: transform, opacity;
-          contain: layout style paint;
           border-color: rgba(100,116,139,0.12);
           box-shadow: 0 4px 18px rgba(13,27,42,0.06);
+          transition:
+            border-color 0.3s cubic-bezier(0.4,0,0.2,1),
+            box-shadow   0.3s cubic-bezier(0.4,0,0.2,1);
+          transform-origin: center center;
         }
+        .mp-marquee-card:hover {
+          border-color: rgba(100,116,139,0.35);
+          box-shadow: 0 0 28px 8px rgba(100,116,139,0.12), 0 4px 18px rgba(13,27,42,0.06);
+        }
+        .mp-card-icon {
+          transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .mp-marquee-card:hover .mp-card-icon {
+          transform: scale(1.12) translateY(-2px);
+        }
+        .mp-card-title {
+          transition: color 0.2s cubic-bezier(0.4,0,0.2,1);
+        }
+        .mp-marquee-card:hover .mp-card-title { color: #0f172a; }
       `}</style>
 
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-8 mb-10 sm:mb-16">
@@ -440,20 +465,21 @@ const MarqueeFeatures = () => {
 
       <div
         ref={wrapRef}
-        className="mp-marquee-wrap relative"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
+        className="relative"
+        onMouseEnter={() => animRef.current?.pause()}
+        onMouseLeave={() => animRef.current?.play()}
         style={{
           maskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
           WebkitMaskImage: 'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 14%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 100%)',
           paddingTop: '48px',
           paddingBottom: '48px',
+          overflow: 'hidden',
         }}
       >
         <div
           ref={trackRef}
-          className="mp-marquee-track flex items-center"
-          style={{ width: 'max-content', animationPlayState: paused ? 'paused' : 'running' }}
+          className="flex items-center"
+          style={{ width: 'max-content', willChange: 'transform' }}
         >
           {doubled.map((f, i) => {
             const Icon = f.icon;
@@ -463,16 +489,20 @@ const MarqueeFeatures = () => {
                 className="mp-marquee-card flex-shrink-0 w-[332px] mx-3 rounded-2xl p-6 border border-slate-200"
                 style={{
                   background: '#fff',
-                  transformOrigin: 'center center',
+                  // backdropFilter forces an isolated GPU compositor layer per card.
+                  // Painting boxShadow/borderColor becomes a per-layer operation
+                  // instead of invalidating the whole page (identical to MindNote AI).
+                  backdropFilter: 'blur(0px)',
+                  WebkitBackdropFilter: 'blur(0px)',
                 }}
               >
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
+                  className="mp-card-icon w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
                   style={{ background: '#f8fafc' }}
                 >
                   <Icon className="w-5 h-5 text-slate-700" />
                 </div>
-                <h3 className="text-slate-900 font-bold text-base mb-2">{f.title}</h3>
+                <h3 className="mp-card-title text-slate-900 font-bold text-base mb-2">{f.title}</h3>
                 <p className="text-slate-500 text-sm leading-relaxed">{f.description}</p>
               </div>
             );
@@ -485,12 +515,16 @@ const MarqueeFeatures = () => {
 
 const FeatureCard = ({ icon: Icon, title, description, colorClass }) => (
   <motion.div 
-    whileHover={{ y: -5 }}
-    className="bg-slate-50 p-5 sm:p-8 rounded-2xl hover:bg-white hover:shadow-xl transition-all duration-300 group border border-slate-100"
+    whileHover={{ y: -5, transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] } }}
+    className="bg-slate-50 p-5 sm:p-8 rounded-2xl hover:bg-white hover:shadow-xl border border-slate-100"
+    style={{ transition: 'background 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1)' }}
   >
-    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform ${colorClass}`}>
+    <motion.div
+      whileHover={{ scale: 1.1, transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] } }}
+      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center mb-4 sm:mb-6 ${colorClass}`}
+    >
       <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
-    </div>
+    </motion.div>
     <h3 className="text-base sm:text-xl font-bold font-display mb-2 sm:mb-3 text-slate-900">{title}</h3>
     <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
   </motion.div>
