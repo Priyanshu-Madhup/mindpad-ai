@@ -332,7 +332,7 @@ export default function App() {
         await loadNotebooks();
         // Navigate to the newly created notebook
         if (data.notebook_id) {
-          await loadHistory(data.notebook_id);
+          await Promise.all([loadHistory(data.notebook_id), loadPdfs(data.notebook_id)]);
           setActiveNotebookId(data.notebook_id);
         }
         setNotionToast({ type: 'success', msg: `"${pageTitle}" synced as a new notebook!` });
