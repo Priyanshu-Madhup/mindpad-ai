@@ -225,6 +225,14 @@ export default function App() {
   const studioScrollRef = useRef(null); // right sidebar scrollable container
   const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
+  // ── Notion integration ──────────────────────────────────────────────────────
+  const [notionStatus, setNotionStatus] = useState(null); // null | { connected, workspace_name, workspace_icon }
+  const [notionPages, setNotionPages] = useState([]);
+  const [loadingNotionPages, setLoadingNotionPages] = useState(false);
+  const [showNotionModal, setShowNotionModal] = useState(false);
+  const [syncingPageId, setSyncingPageId] = useState(null); // page_id being synced
+  const [notionToast, setNotionToast] = useState(null);     // { type: 'success'|'error', msg }
+
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
   const userEmail = user?.primaryEmailAddress?.emailAddress || '';
@@ -243,6 +251,105 @@ export default function App() {
 
   const visibleNotifs = notifications.filter(n => !dismissedNotifs.includes(n.id));
   const unreadCount = visibleNotifs.length;
+
+  // ── Notion helpers ─────────────────────────────────────────────────────────
+  const fetchNotionStatus = useCallback(async () => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/notion/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotionStatus(data);
+      }
+    } catch {}
+  }, [getToken]);
+
+  const connectNotion = async () => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/notion/connect`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { auth_url } = await res.json();
+        window.location.href = auth_url;
+      }
+    } catch (err) {
+      console.error('[Notion connect]', err);
+    }
+  };
+
+  const disconnectNotion = async () => {
+    try {
+      const token = await getToken();
+      await fetch(`${BACKEND_URL}/notion/disconnect`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotionStatus({ connected: false });
+      setNotionPages([]);
+      setNotionToast({ type: 'success', msg: 'Notion workspace disconnected.' });
+      setTimeout(() => setNotionToast(null), 3500);
+    } catch (err) {
+      console.error('[Notion disconnect]', err);
+    }
+  };
+
+  const openNotionPages = async () => {
+    setShowNotionModal(true);
+    if (notionPages.length > 0) return; // already loaded
+    setLoadingNotionPages(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/notion/pages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotionPages(data.pages || []);
+      }
+    } catch (err) {
+      console.error('[Notion pages]', err);
+    } finally {
+      setLoadingNotionPages(false);
+    }
+  };
+
+  const syncNotionPage = async (pageId, pageTitle) => {
+    setSyncingPageId(pageId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/notion/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ page_id: pageId, page_title: pageTitle }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setShowNotionModal(false);
+        await loadNotebooks();
+        // Navigate to the newly created notebook
+        if (data.notebook_id) {
+          await loadHistory(data.notebook_id);
+          setActiveNotebookId(data.notebook_id);
+        }
+        setNotionToast({ type: 'success', msg: `"${pageTitle}" synced as a new notebook!` });
+        setTimeout(() => setNotionToast(null), 4000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setNotionToast({ type: 'error', msg: err.detail || 'Sync failed. Try again.' });
+        setTimeout(() => setNotionToast(null), 4000);
+      }
+    } catch (err) {
+      console.error('[Notion sync]', err);
+      setNotionToast({ type: 'error', msg: 'Sync failed. Check console for details.' });
+      setTimeout(() => setNotionToast(null), 4000);
+    } finally {
+      setSyncingPageId(null);
+    }
+  };
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -339,6 +446,31 @@ export default function App() {
   useEffect(() => {
     if (isSignedIn) fetchNotifications();
   }, [isSignedIn, fetchNotifications]);
+
+  // Fetch Notion connection status when signed in
+  useEffect(() => {
+    if (isSignedIn) fetchNotionStatus();
+  }, [isSignedIn, fetchNotionStatus]);
+
+  // Handle ?notion=connected / ?notion=error redirect from OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const notionParam = params.get('notion');
+    if (!notionParam) return;
+    // Strip the query param from the URL without a page reload
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+    if (notionParam === 'connected') {
+      fetchNotionStatus();
+      setNotionToast({ type: 'success', msg: 'Notion workspace connected successfully!' });
+      setTimeout(() => setNotionToast(null), 4000);
+    } else if (notionParam === 'error') {
+      const reason = params.get('reason') || 'unknown';
+      setNotionToast({ type: 'error', msg: `Notion connection failed: ${reason.replace(/_/g, ' ')}.` });
+      setTimeout(() => setNotionToast(null), 5000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Notebooks state
   const [notebooks, setNotebooks] = useState([]);
@@ -1541,6 +1673,124 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* ── Notion Pages Modal ────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showNotionModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) { setShowNotionModal(false); setNotionPages([]); } }}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 16 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
+                    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                  </svg>
+                  <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Import from Notion</h2>
+                </div>
+                <button
+                  onClick={() => { setShowNotionModal(false); setNotionPages([]); }}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-5 py-3">
+                {loadingNotionPages ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm text-slate-400">Loading pages…</p>
+                  </div>
+                ) : notionPages.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-slate-400 text-sm">No pages found.</p>
+                    <p className="text-slate-400 text-xs mt-1">Make sure you've shared pages with the Mindpad integration in Notion.</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {notionPages.map(page => (
+                      <li key={page.id} className="flex items-center justify-between gap-3 py-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {page.icon ? (
+                            <span className="text-base shrink-0">{page.icon}</span>
+                          ) : (
+                            <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-400" fill="currentColor" aria-hidden="true">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+                            </svg>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{page.title}</p>
+                            {page.last_edited && (
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                Edited {new Date(page.last_edited).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => syncNotionPage(page.id, page.title)}
+                          disabled={syncingPageId === page.id}
+                          className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/80 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                        >
+                          {syncingPageId === page.id ? (
+                            <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Syncing…</>
+                          ) : 'Import'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Notion toast notification ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {notionToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 32, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 32, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-300 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-medium max-w-sm
+              ${notionToast.type === 'success'
+                ? 'bg-emerald-500 text-white'
+                : 'bg-red-500 text-white'
+              }`}
+          >
+            {notionToast.type === 'success' ? (
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <span>{notionToast.msg}</span>
+            <button
+              onClick={() => setNotionToast(null)}
+              className="ml-auto p-0.5 opacity-80 hover:opacity-100 transition-opacity"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Navigation Bar */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
@@ -1950,7 +2200,14 @@ export default function App() {
                                       });
                                     }}
                                   />
-                                  <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
+                                  {pdf.source === 'notion' ? (
+                                    <svg className="w-3 h-3 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" title="Notion">
+                                      <rect width="100" height="100" rx="18" fill="#1A1A1A"/>
+                                      <path d="M28 26.5c1.8 1.4 2.5 1.3 5.9 1.1l32-1.9c.6 0 .1-.6-.1-.7l-5.4-3.9c-1-.8-2.4-1.7-5-.5l-31 2.3c-1.1.1-1.3.6-.8 1.1l5.4 1.5zm2.3 9v33.6c0 1.8 1 2.5 2.9 2.4l35.2-2c1.9-.1 2.4-1.1 2.4-2.5V33.6c0-1.4-.6-2.1-1.8-2l-36.4 2.1c-1.4.1-2.3.9-2.3 1.8zm34.5 1.7c.2.9 0 1.8-.9 1.9l-1.5.2v22c-1.3.7-2.5 1.1-3.5 1.1-1.6 0-2-.5-3.2-2l-9.8-15.4v14.9L50 61.5s0 2-2.8 2.4L40 64.4c-.2-.4 0-1.4.6-1.6l1.7-.5V43.1l-2.4-.2c-.2-.9.2-2.2 1.5-2.3l7.9-.5 10.2 15.6V41.3l-2.7-.3c-.2-1.1.5-1.9 1.5-2l7.5-.5z" fill="white"/>
+                                    </svg>
+                                  ) : (
+                                    <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
+                                  )}
                                   <div className="flex items-center gap-1 min-w-0 flex-1">
                                     <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate" title={pdf.name}>{pdf.name}</span>
                                     {pdf.total_tokens && (
@@ -2165,6 +2422,49 @@ export default function App() {
                           isMultimediaRetrieval ? 'translate-x-5' : 'translate-x-0'
                         }`} />
                       </button>
+                    </div>
+
+                    {/* ── Notion Integration ─────────────────────────── */}
+                    <div className="flex items-start justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-2">
+                        {/* Notion "N" logo mark */}
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
+                          <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                        </svg>
+                        <div>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Notion</span>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Import Notion pages as notebooks</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
+                        {notionStatus?.connected ? (
+                          <>
+                            <span className="text-[10px] text-emerald-500 font-medium truncate max-w-27.5" title={notionStatus.workspace_name}>
+                              {notionStatus.workspace_icon ? `${notionStatus.workspace_icon} ` : ''}
+                              {notionStatus.workspace_name || 'Connected'}
+                            </span>
+                            <button
+                              onClick={() => { setShowSettings(false); openNotionPages(); }}
+                              className="text-[11px] px-2 py-0.5 rounded-lg bg-primary text-white hover:bg-primary/80 transition-colors"
+                            >
+                              Sync Notes
+                            </button>
+                            <button
+                              onClick={disconnectNotion}
+                              className="text-[10px] text-slate-400 hover:text-red-400 transition-colors"
+                            >
+                              Disconnect
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => { setShowSettings(false); connectNotion(); }}
+                            className="text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            Connect
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 )}

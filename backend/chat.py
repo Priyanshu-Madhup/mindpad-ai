@@ -58,6 +58,10 @@ app.include_router(rag_router)
 # Mount the Deep Research router (/deep-research/index endpoint)
 app.include_router(deep_research_router)
 
+# Mount the Notion integration router (/notion/* endpoints)
+from notion import router as notion_router, cleanup_notion_connection
+app.include_router(notion_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
@@ -500,6 +504,8 @@ async def clerk_webhook(request: Request):
             await users_meta_col.delete_many({"user_id": user_id})
             # Delete pdf_docs + Pinecone namespace
             await cleanup_user_all_data(user_id)
+            # Delete Notion OAuth tokens
+            await cleanup_notion_connection(user_id)
             print(
                 f"[Webhook] user.deleted — purged {nb_result.deleted_count} notebook(s) "
                 f"for user {user_id[:12]}…"

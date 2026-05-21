@@ -39,3 +39,6 @@ yarn-error.log*
 
 # Generated images (ephemeral, do not commit)
 backend/generated_images/
+
+# Detailed readme (internal documentation)
+DETAILED_README.md
