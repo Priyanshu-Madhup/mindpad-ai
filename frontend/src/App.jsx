@@ -334,6 +334,19 @@ export default function App() {
         if (data.notebook_id) {
           await Promise.all([loadHistory(data.notebook_id), loadPdfs(data.notebook_id)]);
           setActiveNotebookId(data.notebook_id);
+          // Inject AI summary immediately (also persisted in MongoDB, but this avoids
+          // waiting for another loadHistory call — same pattern as PDF upload)
+          if (data.summary) {
+            const meta = `${(data.total_tokens || 0).toLocaleString()} tokens · ${data.chunk_count || 0} chunks indexed`;
+            setChatHistory(prev => [...prev, {
+              role: 'assistant',
+              content: [
+                `<p><strong>${pageTitle}</strong> &nbsp;<em style="font-size:0.8em;opacity:0.6">${meta}</em></p>`,
+                `<hr>`,
+                data.summary,
+              ].join(''),
+            }]);
+          }
         }
         setNotionToast({ type: 'success', msg: `"${pageTitle}" synced as a new notebook!` });
         setTimeout(() => setNotionToast(null), 4000);

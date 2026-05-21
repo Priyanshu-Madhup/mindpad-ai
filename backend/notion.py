@@ -770,6 +770,7 @@ async def notion_sync_page(
 
     # ── Index page content into Pinecone so users can query it via RAG ────────
     plain_text = _blocks_to_plain_text(blocks)
+    doc_id = None
     try:
         doc_id = await _index_notion_to_rag(
             plain_text, body.page_id, body.page_title, user_id, notebook_id_str
@@ -780,10 +781,44 @@ async def notion_sync_page(
         # RAG indexing is best-effort — the notebook was already created successfully
         print(f"[Notion RAG] Indexing failed (non-fatal): {exc}")
 
+    # ── Generate AI summary (same pipeline as PDF upload) ────────────────────
+    # Queries Pinecone with a broad summary query → single Groq call → HTML summary.
+    # Saved as a second assistant message in the notebook so it persists on refresh.
+    summary = ""
+    total_tokens = 0
+    chunk_count = 0
+    if doc_id:
+        try:
+            from rag import generate_pdf_summary, pdf_docs_col as rag_pdf_docs_col
+            summary, _ = await generate_pdf_summary(doc_id, user_id, body.page_title)
+            if summary:
+                doc_meta = await rag_pdf_docs_col.find_one({"doc_id": doc_id})
+                if doc_meta:
+                    total_tokens = doc_meta.get("total_tokens", 0)
+                    chunk_count  = doc_meta.get("chunk_count", 0)
+                meta_line = (
+                    f'<p><strong>{body.page_title}</strong>'
+                    f'&nbsp;<em style="font-size:0.8em;opacity:0.6">'
+                    f'{total_tokens:,} tokens · {chunk_count} chunks indexed'
+                    f'</em></p><hr>'
+                )
+                summary_msg = {"role": "assistant", "content": meta_line + summary}
+                await _notebooks_col.update_one(
+                    {"_id": ObjectId(notebook_id_str)},
+                    {"$push": {"messages": summary_msg}, "$set": {"updated_at": datetime.now(timezone.utc)}},
+                )
+                print(f"[Notion RAG] Summary saved to notebook {notebook_id_str}")
+        except Exception as exc:
+            print(f"[Notion RAG] Summary generation failed (non-fatal): {exc}")
+            summary = ""
+
     return {
         "status":        "synced",
         "notebook_id":   notebook_id_str,
         "notebook_name": notebook_name,
+        "summary":       summary,
+        "total_tokens":  total_tokens,
+        "chunk_count":   chunk_count,
     }
 
 
