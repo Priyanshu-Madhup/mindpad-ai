@@ -359,16 +359,20 @@ async def _index_notion_to_rag(
         return None
 
     total_tokens = count_tokens(plain_text)
-    if total_tokens < 30:
-        print(f"[Notion RAG] '{page_title}' — too short ({total_tokens} tokens), skipping index.")
+    if total_tokens < 3:
+        print(f"[Notion RAG] '{page_title}' — empty ({total_tokens} tokens), skipping index.")
         return None
 
     print(f"[Notion RAG] '{page_title}' → {total_tokens} tokens")
 
     # ── Dynamic chunking (same Groq call as PDFs) ─────────────────────────────
-    num_chunks_target = await decide_chunk_count(total_tokens, page_title)
+    # For very short pages (< 200 tokens) skip the Groq call and use 1 chunk
+    if total_tokens < 200:
+        num_chunks_target = 1
+    else:
+        num_chunks_target = await decide_chunk_count(total_tokens, page_title)
     raw_tpc           = total_tokens // max(1, num_chunks_target)
-    tokens_per_chunk  = max(200, min(1000, raw_tpc))
+    tokens_per_chunk  = max(total_tokens, min(1000, raw_tpc))
     chunks            = split_into_token_chunks(plain_text, tokens_per_chunk)
     actual_chunks     = len(chunks)
     print(f"[Notion RAG] {actual_chunks} chunks @ ≤{tokens_per_chunk} tokens each")
