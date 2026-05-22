@@ -438,6 +438,38 @@ async def _index_notion_to_rag(
     return doc_id
 
 
+async def _delete_notion_page_rag_data(user_id: str, notion_page_id: str) -> None:
+    """Delete RAG vectors + pdf_docs records for a single Notion page (used on re-sync)."""
+    import asyncio
+    from rag import get_index, pdf_docs_col as rag_pdf_docs_col
+
+    docs = await rag_pdf_docs_col.find(
+        {"user_id": user_id, "source": "notion", "notion_page_id": notion_page_id},
+        {"doc_id": 1, "chunk_count": 1},
+    ).to_list(length=None)
+    if not docs:
+        return
+
+    all_ids: list[str] = []
+    for doc in docs:
+        for i in range(doc.get("chunk_count", 0)):
+            all_ids.append(f"{doc['doc_id']}::chunk_{i}")
+
+    if all_ids:
+        pinecone_index = await asyncio.to_thread(get_index)
+        for start in range(0, len(all_ids), 1000):
+            await asyncio.to_thread(
+                pinecone_index.delete,
+                ids=all_ids[start: start + 1000],
+                namespace=user_id,
+            )
+
+    await rag_pdf_docs_col.delete_many(
+        {"user_id": user_id, "source": "notion", "notion_page_id": notion_page_id}
+    )
+    print(f"[Notion RAG] Cleared {len(docs)} doc(s) for re-sync of page {notion_page_id}")
+
+
 async def _delete_notion_rag_data(user_id: str) -> None:
     """Delete all Notion-sourced vectors from Pinecone and records from pdf_docs_col."""
     import asyncio
@@ -733,40 +765,59 @@ async def notion_sync_page(
                 detail=f"Failed to fetch Notion page: {exc.response.status_code}",
             )
 
-    html_content = _blocks_to_html(blocks) if blocks else "<p><em>This Notion page is empty.</em></p>"
-
-    # Wrap in a clear header so the user knows this was imported from Notion
+    # Intro message — just the header, no raw page dump (content is in RAG)
     safe_title = _escape(body.page_title)
-    full_html = (
-        f"<h2>📄 {safe_title}</h2>"
+    intro_html = (
+        f"<h2>{safe_title}</h2>"
         f"<p><em>Synced from your Notion workspace. "
         f"Ask Midy AI any questions about this page.</em></p>"
-        f"<hr>"
-        f"{html_content}"
     )
 
     now = datetime.now(timezone.utc)
-    notebook_name = f"[Notion] {body.page_title}"[:80]  # cap at 80 chars
-    result = await _notebooks_col.insert_one({
-        "user_id":        user_id,
-        "name":           notebook_name,
-        "messages":       [
-            {
-                "role":           "assistant",
-                "content":        full_html,
-                "notion_page_id": body.page_id,
-            }
-        ],
-        "created_at":     now,
-        "updated_at":     now,
-        "notion_page_id": body.page_id,
-    })
+    notebook_name = f"[Notion] {body.page_title}"[:80]
 
-    notebook_id_str = str(result.inserted_id)
-    print(
-        f"[Notion] Synced page '{body.page_title}' → notebook {notebook_id_str} "
-        f"for user {user_id[:12]}…"
+    # ── Upsert notebook (avoid duplicate on re-sync of the same page) ─────────
+    existing = await _notebooks_col.find_one(
+        {"user_id": user_id, "notion_page_id": body.page_id}
     )
+    if existing:
+        notebook_id_str = str(existing["_id"])
+        await _notebooks_col.update_one(
+            {"_id": existing["_id"]},
+            {
+                "$set": {
+                    "name":       notebook_name,
+                    "messages":   [{"role": "assistant", "content": intro_html, "notion_page_id": body.page_id}],
+                    "updated_at": now,
+                }
+            },
+        )
+        # Clear old RAG vectors so re-index is clean
+        try:
+            await _delete_notion_page_rag_data(user_id, body.page_id)
+        except Exception as exc:
+            print(f"[Notion] Old RAG cleanup failed (non-fatal): {exc}")
+        print(f"[Notion] Re-synced page '{body.page_title}' → existing notebook {notebook_id_str}")
+    else:
+        result = await _notebooks_col.insert_one({
+            "user_id":        user_id,
+            "name":           notebook_name,
+            "messages":       [
+                {
+                    "role":           "assistant",
+                    "content":        intro_html,
+                    "notion_page_id": body.page_id,
+                }
+            ],
+            "created_at":     now,
+            "updated_at":     now,
+            "notion_page_id": body.page_id,
+        })
+        notebook_id_str = str(result.inserted_id)
+        print(
+            f"[Notion] Synced page '{body.page_title}' → notebook {notebook_id_str} "
+            f"for user {user_id[:12]}…"
+        )
 
     # ── Index page content into Pinecone so users can query it via RAG ────────
     plain_text = _blocks_to_plain_text(blocks)

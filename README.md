@@ -1,70 +1,120 @@
-# Getting Started with Create React App
+# Mindpad AI
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+> **An AI-powered research workspace for scholars, students, and lifelong learners.**
 
-## Available Scripts
+[![Live Demo](https://img.shields.io/badge/Live-mindpad--ai.vercel.app-0D1B2A?style=flat-square)](https://mindpad-ai.vercel.app)
+[![Frontend](https://img.shields.io/badge/Frontend-Vercel-black?style=flat-square)](https://vercel.com)
+[![Backend](https://img.shields.io/badge/Backend-Railway-7B2D8B?style=flat-square)](https://railway.app)
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## What is Mindpad AI?
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Mindpad AI is a full-stack AI research workspace. You create isolated notebooks, each with its own persistent chat history, and can answer questions using:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- **RAG over PDFs** — upload documents; the AI retrieves the most relevant chunks before answering
+- **Notion Integration** — import Notion pages directly into a notebook via OAuth 2.0; pages are indexed into Pinecone and come with an AI-generated summary
+- **Live Web Search** — Serper.dev-powered Google search injected into the prompt
+- **Deep Research Mode** — Serper → Firecrawl scraping → Pinecone vector retrieval pipeline
+- **AI Image Generation** — Gemini image model, persisted to Firebase Storage
+- **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
+- **Mind Map Generator** — D3-powered interactive mind map from your PDFs
+- **Multilingual Responses** — 12 Indian and global languages
 
-### `npm test`
+---
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Quick Start
 
-### `npm run build`
+### Backend
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
+pip install -r requirements.txt
+cp .env.example .env           # fill in your API keys
+python main.py                 # http://localhost:8000
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Frontend
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```bash
+cd frontend
+npm install
+# create .env.local with VITE_API_URL and VITE_CLERK_PUBLISHABLE_KEY etc.
+npm run dev                    # http://localhost:3000
+```
 
-### `npm run eject`
+---
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Tech Stack
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion, Clerk |
+| Backend | Python 3.11+, FastAPI, Uvicorn |
+| LLM / STT / TTS | Groq (LLaMA 3.3 70B, Whisper), Google Gemini |
+| Vector DB | Pinecone — `multilingual-e5-large` (1024-dim) |
+| Database | MongoDB Atlas (motor 3.x async driver) |
+| Auth | Clerk (RS256 JWT + webhooks) |
+| Notion | Notion OAuth 2.0, Notion API v1 |
+| Search / Scrape | Serper.dev, Firecrawl |
+| Storage | Firebase Storage (generated images) |
+| Hosting | Vercel (frontend), Railway (backend) |
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+---
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Project Structure
 
-## Learn More
+```
+mindpad_ai/
+├── backend/
+│   ├── main.py            # Uvicorn entry point
+│   ├── chat.py            # FastAPI app — all core routes
+│   ├── rag.py             # PDF RAG pipeline
+│   ├── notion.py          # Notion OAuth 2.0 + sync + RAG + summary
+│   ├── deep_research.py   # Deep Research pipeline
+│   ├── support_chat.py    # Landing-page support chatbot
+│   ├── features.txt       # Product reference for support bot
+│   └── requirements.txt
+├── frontend/
+│   └── src/
+│       ├── App.jsx        # Main app shell, chat UI
+│       ├── LandingPage.jsx
+│       ├── MindMapModal.jsx
+│       ├── AuthPage.jsx
+│       └── firebase.jsx
+├── README.md
+└── DETAILED_README.md
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+---
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Environment Variables
 
-### Code Splitting
+Copy `backend/.env.example` to `backend/.env` and fill in:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```
+GROQ_API_KEY=
+GEMINI_API_KEY=
+PINECONE_API_KEY=
+MONGODB_URI=
+CLERK_FRONTEND_API=
+CLERK_WEBHOOK_SECRET=
+SERPER_API_KEY=
+FIRECRAWL_API_KEY=
+MAIL_USER=
+MAIL_PASS=
+NOTION_CLIENT_ID=
+NOTION_CLIENT_SECRET=
+NOTION_STATE_SECRET=
+NOTION_REDIRECT_URI=https://<your-backend>/notion/callback
+ALLOWED_ORIGINS=https://mindpad-ai.vercel.app
+```
 
-### Analyzing the Bundle Size
+See [DETAILED_README.md](DETAILED_README.md) for the full architecture, API reference, data models, and deployment guide.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+---
 
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+*© 2025 Mindpad AI — mindpad.ai@gmail.com*

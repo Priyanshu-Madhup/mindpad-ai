@@ -330,23 +330,10 @@ export default function App() {
         const data = await res.json();
         setShowNotionModal(false);
         await loadNotebooks();
-        // Navigate to the newly created notebook
+        // Navigate to the newly synced notebook
         if (data.notebook_id) {
           await Promise.all([loadHistory(data.notebook_id), loadPdfs(data.notebook_id)]);
           setActiveNotebookId(data.notebook_id);
-          // Inject AI summary immediately (also persisted in MongoDB, but this avoids
-          // waiting for another loadHistory call — same pattern as PDF upload)
-          if (data.summary) {
-            const meta = `${(data.total_tokens || 0).toLocaleString()} tokens · ${data.chunk_count || 0} chunks indexed`;
-            setChatHistory(prev => [...prev, {
-              role: 'assistant',
-              content: [
-                `<p><strong>${pageTitle}</strong> &nbsp;<em style="font-size:0.8em;opacity:0.6">${meta}</em></p>`,
-                `<hr>`,
-                data.summary,
-              ].join(''),
-            }]);
-          }
         }
         setNotionToast({ type: 'success', msg: `"${pageTitle}" synced as a new notebook!` });
         setTimeout(() => setNotionToast(null), 4000);
@@ -2341,7 +2328,7 @@ export default function App() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.97 }}
                     transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 p-4 shadow-xl">
+                    className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 px-4 pt-4 pb-2 shadow-xl">
                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
 
                     {/* ── 3-way colour mode toggle ─────────────────── */}
@@ -2374,9 +2361,14 @@ export default function App() {
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                       <div className="flex items-center gap-2">
                         <Microscope className="w-4 h-4 text-primary/70" />
-                        <div>
+                        <div className="flex items-center gap-1">
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Research Mode</span>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">GPT-OSS 120B · top-5 chunks · detailed answers</p>
+                          <div className="relative group">
+                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                              GPT-OSS 120B · top-5 chunks · detailed answers
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <button
@@ -2395,9 +2387,14 @@ export default function App() {
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4 text-primary/70" />
-                        <div>
+                        <div className="flex items-center gap-1">
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Deep Research</span>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Scrapes & vectorises web — answers from RAG</p>
+                          <div className="relative group">
+                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                              Scrapes &amp; vectorises web — answers from RAG
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <button
@@ -2416,9 +2413,14 @@ export default function App() {
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                       <div className="flex items-center gap-2">
                         <ImageIcon className="w-4 h-4 text-primary/70" />
-                        <div>
+                        <div className="flex items-center gap-1">
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Multimedia Retrieval</span>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Extracts & indexes PDF images via Llama 4 Scout</p>
+                          <div className="relative group">
+                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-48 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                              Extracts &amp; indexes PDF images via Llama 4 Scout
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <button
@@ -2438,46 +2440,60 @@ export default function App() {
                     </div>
 
                     {/* ── Notion Integration ─────────────────────────── */}
-                    <div className="flex items-start justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        {/* Notion "N" logo mark */}
-                        <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
-                          <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
-                        </svg>
-                        <div>
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Notion</span>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">Import Notion pages as notebooks</p>
+                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                      {/* Workspace name above — only when connected */}
+                      {notionStatus?.connected && (
+                        <span className="block text-[10px] text-emerald-500 font-medium truncate mb-1.5" title={notionStatus.workspace_name}>
+                          {notionStatus.workspace_icon ? `${notionStatus.workspace_icon} ` : ''}
+                          {notionStatus.workspace_name || 'Connected'}
+                        </span>
+                      )}
+
+                      {/* Notion label row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
+                            <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                          </svg>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Notion</span>
+                            <div className="relative group">
+                              <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-40 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                                Import Notion pages as notebooks
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
-                        {notionStatus?.connected ? (
-                          <>
-                            <span className="text-[10px] text-emerald-500 font-medium truncate max-w-27.5" title={notionStatus.workspace_name}>
-                              {notionStatus.workspace_icon ? `${notionStatus.workspace_icon} ` : ''}
-                              {notionStatus.workspace_name || 'Connected'}
-                            </span>
-                            <button
-                              onClick={() => { setShowSettings(false); openNotionPages(); }}
-                              className="text-[11px] px-2 py-0.5 rounded-lg bg-primary text-white hover:bg-primary/80 transition-colors"
-                            >
-                              Sync Notes
-                            </button>
-                            <button
-                              onClick={disconnectNotion}
-                              className="text-[10px] text-slate-400 hover:text-red-400 transition-colors"
-                            >
-                              Disconnect
-                            </button>
-                          </>
-                        ) : (
+
+                        {/* Connect button (disconnected state only — sits inline) */}
+                        {!notionStatus?.connected && (
                           <button
                             onClick={() => { setShowSettings(false); connectNotion(); }}
-                            className="text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                            className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
                           >
                             Connect
                           </button>
                         )}
                       </div>
+
+                      {/* Sync + Disconnect side by side — only when connected */}
+                      {notionStatus?.connected && (
+                        <div className="flex gap-1.5 mt-1.5">
+                          <button
+                            onClick={() => { setShowSettings(false); openNotionPages(); }}
+                            className="flex-1 text-[9px] py-1 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
+                          >
+                            Sync Notes
+                          </button>
+                          <button
+                            onClick={disconnectNotion}
+                            className="flex-1 text-[9px] py-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:border-red-800 dark:hover:text-red-400 transition-colors font-medium"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
