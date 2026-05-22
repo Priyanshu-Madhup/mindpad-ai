@@ -232,6 +232,7 @@ export default function App() {
   const [showNotionModal, setShowNotionModal] = useState(false);
   const [syncingPageId, setSyncingPageId] = useState(null); // page_id being synced
   const [notionToast, setNotionToast] = useState(null);     // { type: 'success'|'error', msg }
+  const [notionImportTargetId, setNotionImportTargetId] = useState(null); // notebook to import into (null = create new)
 
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
@@ -319,23 +320,31 @@ export default function App() {
 
   const syncNotionPage = async (pageId, pageTitle) => {
     setSyncingPageId(pageId);
+    const targetNotebookId = notionImportTargetId; // capture before clearing
+    setNotionImportTargetId(null);
     try {
       const token = await getToken();
+      const body = { page_id: pageId, page_title: pageTitle };
+      if (targetNotebookId) body.notebook_id = targetNotebookId;
       const res = await fetch(`${BACKEND_URL}/notion/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ page_id: pageId, page_title: pageTitle }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const data = await res.json();
         setShowNotionModal(false);
+        setNotionPages([]);
         await loadNotebooks();
-        // Navigate to the newly synced notebook
-        if (data.notebook_id) {
-          await Promise.all([loadHistory(data.notebook_id), loadPdfs(data.notebook_id)]);
-          setActiveNotebookId(data.notebook_id);
+        const notebookId = targetNotebookId || data.notebook_id;
+        if (notebookId) {
+          await Promise.all([loadHistory(notebookId), loadPdfs(notebookId)]);
+          setActiveNotebookId(notebookId);
         }
-        setNotionToast({ type: 'success', msg: `"${pageTitle}" synced as a new notebook!` });
+        const successMsg = targetNotebookId
+          ? `"${pageTitle}" added as a source!`
+          : `"${pageTitle}" synced as a new notebook!`;
+        setNotionToast({ type: 'success', msg: successMsg });
         setTimeout(() => setNotionToast(null), 4000);
       } else {
         const err = await res.json().catch(() => ({}));
@@ -1479,6 +1488,23 @@ export default function App() {
                   MP3
                   <span className="ml-1 text-[9px] font-bold uppercase tracking-wider opacity-70">Soon</span>
                 </button>
+                {/* Notion — import page as source */}
+                {notionStatus?.connected && (
+                  <button
+                    onClick={() => {
+                      setNotionImportTargetId(sourceModalTargetId);
+                      setShowSourceModal(false);
+                      setShowUrlInput(false);
+                      openNotionPages();
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500 text-xs font-bold transition-all"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor" aria-hidden="true">
+                      <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                    </svg>
+                    Notion
+                  </button>
+                )}
                 {/* Website — toggles URL input */}
                 <button
                   onClick={() => setShowUrlInput(prev => !prev)}
