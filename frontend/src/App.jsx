@@ -2111,7 +2111,7 @@ export default function App() {
                     const isOpen = openNotebookId === nb.id;
 
                     return (
-                      <div key={nb.id} className="rounded-xl overflow-hidden">
+                      <div key={nb.id} data-notebook-id={nb.id} className="rounded-xl overflow-hidden">
                         {/* Notebook row */}
                         <div
                           onClick={() => !isEditing && switchNotebook(nb.id)}
@@ -2326,17 +2326,10 @@ export default function App() {
                     }
                   }
 
-                  // Inject summary as assistant message in the active notebook's chat
-                  if (result?.summary && targetId === activeNotebookId) {
-                    const meta = `${(result.total_tokens || 0).toLocaleString()} tokens · ${result.chunk_count || 0} chunks indexed`;
-                    setChatHistory(prev => [...prev, {
-                      role: 'assistant',
-                      content: [
-                        `<p><strong>${result.name}</strong> &nbsp;<em style="font-size:0.8em;opacity:0.6">${meta}</em></p>`,
-                        `<hr>`,
-                        result.summary,
-                      ].join(''),
-                    }]);
+                  // Reload history from MongoDB so the summary always appears
+                  // immediately — fixes the need-to-refresh bug for reused/dedup PDFs.
+                  if (targetId === activeNotebookId) {
+                    await loadHistory(targetId);
                   }
                 }
               }}
@@ -2923,15 +2916,73 @@ export default function App() {
           {/* Input Area */}
           <div
             className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
-            {/* Hidden file input — images only */}
+            {/* Hidden file input — images and PDFs */}
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf,application/pdf"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                e.target.value = '';
+
+                // PDF → upload via the same pipeline used by the sidebar Sources button
+                if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                  if (!activeNotebookId) {
+                    alert('Please select or create a notebook first.');
+                    return;
+                  }
+                  // If PDFs for this notebook haven't been loaded yet, initialise the list
+                  // to an empty array so the dropdown doesn't show the generic "Loading…"
+                  // spinner while the upload is in flight.
+                  if (notebookPdfs[activeNotebookId] === undefined) {
+                    setNotebookPdfs(prev => ({ ...prev, [activeNotebookId]: [] }));
+                    // Also kick off a background fetch so older PDFs appear alongside the new one
+                    loadPdfs(activeNotebookId);
+                  }
+                  const result = await uploadPdfToNotebook(activeNotebookId, file);
+
+                  // ── Auto-rename notebook from LLM-suggested name (mirrors sidebar handler) ──
+                  if (result?.suggested_name && activeNotebookId) {
+                    const newName = result.suggested_name;
+                    setNotebooks(prev =>
+                      prev.map(n => n.id === activeNotebookId ? { ...n, name: newName } : n)
+                    );
+                    try {
+                      const token = await getToken();
+                      if (token) {
+                        await fetch(`${BACKEND_URL}/notebooks/${activeNotebookId}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({ name: newName }),
+                        });
+                      }
+                    } catch (err) {
+                      console.error('[Auto-rename notebook]', err);
+                    }
+                  }
+
+                  // ── Reload history from MongoDB so the chat always reflects what the
+                  // backend saved — handles both new uploads and dedup/reused cases where
+                  // setChatHistory on the response could miss an empty-summary anchor. ──
+                  await loadHistory(activeNotebookId);
+
+                  // ── Scroll the notebook item into view in the sidebar ──
+                  // Small delay lets React flush the setOpenNotebookId re-render first
+                  setTimeout(() => {
+                    document
+                      .querySelector(`[data-notebook-id="${activeNotebookId}"]`)
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }, 80);
+
+                  return;
+                }
+
+                // Image → multimodal input (existing behaviour)
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                   const dataUrl = ev.target.result;
@@ -2943,7 +2994,6 @@ export default function App() {
                   });
                 };
                 reader.readAsDataURL(file);
-                e.target.value = '';
               }}
             />
             <div className="w-full relative group">
@@ -2980,11 +3030,11 @@ export default function App() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className={`mt-1 p-2 rounded-xl transition-all shrink-0 ${
-                      attachedImage
+                      attachedImage || uploadingPdf
                         ? 'text-primary bg-primary/10'
                         : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
-                    title="Attach image"
+                    title="Attach image or PDF"
                   >
                     <Paperclip className="w-4 h-4" />
                   </button>

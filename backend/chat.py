@@ -840,17 +840,24 @@ RESEARCH CONTENT:
             max_tokens=4096,
         )
         import json as _json
-        raw = completion.choices[0].message.content.strip()
-        # Strip <think>…</think> reasoning blocks (GPT-OSS / reasoning models)
         import re as _re
-        raw = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
+        original = (completion.choices[0].message.content or "").strip()
+        # Strip <think>…</think> reasoning blocks (GPT-OSS / reasoning models)
+        raw = _re.sub(r'<think>.*?</think>', '', original, flags=_re.DOTALL).strip()
         # Strip any accidental markdown fences
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        # Find the outermost JSON object in case of any surrounding text
+        # Find the outermost JSON object; if nothing outside <think>, search inside it too
         start = raw.find('{')
         end = raw.rfind('}')
-        if start != -1 and end != -1:
+        if start == -1 or end == -1:
+            # Model may have embedded JSON inside its <think> block — search original
+            start = original.find('{')
+            end = original.rfind('}')
+            if start == -1 or end == -1:
+                raise ValueError("No JSON object found in model response")
+            raw = original[start:end + 1]
+        else:
             raw = raw[start:end + 1]
         tree_data = _json.loads(raw)
     except Exception as e:

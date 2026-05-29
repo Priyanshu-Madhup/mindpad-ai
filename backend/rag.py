@@ -270,7 +270,7 @@ async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> tupl
         resp = await _groq.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=1200,  # 4k ctx + 500 prompt + 1200 out ≈ 5700 ≤ 8000 TPM
+            max_completion_tokens=2400,  # ~2k ctx + 500 prompt + 2400 out ≈ 4900 ≤ 8000 TPM
             temperature=0.3,
         )
         raw = resp.choices[0].message.content.strip()
@@ -1008,5 +1008,3 @@ async def cleanup_user_all_data(user_id: str) -> None:
         print(f"[RAG] Deleted Pinecone namespace for user {user_id[:12]}…")
     except Exception as e:
         print(f"[RAG] Pinecone namespace delete failed for user {user_id[:12]}…: {e}")
-
-    return firebase_urls
