@@ -53,6 +53,7 @@ import {
   Maximize2,
   Minimize2,
   SlidersHorizontal,
+  Brain,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -73,28 +74,27 @@ import { storage } from './firebase.jsx';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const LANGUAGES = [
-  { code: 'en', label: 'English',   native: 'English'    },
-  { code: 'hi', label: 'Hindi',     native: 'हिंदी'       },
-  { code: 'bn', label: 'Bengali',   native: 'বাংলা'       },
-  { code: 'ta', label: 'Tamil',     native: 'தமிழ்'      },
-  { code: 'te', label: 'Telugu',    native: 'తెలుగు'     },
-  { code: 'kn', label: 'Kannada',   native: 'ಕನ್ನಡ'     },
-  { code: 'ml', label: 'Malayalam', native: 'മലയാളം'    },
-  { code: 'mr', label: 'Marathi',   native: 'मराठी'      },
-  { code: 'gu', label: 'Gujarati',  native: 'ગુજરાતી'    },
-  { code: 'pa', label: 'Punjabi',   native: 'ਪੰਜਾਬੀ'    },
-  { code: 'ur', label: 'Urdu',      native: 'اردو'       },
-  { code: 'or', label: 'Odia',      native: 'ଓଡ଼ିଆ'      },
+  { code: 'en', label: 'English', native: 'English' },
+  { code: 'hi', label: 'Hindi', native: 'हिंदी' },
+  { code: 'bn', label: 'Bengali', native: 'বাংলা' },
+  { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
+  { code: 'te', label: 'Telugu', native: 'తెలుగు' },
+  { code: 'kn', label: 'Kannada', native: 'ಕನ್ನಡ' },
+  { code: 'ml', label: 'Malayalam', native: 'മലയാളം' },
+  { code: 'mr', label: 'Marathi', native: 'मराठी' },
+  { code: 'gu', label: 'Gujarati', native: 'ગુજરાતી' },
+  { code: 'pa', label: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
+  { code: 'ur', label: 'Urdu', native: 'اردو' },
+  { code: 'or', label: 'Odia', native: 'ଓଡ଼ିଆ' },
 ];
 
 const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-3 px-3 py-2.5 transition-colors rounded-lg group w-full text-left ${
-      active
+    className={`flex items-center gap-3 px-3 py-2.5 transition-colors rounded-lg group w-full text-left ${active
         ? 'text-slate-900 dark:text-slate-100 font-bold bg-slate-200/50 dark:bg-white/5'
         : 'text-slate-500 dark:text-slate-500 font-medium hover:bg-slate-200/50 dark:hover:bg-white/5'
-    }`}
+      }`}
   >
     <Icon className={`w-5 h-5 ${active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'}`} />
     <span className="text-sm truncate">{label}</span>
@@ -220,10 +220,10 @@ export default function App() {
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
   const pdfInputRef = useRef(null);
   const pdfUploadTargetRef = useRef(null);
-  const streamReaderRef    = useRef(null); // holds active stream reader so it can be cancelled
-  const twQueueRef         = useRef([]);   // characters waiting to be typed
-  const twIntervalRef      = useRef(null); // 5ms typewriter interval
-  const twDisplayRef       = useRef('');   // accumulated displayed text
+  const streamReaderRef = useRef(null); // holds active stream reader so it can be cancelled
+  const twQueueRef = useRef([]);   // characters waiting to be typed
+  const twIntervalRef = useRef(null); // 5ms typewriter interval
+  const twDisplayRef = useRef('');   // accumulated displayed text
   const studioScrollRef = useRef(null); // right sidebar scrollable container
   const [pdfInfoTooltip, setPdfInfoTooltip] = useState(null); // { pdf, x, y }
 
@@ -270,7 +270,7 @@ export default function App() {
         const data = await res.json();
         setNotionStatus(data);
       }
-    } catch {}
+    } catch { }
   }, [getToken]);
 
   const connectNotion = async () => {
@@ -376,7 +376,7 @@ export default function App() {
         const data = await res.json();
         setNotifications(data.notifications || []);
       }
-    } catch {}
+    } catch { }
   }, [getToken]);
 
   const dismissNotif = (id) => {
@@ -505,7 +505,7 @@ export default function App() {
       setNotionToast({ type: 'error', msg: `Notion connection failed: ${reason.replace(/_/g, ' ')}.` });
       setTimeout(() => setNotionToast(null), 5000);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Notebooks state
@@ -1017,97 +1017,97 @@ export default function App() {
 
       setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
 
-        // Reset typewriter state for this response
-        twQueueRef.current = [];
-        twDisplayRef.current = '';
-        twIntervalRef.current = null;
+      // Reset typewriter state for this response
+      twQueueRef.current = [];
+      twDisplayRef.current = '';
+      twIntervalRef.current = null;
 
-        // Start the 5ms drainer
-        const startDrainer = () => {
-          if (twIntervalRef.current) return;
-          twIntervalRef.current = setInterval(() => {
-            if (twQueueRef.current.length === 0) return;
-            const ch = twQueueRef.current.shift();
-            twDisplayRef.current += ch;
-            const snap = twDisplayRef.current;
-            setChatHistory(prev => {
-              const updated = [...prev];
-              if (updated[updated.length - 1]?.role === 'assistant') {
-                updated[updated.length - 1] = { ...updated[updated.length - 1], content: snap };
-              }
-              return updated;
-            });
-          }, 5);
-        };
-
-        const reader = response.body.getReader();
-        streamReaderRef.current = reader;
-        const decoder = new TextDecoder();
-        const SOURCES_MARKER = '\n__SOURCES_JSON__:';
-        let rawAccumulated = ''; // full raw stream including sources marker
-        // Track first chunk: when deep research is active the DR indicator stays
-        // visible until the LLM actually starts streaming.  Dismissing it here
-        // (rather than in `finally`) prevents the DR bubble and the assistant
-        // bubble from appearing simultaneously.
-        let deepResearchDismissed = false;
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          // Dismiss the deep-research loading indicator as soon as the first
-          // token arrives — this is the precise moment the DR pipeline is done
-          // and the LLM has started responding.
-          if (!deepResearchDismissed) {
-            deepResearchDismissed = true;
-            setIsDeepResearching(false);
-          }
-          const chunk = decoder.decode(value, { stream: true });
-          rawAccumulated += chunk;
-          // Derive display content directly from rawAccumulated so a marker
-          // that spans a chunk boundary never appears in the bubble even briefly.
-          const displayMarkerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
-          const displayContent = displayMarkerIdx !== -1
-            ? rawAccumulated.slice(0, displayMarkerIdx)
-            : rawAccumulated;
-          // Push only new characters into the typewriter queue
-          const newChars = displayContent.slice(twDisplayRef.current.length + twQueueRef.current.length);
-          if (newChars) {
-            twQueueRef.current.push(...newChars);
-            startDrainer();
-          }
-        }
-
-        // Wait for the typewriter queue to fully drain before parsing sources
-        await new Promise(resolve => {
-          const check = setInterval(() => {
-            if (twQueueRef.current.length === 0) {
-              clearInterval(check);
-              if (twIntervalRef.current) {
-                clearInterval(twIntervalRef.current);
-                twIntervalRef.current = null;
-              }
-              resolve();
+      // Start the 5ms drainer
+      const startDrainer = () => {
+        if (twIntervalRef.current) return;
+        twIntervalRef.current = setInterval(() => {
+          if (twQueueRef.current.length === 0) return;
+          const ch = twQueueRef.current.shift();
+          twDisplayRef.current += ch;
+          const snap = twDisplayRef.current;
+          setChatHistory(prev => {
+            const updated = [...prev];
+            if (updated[updated.length - 1]?.role === 'assistant') {
+              updated[updated.length - 1] = { ...updated[updated.length - 1], content: snap };
             }
-          }, 10);
-        });
+            return updated;
+          });
+        }, 5);
+      };
 
-        // ── Parse RAG sources from the raw accumulated response ────────────────
-        // The displayed content already has the marker stripped; parse it from
-        // rawAccumulated so sources are never lost even if they span chunk boundaries.
-        const markerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
-        if (markerIdx !== -1) {
-          try {
-            const sources = JSON.parse(rawAccumulated.slice(markerIdx + SOURCES_MARKER.length));
-            setChatHistory(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                updated[updated.length - 1] = { ...lastMsg, sources };
-              }
-              return updated;
-            });
-          } catch {/* malformed JSON — skip sources */}
+      const reader = response.body.getReader();
+      streamReaderRef.current = reader;
+      const decoder = new TextDecoder();
+      const SOURCES_MARKER = '\n__SOURCES_JSON__:';
+      let rawAccumulated = ''; // full raw stream including sources marker
+      // Track first chunk: when deep research is active the DR indicator stays
+      // visible until the LLM actually starts streaming.  Dismissing it here
+      // (rather than in `finally`) prevents the DR bubble and the assistant
+      // bubble from appearing simultaneously.
+      let deepResearchDismissed = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        // Dismiss the deep-research loading indicator as soon as the first
+        // token arrives — this is the precise moment the DR pipeline is done
+        // and the LLM has started responding.
+        if (!deepResearchDismissed) {
+          deepResearchDismissed = true;
+          setIsDeepResearching(false);
         }
+        const chunk = decoder.decode(value, { stream: true });
+        rawAccumulated += chunk;
+        // Derive display content directly from rawAccumulated so a marker
+        // that spans a chunk boundary never appears in the bubble even briefly.
+        const displayMarkerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
+        const displayContent = displayMarkerIdx !== -1
+          ? rawAccumulated.slice(0, displayMarkerIdx)
+          : rawAccumulated;
+        // Push only new characters into the typewriter queue
+        const newChars = displayContent.slice(twDisplayRef.current.length + twQueueRef.current.length);
+        if (newChars) {
+          twQueueRef.current.push(...newChars);
+          startDrainer();
+        }
+      }
+
+      // Wait for the typewriter queue to fully drain before parsing sources
+      await new Promise(resolve => {
+        const check = setInterval(() => {
+          if (twQueueRef.current.length === 0) {
+            clearInterval(check);
+            if (twIntervalRef.current) {
+              clearInterval(twIntervalRef.current);
+              twIntervalRef.current = null;
+            }
+            resolve();
+          }
+        }, 10);
+      });
+
+      // ── Parse RAG sources from the raw accumulated response ────────────────
+      // The displayed content already has the marker stripped; parse it from
+      // rawAccumulated so sources are never lost even if they span chunk boundaries.
+      const markerIdx = rawAccumulated.indexOf(SOURCES_MARKER);
+      if (markerIdx !== -1) {
+        try {
+          const sources = JSON.parse(rawAccumulated.slice(markerIdx + SOURCES_MARKER.length));
+          setChatHistory(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+              updated[updated.length - 1] = { ...lastMsg, sources };
+            }
+            return updated;
+          });
+        } catch {/* malformed JSON — skip sources */ }
+      }
     } catch (err) {
       setChatHistory(prev => [
         ...prev,
@@ -1539,7 +1539,7 @@ export default function App() {
                     className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500 text-xs font-bold transition-all"
                   >
                     <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor" aria-hidden="true">
-                      <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                      <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z" />
                     </svg>
                     Notion
                   </button>
@@ -1547,11 +1547,10 @@ export default function App() {
                 {/* Website — toggles URL input */}
                 <button
                   onClick={() => setShowUrlInput(prev => !prev)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-bold transition-all ${
-                    showUrlInput
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-bold transition-all ${showUrlInput
                       ? 'border-primary bg-primary/10 dark:bg-primary/20 text-primary'
                       : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500'
-                  }`}
+                    }`}
                 >
                   <Globe className="w-3.5 h-3.5" />
                   Website
@@ -1565,167 +1564,167 @@ export default function App() {
 
       {/* ── Insight Canvas Modal ─────────────────────────────────────────────── */}
       <AnimatePresence>
-      {showInsightModal && insightCanvasImages[activeNotebookId] && (
-        <>
-          <div
-            className="fixed inset-0 z-100 bg-black/70 backdrop-blur-sm"
-            onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
-          />
-          <div className="fixed inset-0 z-101 flex items-center justify-center p-4 pointer-events-none">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl pointer-events-auto overflow-hidden flex flex-col max-h-[92vh]"
-              ref={canvasModalRef}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
-                    <LayoutDashboard className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">Insight Canvas</h2>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">AI-generated infographic from your selected PDFs</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {/* Zoom controls */}
-                  <button
-                    title="Zoom out"
-                    onClick={() => setCanvasZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
-                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 w-10 text-center tabular-nums">
-                    {Math.round(canvasZoom * 100)}%
-                  </span>
-                  <button
-                    title="Zoom in"
-                    onClick={() => setCanvasZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))}
-                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                  <button
-                    title={canvasIsFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                    onClick={() => {
-                      if (!canvasIsFullscreen) {
-                        canvasModalRef.current?.requestFullscreen();
-                        setCanvasZoom(1);
-                        setCanvasPan({ x: 0, y: 0 });
-                      } else {
-                        document.exitFullscreen();
-                      }
-                    }}
-                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    {canvasIsFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                  </button>
-                  <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
-                  <button
-                    title="Download infographic"
-                    onClick={async () => {
-                      const imgUrl = insightCanvasImages[activeNotebookId];
-                      try {
-                        const res = await fetch(imgUrl);
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `insight-canvas-${activeNotebookId}-${Date.now()}.png`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                      } catch {
-                        window.open(imgUrl, '_blank');
-                      }
-                    }}
-                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
-                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              {/* Image viewport — zoom + pan */}
-              <div
-                ref={canvasContainerRef}
-                className="overflow-hidden flex-1 relative bg-slate-50 dark:bg-slate-950"
-                style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: 0 }}
-                /* ── Mouse scroll wheel zoom handled via non-passive native listener in useEffect ── */
-                /* ── Mouse drag pan ── */
-                onMouseDown={e => {
-                  if (canvasZoom <= 1) return;
-                  e.preventDefault();
-                  canvasDragRef.current = { startX: e.clientX, startY: e.clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
-                }}
-                onMouseMove={e => {
-                  if (!canvasDragRef.current) return;
-                  const dx = e.clientX - canvasDragRef.current.startX;
-                  const dy = e.clientY - canvasDragRef.current.startY;
-                  setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
-                }}
-                onMouseUp={() => { canvasDragRef.current = null; }}
-                onMouseLeave={() => { canvasDragRef.current = null; }}
-                /* ── Touch pinch-to-zoom + drag ── */
-                onTouchStart={e => {
-                  if (e.touches.length === 2) {
-                    const dx = e.touches[0].clientX - e.touches[1].clientX;
-                    const dy = e.touches[0].clientY - e.touches[1].clientY;
-                    canvasPinchRef.current = { startDist: Math.hypot(dx, dy), startZoom: canvasZoom };
-                    canvasDragRef.current = null;
-                  } else if (e.touches.length === 1 && canvasZoom > 1) {
-                    canvasDragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
-                  }
-                }}
-                onTouchMove={e => {
-                  e.preventDefault();
-                  if (e.touches.length === 2 && canvasPinchRef.current) {
-                    const dx = e.touches[0].clientX - e.touches[1].clientX;
-                    const dy = e.touches[0].clientY - e.touches[1].clientY;
-                    const dist = Math.hypot(dx, dy);
-                    const newZoom = Math.min(5, Math.max(0.25, parseFloat((canvasPinchRef.current.startZoom * (dist / canvasPinchRef.current.startDist)).toFixed(2))));
-                    setCanvasZoom(newZoom);
-                  } else if (e.touches.length === 1 && canvasDragRef.current) {
-                    const dx = e.touches[0].clientX - canvasDragRef.current.startX;
-                    const dy = e.touches[0].clientY - canvasDragRef.current.startY;
-                    setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
-                  }
-                }}
-                onTouchEnd={() => { canvasDragRef.current = null; canvasPinchRef.current = null; }}
+        {showInsightModal && insightCanvasImages[activeNotebookId] && (
+          <>
+            <div
+              className="fixed inset-0 z-100 bg-black/70 backdrop-blur-sm"
+              onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
+            />
+            <div className="fixed inset-0 z-101 flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl pointer-events-auto overflow-hidden flex flex-col max-h-[92vh]"
+                ref={canvasModalRef}
               >
-                <div
-                  style={{
-                    transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
-                    transformOrigin: 'center center',
-                    transition: canvasDragRef.current ? 'none' : 'transform 0.1s ease-out',
-                    willChange: 'transform',
-                  }}
-                  className="w-full h-full flex items-center justify-center p-6"
-                >
-                  <img
-                    src={insightCanvasImages[activeNotebookId]}
-                    alt="Insight Canvas infographic"
-                    draggable={false}
-                    className="max-w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700 select-none"
-                    style={{ userSelect: 'none', WebkitUserDrag: 'none' }}
-                  />
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                      <LayoutDashboard className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">Insight Canvas</h2>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">AI-generated infographic from your selected PDFs</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {/* Zoom controls */}
+                    <button
+                      title="Zoom out"
+                      onClick={() => setCanvasZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 w-10 text-center tabular-nums">
+                      {Math.round(canvasZoom * 100)}%
+                    </span>
+                    <button
+                      title="Zoom in"
+                      onClick={() => setCanvasZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      title={canvasIsFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                      onClick={() => {
+                        if (!canvasIsFullscreen) {
+                          canvasModalRef.current?.requestFullscreen();
+                          setCanvasZoom(1);
+                          setCanvasPan({ x: 0, y: 0 });
+                        } else {
+                          document.exitFullscreen();
+                        }
+                      }}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      {canvasIsFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                    <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+                    <button
+                      title="Download infographic"
+                      onClick={async () => {
+                        const imgUrl = insightCanvasImages[activeNotebookId];
+                        try {
+                          const res = await fetch(imgUrl);
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `insight-canvas-${activeNotebookId}-${Date.now()}.png`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        } catch {
+                          window.open(imgUrl, '_blank');
+                        }
+                      }}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => { setShowInsightModal(false); setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); if (document.fullscreenElement) document.exitFullscreen(); }}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          </div>
-        </>
-      )}
+                {/* Image viewport — zoom + pan */}
+                <div
+                  ref={canvasContainerRef}
+                  className="overflow-hidden flex-1 relative bg-slate-50 dark:bg-slate-950"
+                  style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: 0 }}
+                  /* ── Mouse scroll wheel zoom handled via non-passive native listener in useEffect ── */
+                  /* ── Mouse drag pan ── */
+                  onMouseDown={e => {
+                    if (canvasZoom <= 1) return;
+                    e.preventDefault();
+                    canvasDragRef.current = { startX: e.clientX, startY: e.clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
+                  }}
+                  onMouseMove={e => {
+                    if (!canvasDragRef.current) return;
+                    const dx = e.clientX - canvasDragRef.current.startX;
+                    const dy = e.clientY - canvasDragRef.current.startY;
+                    setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
+                  }}
+                  onMouseUp={() => { canvasDragRef.current = null; }}
+                  onMouseLeave={() => { canvasDragRef.current = null; }}
+                  /* ── Touch pinch-to-zoom + drag ── */
+                  onTouchStart={e => {
+                    if (e.touches.length === 2) {
+                      const dx = e.touches[0].clientX - e.touches[1].clientX;
+                      const dy = e.touches[0].clientY - e.touches[1].clientY;
+                      canvasPinchRef.current = { startDist: Math.hypot(dx, dy), startZoom: canvasZoom };
+                      canvasDragRef.current = null;
+                    } else if (e.touches.length === 1 && canvasZoom > 1) {
+                      canvasDragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, originPanX: canvasPan.x, originPanY: canvasPan.y };
+                    }
+                  }}
+                  onTouchMove={e => {
+                    e.preventDefault();
+                    if (e.touches.length === 2 && canvasPinchRef.current) {
+                      const dx = e.touches[0].clientX - e.touches[1].clientX;
+                      const dy = e.touches[0].clientY - e.touches[1].clientY;
+                      const dist = Math.hypot(dx, dy);
+                      const newZoom = Math.min(5, Math.max(0.25, parseFloat((canvasPinchRef.current.startZoom * (dist / canvasPinchRef.current.startDist)).toFixed(2))));
+                      setCanvasZoom(newZoom);
+                    } else if (e.touches.length === 1 && canvasDragRef.current) {
+                      const dx = e.touches[0].clientX - canvasDragRef.current.startX;
+                      const dy = e.touches[0].clientY - canvasDragRef.current.startY;
+                      setCanvasPan({ x: canvasDragRef.current.originPanX + dx, y: canvasDragRef.current.originPanY + dy });
+                    }
+                  }}
+                  onTouchEnd={() => { canvasDragRef.current = null; canvasPinchRef.current = null; }}
+                >
+                  <div
+                    style={{
+                      transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+                      transformOrigin: 'center center',
+                      transition: canvasDragRef.current ? 'none' : 'transform 0.1s ease-out',
+                      willChange: 'transform',
+                    }}
+                    className="w-full h-full flex items-center justify-center p-6"
+                  >
+                    <img
+                      src={insightCanvasImages[activeNotebookId]}
+                      alt="Insight Canvas infographic"
+                      draggable={false}
+                      className="max-w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700 select-none"
+                      style={{ userSelect: 'none', WebkitUserDrag: 'none' }}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
       </AnimatePresence>
 
       {/* ── Mind Map Modal ───────────────────────────────────────────────────── */}
@@ -1777,7 +1776,7 @@ export default function App() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
-                    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+                    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z" />
                   </svg>
                   <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Import from Notion</h2>
                 </div>
@@ -1810,7 +1809,7 @@ export default function App() {
                             <span className="text-base shrink-0">{page.icon}</span>
                           ) : (
                             <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-400" fill="currentColor" aria-hidden="true">
-                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z" />
                             </svg>
                           )}
                           <div className="min-w-0">
@@ -2001,99 +2000,99 @@ export default function App() {
 
               {/* Notifications dropdown */}
               <AnimatePresence>
-              {showNotifs && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                  transition={{ duration: 0.18, ease: 'easeOut' }}
-                  className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-full sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-sm font-bold font-display text-slate-800 dark:text-slate-100">Notifications</span>
-                    <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Admin: create notification form */}
-                  {isAdmin && (
-                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 space-y-2 bg-primary/5 dark:bg-primary/10">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Admin — Broadcast</p>
-                      <input
-                        value={newNotifTitle}
-                        onChange={e => setNewNotifTitle(e.target.value)}
-                        placeholder="Title"
-                        className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100"
-                      />
-                      <textarea
-                        value={newNotifMessage}
-                        onChange={e => setNewNotifMessage(e.target.value)}
-                        placeholder="Message..."
-                        rows={2}
-                        className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100 resize-none"
-                      />
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={sendNotification}
-                          disabled={sendingNotif || !newNotifTitle.trim() || !newNotifMessage.trim()}
-                          className="flex-1 py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
-                        >
-                          {sendingNotif ? 'Sending...' : 'Notify Everyone'}
-                        </button>
-                        <button
-                          onClick={broadcastEmail}
-                          disabled={sendingBroadcast || !newNotifTitle.trim() || !newNotifMessage.trim()}
-                          title="Send email to all users"
-                          className="flex-1 py-1.5 text-xs font-semibold bg-slate-800 dark:bg-slate-700 text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
-                        >
-                          {sendingBroadcast ? 'Mailing...' : 'Mail Everyone'}
-                        </button>
-                      </div>
+                {showNotifs && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="fixed sm:absolute right-2 sm:right-0 top-16 sm:top-full sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-sm font-bold font-display text-slate-800 dark:text-slate-100">Notifications</span>
+                      <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                  )}
 
-                  {/* Notifications list — scrollable after ~3 items */}
-                  <div className="max-h-54 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
-                    {visibleNotifs.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
-                    ) : (
-                      visibleNotifs.map(n => (
-                        <div key={n.id} className="flex items-start gap-2 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{n.title}</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
-                            {n.created_at && (
-                              <p className="text-[10px] text-slate-300 dark:text-slate-600 mt-1">
-                                {new Date(n.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                            {/* Admin: delete for everyone */}
-                            {isAdmin && (
-                              <button
-                                onClick={() => deleteNotifForAll(n.id)}
-                                className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-colors"
-                                title="Remove for all users"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
-                            {/* Personal dismiss */}
-                            <button
-                              onClick={() => dismissNotif(n.id)}
-                              className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-300 transition-colors"
-                              title="Dismiss"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                    {/* Admin: create notification form */}
+                    {isAdmin && (
+                      <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 space-y-2 bg-primary/5 dark:bg-primary/10">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Admin — Broadcast</p>
+                        <input
+                          value={newNotifTitle}
+                          onChange={e => setNewNotifTitle(e.target.value)}
+                          placeholder="Title"
+                          className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100"
+                        />
+                        <textarea
+                          value={newNotifMessage}
+                          onChange={e => setNewNotifMessage(e.target.value)}
+                          placeholder="Message..."
+                          rows={2}
+                          className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100 resize-none"
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={sendNotification}
+                            disabled={sendingNotif || !newNotifTitle.trim() || !newNotifMessage.trim()}
+                            className="flex-1 py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                          >
+                            {sendingNotif ? 'Sending...' : 'Notify Everyone'}
+                          </button>
+                          <button
+                            onClick={broadcastEmail}
+                            disabled={sendingBroadcast || !newNotifTitle.trim() || !newNotifMessage.trim()}
+                            title="Send email to all users"
+                            className="flex-1 py-1.5 text-xs font-semibold bg-slate-800 dark:bg-slate-700 text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                          >
+                            {sendingBroadcast ? 'Mailing...' : 'Mail Everyone'}
+                          </button>
                         </div>
-                      ))
+                      </div>
                     )}
-                  </div>
-                </motion.div>
-              )}
+
+                    {/* Notifications list — scrollable after ~3 items */}
+                    <div className="max-h-54 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-800">
+                      {visibleNotifs.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-8">No notifications</p>
+                      ) : (
+                        visibleNotifs.map(n => (
+                          <div key={n.id} className="flex items-start gap-2 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{n.title}</p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
+                              {n.created_at && (
+                                <p className="text-[10px] text-slate-300 dark:text-slate-600 mt-1">
+                                  {new Date(n.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                              {/* Admin: delete for everyone */}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => deleteNotifForAll(n.id)}
+                                  className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-colors"
+                                  title="Remove for all users"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                              {/* Personal dismiss */}
+                              <button
+                                onClick={() => dismissNotif(n.id)}
+                                className="p-0.5 text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-300 transition-colors"
+                                title="Dismiss"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
             </div>
             <Show when="signed-out">
@@ -2158,451 +2157,440 @@ export default function App() {
               exit={{ x: -256, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
               className="fixed md:absolute inset-y-0 left-0 z-50 md:z-50 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
-            <div
-              className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
-            <div className="flex items-center justify-end mb-6 px-2">
-              <button
-                className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+              <div
+                className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
+                <div className="flex items-center justify-end mb-6 px-2">
+                  <button
+                    className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
 
-            <button
-              onClick={() => createNotebook()}
-              className="mb-8 w-full py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
-            >
-              <Plus className="w-5 h-5" />
-              New Notebook
-            </button>
+                <button
+                  onClick={() => createNotebook()}
+                  className="mb-8 w-full py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
+                >
+                  <Plus className="w-5 h-5" />
+                  New Notebook
+                </button>
 
-            <nav className="flex-1 overflow-y-auto">
-              <div className="px-2 py-3">
-                <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-600 mb-3 block">Notebooks</span>
-              <div className="space-y-1.5">
-                  {notebooks.map(nb => {
-                    const isActive = activeNotebookId === nb.id;
-                    const isEditing = editingNotebookId === nb.id;
-                    const isOpen = openNotebookId === nb.id;
+                <nav className="flex-1 overflow-y-auto">
+                  <div className="px-2 py-3">
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-600 mb-3 block">Notebooks</span>
+                    <div className="space-y-1.5">
+                      {notebooks.map(nb => {
+                        const isActive = activeNotebookId === nb.id;
+                        const isEditing = editingNotebookId === nb.id;
+                        const isOpen = openNotebookId === nb.id;
 
-                    return (
-                      <div key={nb.id} data-notebook-id={nb.id} className="rounded-xl overflow-hidden">
-                        {/* Notebook row */}
-                        <div
-                          onClick={() => !isEditing && switchNotebook(nb.id)}
-                          className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
-                            isActive
-                              ? 'bg-primary/10 dark:bg-primary/10 black:bg-white/[0.07]'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 black:hover:bg-white/4'
-                          }`}
-                        >
-                          <BookOpen className={`w-3.5 h-3.5 shrink-0 ${
-                            isActive ? 'text-primary dark:text-white' : 'text-slate-400 dark:text-slate-500'
-                          }`} />
-
-                          {isEditing ? (
-                            <input
-                              autoFocus
-                              className="min-w-0 flex-1 text-sm bg-transparent border-b border-primary outline-none py-0 leading-tight text-slate-900 dark:text-slate-100"
-                              value={editingName}
-                              onChange={e => setEditingName(e.target.value)}
-                              onBlur={() => commitRename(nb.id)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') commitRename(nb.id);
-                                if (e.key === 'Escape') setEditingNotebookId(null);
-                              }}
-                              onClick={e => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className={`flex-1 text-sm truncate ${
-                              isActive ? 'font-semibold text-primary dark:text-white' : 'font-medium text-slate-700 dark:text-slate-300'
-                            }`}>
-                              {nb.name}
-                            </span>
-                          )}
-
-                          {/* 3 action buttons — always visible */}
-                          <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                            {/* Edit / Rename */}
-                            <button
-                              onClick={e => startRename(nb.id, nb.name, e)}
-                              className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                              title="Rename notebook"
+                        return (
+                          <div key={nb.id} data-notebook-id={nb.id} className="rounded-xl overflow-hidden">
+                            {/* Notebook row */}
+                            <div
+                              onClick={() => !isEditing && switchNotebook(nb.id)}
+                              className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${isActive
+                                  ? 'bg-primary/10 dark:bg-primary/10 black:bg-white/[0.07]'
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 black:hover:bg-white/4'
+                                }`}
                             >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            {/* Delete */}
+                              <BookOpen className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-primary dark:text-white' : 'text-slate-400 dark:text-slate-500'
+                                }`} />
+
+                              {isEditing ? (
+                                <input
+                                  autoFocus
+                                  className="min-w-0 flex-1 text-sm bg-transparent border-b border-primary outline-none py-0 leading-tight text-slate-900 dark:text-slate-100"
+                                  value={editingName}
+                                  onChange={e => setEditingName(e.target.value)}
+                                  onBlur={() => commitRename(nb.id)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') commitRename(nb.id);
+                                    if (e.key === 'Escape') setEditingNotebookId(null);
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span className={`flex-1 text-sm truncate ${isActive ? 'font-semibold text-primary dark:text-white' : 'font-medium text-slate-700 dark:text-slate-300'
+                                  }`}>
+                                  {nb.name}
+                                </span>
+                              )}
+
+                              {/* 3 action buttons — always visible */}
+                              <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                                {/* Edit / Rename */}
+                                <button
+                                  onClick={e => startRename(nb.id, nb.name, e)}
+                                  className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                                  title="Rename notebook"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                {/* Delete */}
+                                <button
+                                  onClick={e => deleteNotebook(nb.id, e)}
+                                  className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                                  title="Delete notebook"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                                {/* PDF Dropdown toggle */}
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    const opening = !isOpen;
+                                    setOpenNotebookId(opening ? nb.id : null);
+                                    // Lazily load PDFs the first time this drawer is opened
+                                    if (opening && notebookPdfs[nb.id] === undefined) {
+                                      loadPdfs(nb.id);
+                                    }
+                                  }}
+                                  className={`p-1 rounded-lg transition-all ${isOpen
+                                      ? 'text-primary bg-primary/10 dark:text-slate-200 dark:bg-white/10'
+                                      : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                  title="Show PDFs"
+                                >
+                                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* PDF dropdown panel */}
+                            {isOpen && (
+                              <div className="ml-4 mt-0.5 mb-1 border-l-2 border-slate-200 dark:border-slate-700 pl-3 py-1 space-y-1">
+                                {/* Uploading indicator */}
+                                {uploadingPdf && openNotebookId === nb.id && (
+                                  <div className="flex items-center gap-1.5 py-1 px-1.5">
+                                    <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0" />
+                                    <span className="text-[11px] text-primary font-medium">Processing PDF…</span>
+                                  </div>
+                                )}
+                                {/* Loading indicator — PDFs not fetched yet for this notebook */}
+                                {notebookPdfs[nb.id] === undefined && !uploadingPdf && (
+                                  <div className="flex items-center gap-1.5 py-1 px-1.5">
+                                    <Loader2 className="w-3 h-3 animate-spin text-slate-400 shrink-0" />
+                                    <span className="text-[11px] text-slate-400">Loading…</span>
+                                  </div>
+                                )}
+                                {notebookPdfs[nb.id] !== undefined && (notebookPdfs[nb.id] || []).length === 0 && !uploadingPdf ? (
+                                  <p className="text-[11px] text-slate-400 dark:text-slate-500 py-1.5 italic">
+                                    No PDFs yet — upload to add sources
+                                  </p>
+                                ) : (
+                                  (notebookPdfs[nb.id] || []).map((pdf, pIdx) => (
+                                    <label
+                                      key={pdf.doc_id || pIdx}
+                                      className="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0"
+                                        checked={pdf.selected}
+                                        onChange={() => {
+                                          setNotebookPdfs(prev => {
+                                            const list = [...(prev[nb.id] || [])];
+                                            list[pIdx] = { ...list[pIdx], selected: !list[pIdx].selected };
+                                            return { ...prev, [nb.id]: list };
+                                          });
+                                        }}
+                                      />
+                                      {pdf.source === 'notion' ? (
+                                        <svg className="w-3 h-3 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" title="Notion">
+                                          <rect width="100" height="100" rx="18" fill="#1A1A1A" />
+                                          <path d="M28 26.5c1.8 1.4 2.5 1.3 5.9 1.1l32-1.9c.6 0 .1-.6-.1-.7l-5.4-3.9c-1-.8-2.4-1.7-5-.5l-31 2.3c-1.1.1-1.3.6-.8 1.1l5.4 1.5zm2.3 9v33.6c0 1.8 1 2.5 2.9 2.4l35.2-2c1.9-.1 2.4-1.1 2.4-2.5V33.6c0-1.4-.6-2.1-1.8-2l-36.4 2.1c-1.4.1-2.3.9-2.3 1.8zm34.5 1.7c.2.9 0 1.8-.9 1.9l-1.5.2v22c-1.3.7-2.5 1.1-3.5 1.1-1.6 0-2-.5-3.2-2l-9.8-15.4v14.9L50 61.5s0 2-2.8 2.4L40 64.4c-.2-.4 0-1.4.6-1.6l1.7-.5V43.1l-2.4-.2c-.2-.9.2-2.2 1.5-2.3l7.9-.5 10.2 15.6V41.3l-2.7-.3c-.2-1.1.5-1.9 1.5-2l7.5-.5z" fill="white" />
+                                        </svg>
+                                      ) : (
+                                        <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
+                                      )}
+                                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                                        <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate" title={pdf.name}>{pdf.name}</span>
+                                        {pdf.total_tokens && (
+                                          <svg
+                                            className="w-3.5 h-3.5 shrink-0 text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary transition-colors cursor-default"
+                                            viewBox="0 0 16 16"
+                                            fill="currentColor"
+                                            onMouseEnter={e => {
+                                              const r = e.currentTarget.getBoundingClientRect();
+                                              setPdfInfoTooltip({ pdf, x: r.right + 8, y: r.top + r.height / 2 - 40 });
+                                            }}
+                                            onMouseLeave={() => setPdfInfoTooltip(null)}
+                                          >
+                                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                                            <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={e => deletePdf(nb.id, pdf.doc_id, e)}
+                                        className="p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors shrink-0"
+                                        title="Remove"
+                                      >
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </label>
+                                  ))
+                                )}
+                                {/* Upload Source button */}
+                                <button
+                                  onClick={() => {
+                                    setSourceModalTargetId(nb.id);
+                                    setShowSourceModal(true);
+                                  }}
+                                  disabled={uploadingPdf}
+                                  className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full disabled:opacity-50"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  Upload Source
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {notebooks.length === 0 && !historyLoading && (
+                        <p className="text-xs text-slate-400 px-3 py-2">No notebooks yet</p>
+                      )}
+                    </div>
+                  </div>
+                </nav>
+
+                {/* Hidden PDF file input */}
+                <input
+                  ref={pdfInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    const targetId = pdfUploadTargetRef.current;
+                    if (!targetId || !e.target.files?.length) return;
+                    const files = Array.from(e.target.files);
+                    e.target.value = ''; // reset immediately
+                    for (const f of files) {
+                      const result = await uploadPdfToNotebook(targetId, f);
+
+                      // ── Auto-rename notebook from LLM-suggested name ────────────
+                      if (result?.suggested_name && targetId) {
+                        const newName = result.suggested_name;
+                        // Update sidebar instantly
+                        setNotebooks(prev =>
+                          prev.map(n => n.id === targetId ? { ...n, name: newName } : n)
+                        );
+                        // Persist to MongoDB via the existing PATCH endpoint
+                        try {
+                          const token = await getToken();
+                          if (token) {
+                            await fetch(`${BACKEND_URL}/notebooks/${targetId}`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                              },
+                              body: JSON.stringify({ name: newName }),
+                            });
+                          }
+                        } catch (err) {
+                          console.error('[Auto-rename notebook]', err);
+                        }
+                      }
+
+                      // Reload history from MongoDB so the summary always appears
+                      // immediately — fixes the need-to-refresh bug for reused/dedup PDFs.
+                      if (targetId === activeNotebookId) {
+                        await loadHistory(targetId);
+                      }
+                    }
+                  }}
+                />
+
+                <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1 relative">
+                  <SidebarItem icon={HelpCircle} label="Help" />
+
+                  {/* Settings with dark mode popover */}
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showSettings && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                          className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 px-4 pt-4 pb-2 shadow-xl">
+                          <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
+
+                          {/* ── 3-way colour mode toggle ─────────────────── */}
+                          <div className="mb-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              {colorMode === 'light'
+                                ? <Sun className="w-4 h-4 text-slate-500" />
+                                : colorMode === 'dark'
+                                  ? <Moon className="w-4 h-4 text-slate-400" />
+                                  : <Moon className="w-4 h-4 text-zinc-400" />}
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Appearance</span>
+                            </div>
+                            <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 text-[11px] font-bold">
+                              {[['light', 'Light', Sun], ['dark', 'Dark', Moon], ['black', 'Black', Moon]].map(([mode, label, Icon]) => (
+                                <button
+                                  key={mode}
+                                  onClick={() => setColorMode(mode)}
+                                  className={`flex-1 flex flex-col items-center gap-1 py-2 transition-colors ${colorMode === mode
+                                      ? 'bg-primary text-white'
+                                      : 'bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600'
+                                    }`}
+                                >
+                                  <Icon className="w-3.5 h-3.5" />
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <Microscope className="w-4 h-4 text-primary/70" />
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Research Mode</span>
+                                <div className="relative group">
+                                  <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                                  <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                                    GPT-OSS 120B · top-5 chunks · detailed answers
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                             <button
-                              onClick={e => deleteNotebook(nb.id, e)}
-                              className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                              title="Delete notebook"
+                              onClick={() => setIsResearchMode(prev => !prev)}
+                              className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${isResearchMode ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                                }`}
                             >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                            {/* PDF Dropdown toggle */}
-                            <button
-                              onClick={e => {
-                                e.stopPropagation();
-                                const opening = !isOpen;
-                                setOpenNotebookId(opening ? nb.id : null);
-                                // Lazily load PDFs the first time this drawer is opened
-                                if (opening && notebookPdfs[nb.id] === undefined) {
-                                  loadPdfs(nb.id);
-                                }
-                              }}
-                              className={`p-1 rounded-lg transition-all ${
-                                isOpen
-                                  ? 'text-primary bg-primary/10 dark:text-slate-200 dark:bg-white/10'
-                                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-                              }`}
-                              title="Show PDFs"
-                            >
-                              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                              <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${isResearchMode ? 'translate-x-5' : 'translate-x-0'
+                                }`} />
                             </button>
                           </div>
-                        </div>
 
-                        {/* PDF dropdown panel */}
-                        {isOpen && (
-                          <div className="ml-4 mt-0.5 mb-1 border-l-2 border-slate-200 dark:border-slate-700 pl-3 py-1 space-y-1">
-                            {/* Uploading indicator */}
-                            {uploadingPdf && openNotebookId === nb.id && (
-                              <div className="flex items-center gap-1.5 py-1 px-1.5">
-                                <Loader2 className="w-3 h-3 animate-spin text-primary shrink-0" />
-                                <span className="text-[11px] text-primary font-medium">Processing PDF…</span>
-                              </div>
-                            )}
-                            {/* Loading indicator — PDFs not fetched yet for this notebook */}
-                            {notebookPdfs[nb.id] === undefined && !uploadingPdf && (
-                              <div className="flex items-center gap-1.5 py-1 px-1.5">
-                                <Loader2 className="w-3 h-3 animate-spin text-slate-400 shrink-0" />
-                                <span className="text-[11px] text-slate-400">Loading…</span>
-                              </div>
-                            )}
-                            {notebookPdfs[nb.id] !== undefined && (notebookPdfs[nb.id] || []).length === 0 && !uploadingPdf ? (
-                              <p className="text-[11px] text-slate-400 dark:text-slate-500 py-1.5 italic">
-                                No PDFs yet — upload to add sources
-                              </p>
-                            ) : (
-                              (notebookPdfs[nb.id] || []).map((pdf, pIdx) => (
-                                <label
-                                  key={pdf.doc_id || pIdx}
-                                  className="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0"
-                                    checked={pdf.selected}
-                                    onChange={() => {
-                                      setNotebookPdfs(prev => {
-                                        const list = [...(prev[nb.id] || [])];
-                                        list[pIdx] = { ...list[pIdx], selected: !list[pIdx].selected };
-                                        return { ...prev, [nb.id]: list };
-                                      });
-                                    }}
-                                  />
-                                  {pdf.source === 'notion' ? (
-                                    <svg className="w-3 h-3 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" title="Notion">
-                                      <rect width="100" height="100" rx="18" fill="#1A1A1A"/>
-                                      <path d="M28 26.5c1.8 1.4 2.5 1.3 5.9 1.1l32-1.9c.6 0 .1-.6-.1-.7l-5.4-3.9c-1-.8-2.4-1.7-5-.5l-31 2.3c-1.1.1-1.3.6-.8 1.1l5.4 1.5zm2.3 9v33.6c0 1.8 1 2.5 2.9 2.4l35.2-2c1.9-.1 2.4-1.1 2.4-2.5V33.6c0-1.4-.6-2.1-1.8-2l-36.4 2.1c-1.4.1-2.3.9-2.3 1.8zm34.5 1.7c.2.9 0 1.8-.9 1.9l-1.5.2v22c-1.3.7-2.5 1.1-3.5 1.1-1.6 0-2-.5-3.2-2l-9.8-15.4v14.9L50 61.5s0 2-2.8 2.4L40 64.4c-.2-.4 0-1.4.6-1.6l1.7-.5V43.1l-2.4-.2c-.2-.9.2-2.2 1.5-2.3l7.9-.5 10.2 15.6V41.3l-2.7-.3c-.2-1.1.5-1.9 1.5-2l7.5-.5z" fill="white"/>
-                                    </svg>
-                                  ) : (
-                                    <FileText className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
-                                  )}
-                                  <div className="flex items-center gap-1 min-w-0 flex-1">
-                                    <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate" title={pdf.name}>{pdf.name}</span>
-                                    {pdf.total_tokens && (
-                                      <svg
-                                        className="w-3.5 h-3.5 shrink-0 text-slate-400 dark:text-slate-500 hover:text-primary dark:hover:text-primary transition-colors cursor-default"
-                                        viewBox="0 0 16 16"
-                                        fill="currentColor"
-                                        onMouseEnter={e => {
-                                          const r = e.currentTarget.getBoundingClientRect();
-                                          setPdfInfoTooltip({ pdf, x: r.right + 8, y: r.top + r.height / 2 - 40 });
-                                        }}
-                                        onMouseLeave={() => setPdfInfoTooltip(null)}
-                                      >
-                                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-                                        <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
-                                      </svg>
-                                    )}
+                          {/* ── Deep Research toggle ─────────────────── */}
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-primary/70" />
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Deep Research</span>
+                                <div className="relative group">
+                                  <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                                  <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                                    Scrapes &amp; vectorises web — answers from RAG
                                   </div>
-                                  <button
-                                    onClick={e => deletePdf(nb.id, pdf.doc_id, e)}
-                                    className="p-0.5 rounded text-slate-300 dark:text-slate-600 hover:text-red-400 transition-colors shrink-0"
-                                    title="Remove"
-                                  >
-                                    <X className="w-2.5 h-2.5" />
-                                  </button>
-                                </label>
-                              ))
-                            )}
-                            {/* Upload Source button */}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setIsDeepResearch(prev => !prev)}
+                              className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${isDeepResearch ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                                }`}
+                            >
+                              <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${isDeepResearch ? 'translate-x-5' : 'translate-x-0'
+                                }`} />
+                            </button>
+                          </div>
+
+                          {/* ── Multimedia Retrieval toggle ─────────────────── */}
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <ImageIcon className="w-4 h-4 text-primary/70" />
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Multimedia Retrieval</span>
+                                <div className="relative group">
+                                  <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                                  <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-48 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                                    Extracts &amp; indexes PDF images via Llama 4 Scout
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                             <button
                               onClick={() => {
-                                setSourceModalTargetId(nb.id);
-                                setShowSourceModal(true);
+                                const next = !isMultimediaRetrieval;
+                                setIsMultimediaRetrieval(next);
+                                localStorage.setItem('mindpad_multimedia_retrieval', String(next));
                               }}
-                              disabled={uploadingPdf}
-                              className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary dark:text-slate-400 dark:hover:text-slate-200 font-medium py-1 px-1.5 transition-colors w-full disabled:opacity-50"
+                              className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${isMultimediaRetrieval ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
+                                }`}
                             >
-                              <Plus className="w-3 h-3" />
-                              Upload Source
+                              <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${isMultimediaRetrieval ? 'translate-x-5' : 'translate-x-0'
+                                }`} />
                             </button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {notebooks.length === 0 && !historyLoading && (
-                    <p className="text-xs text-slate-400 px-3 py-2">No notebooks yet</p>
-                  )}
-              </div>
-              </div>
-            </nav>
 
-            {/* Hidden PDF file input */}
-            <input
-              ref={pdfInputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              multiple
-              className="hidden"
-              onChange={async (e) => {
-                const targetId = pdfUploadTargetRef.current;
-                if (!targetId || !e.target.files?.length) return;
-                const files = Array.from(e.target.files);
-                e.target.value = ''; // reset immediately
-                for (const f of files) {
-                  const result = await uploadPdfToNotebook(targetId, f);
+                          {/* ── Notion Integration ─────────────────────────── */}
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            {/* Workspace name above — only when connected */}
+                            {notionStatus?.connected && (
+                              <span className="block text-[10px] text-emerald-500 font-medium truncate mb-1.5" title={notionStatus.workspace_name}>
+                                {notionStatus.workspace_icon ? `${notionStatus.workspace_icon} ` : ''}
+                                {notionStatus.workspace_name || 'Connected'}
+                              </span>
+                            )}
 
-                  // ── Auto-rename notebook from LLM-suggested name ────────────
-                  if (result?.suggested_name && targetId) {
-                    const newName = result.suggested_name;
-                    // Update sidebar instantly
-                    setNotebooks(prev =>
-                      prev.map(n => n.id === targetId ? { ...n, name: newName } : n)
-                    );
-                    // Persist to MongoDB via the existing PATCH endpoint
-                    try {
-                      const token = await getToken();
-                      if (token) {
-                        await fetch(`${BACKEND_URL}/notebooks/${targetId}`, {
-                          method: 'PATCH',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`,
-                          },
-                          body: JSON.stringify({ name: newName }),
-                        });
-                      }
-                    } catch (err) {
-                      console.error('[Auto-rename notebook]', err);
-                    }
-                  }
-
-                  // Reload history from MongoDB so the summary always appears
-                  // immediately — fixes the need-to-refresh bug for reused/dedup PDFs.
-                  if (targetId === activeNotebookId) {
-                    await loadHistory(targetId);
-                  }
-                }
-              }}
-            />
-
-            <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1 relative">
-              <SidebarItem icon={HelpCircle} label="Help" />
-
-              {/* Settings with dark mode popover */}
-              <div className="relative">
-                <AnimatePresence>
-                {showSettings && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 black:bg-black rounded-xl border border-slate-200 dark:border-slate-700 black:border-zinc-900 px-4 pt-4 pb-2 shadow-xl">
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-3">Settings</p>
-
-                    {/* ── 3-way colour mode toggle ─────────────────── */}
-                    <div className="mb-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        {colorMode === 'light'
-                          ? <Sun className="w-4 h-4 text-slate-500" />
-                          : colorMode === 'dark'
-                          ? <Moon className="w-4 h-4 text-slate-400" />
-                          : <Moon className="w-4 h-4 text-zinc-400" />}
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Appearance</span>
-                      </div>
-                      <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 text-[11px] font-bold">
-                        {[['light', 'Light', Sun], ['dark', 'Dark', Moon], ['black', 'Black', Moon]].map(([mode, label, Icon]) => (
-                          <button
-                            key={mode}
-                            onClick={() => setColorMode(mode)}
-                            className={`flex-1 flex flex-col items-center gap-1 py-2 transition-colors ${
-                              colorMode === mode
-                                ? 'bg-primary text-white'
-                                : 'bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            <Icon className="w-3.5 h-3.5" />
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Microscope className="w-4 h-4 text-primary/70" />
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Research Mode</span>
-                          <div className="relative group">
-                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
-                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                              GPT-OSS 120B · top-5 chunks · detailed answers
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setIsResearchMode(prev => !prev)}
-                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
-                          isResearchMode ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
-                        }`}
-                      >
-                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
-                          isResearchMode ? 'translate-x-5' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-
-                    {/* ── Deep Research toggle ─────────────────── */}
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-primary/70" />
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Deep Research</span>
-                          <div className="relative group">
-                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
-                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                              Scrapes &amp; vectorises web — answers from RAG
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setIsDeepResearch(prev => !prev)}
-                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
-                          isDeepResearch ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
-                        }`}
-                      >
-                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
-                          isDeepResearch ? 'translate-x-5' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-
-                    {/* ── Multimedia Retrieval toggle ─────────────────── */}
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-primary/70" />
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Multimedia Retrieval</span>
-                          <div className="relative group">
-                            <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
-                            <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-48 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                              Extracts &amp; indexes PDF images via Llama 4 Scout
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const next = !isMultimediaRetrieval;
-                          setIsMultimediaRetrieval(next);
-                          localStorage.setItem('mindpad_multimedia_retrieval', String(next));
-                        }}
-                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${
-                          isMultimediaRetrieval ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-600'
-                        }`}
-                      >
-                        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${
-                          isMultimediaRetrieval ? 'translate-x-5' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-
-                    {/* ── Notion Integration ─────────────────────────── */}
-                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      {/* Workspace name above — only when connected */}
-                      {notionStatus?.connected && (
-                        <span className="block text-[10px] text-emerald-500 font-medium truncate mb-1.5" title={notionStatus.workspace_name}>
-                          {notionStatus.workspace_icon ? `${notionStatus.workspace_icon} ` : ''}
-                          {notionStatus.workspace_name || 'Connected'}
-                        </span>
-                      )}
-
-                      {/* Notion label row */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
-                            <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
-                          </svg>
-                          <div className="flex items-center gap-1">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Notion</span>
-                            <div className="relative group">
-                              <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
-                              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-40 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                                Import Notion pages as notebooks
+                            {/* Notion label row */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-slate-800 dark:text-slate-200" fill="currentColor" aria-hidden="true">
+                                  <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.14c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z" />
+                                </svg>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Notion</span>
+                                  <div className="relative group">
+                                    <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
+                                    <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-40 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
+                                      Import Notion pages as notebooks
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
+
+                              {/* Connect button (disconnected state only — sits inline) */}
+                              {!notionStatus?.connected && (
+                                <button
+                                  onClick={() => { setShowSettings(false); connectNotion(); }}
+                                  className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
+                                >
+                                  Connect
+                                </button>
+                              )}
                             </div>
+
+                            {/* Sync + Disconnect side by side — only when connected */}
+                            {notionStatus?.connected && (
+                              <div className="flex gap-1.5 mt-1.5">
+                                <button
+                                  onClick={() => { setShowSettings(false); openNotionPages(); }}
+                                  className="flex-1 text-[9px] py-1 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
+                                >
+                                  Sync Notes
+                                </button>
+                                <button
+                                  onClick={disconnectNotion}
+                                  className="flex-1 text-[9px] py-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:border-red-800 dark:hover:text-red-400 transition-colors font-medium"
+                                >
+                                  Disconnect
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        </div>
-
-                        {/* Connect button (disconnected state only — sits inline) */}
-                        {!notionStatus?.connected && (
-                          <button
-                            onClick={() => { setShowSettings(false); connectNotion(); }}
-                            className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
-                          >
-                            Connect
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Sync + Disconnect side by side — only when connected */}
-                      {notionStatus?.connected && (
-                        <div className="flex gap-1.5 mt-1.5">
-                          <button
-                            onClick={() => { setShowSettings(false); openNotionPages(); }}
-                            className="flex-1 text-[9px] py-1 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors font-medium"
-                          >
-                            Sync Notes
-                          </button>
-                          <button
-                            onClick={disconnectNotion}
-                            className="flex-1 text-[9px] py-1 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:border-red-800 dark:hover:text-red-400 transition-colors font-medium"
-                          >
-                            Disconnect
-                          </button>
-                        </div>
+                        </motion.div>
                       )}
-                    </div>
-                  </motion.div>
-                )}
-                </AnimatePresence>
-                <SidebarItem
-                  icon={Settings}
-                  label="Settings"
-                  active={showSettings}
-                  onClick={() => setShowSettings(prev => !prev)}
-                />
+                    </AnimatePresence>
+                    <SidebarItem
+                      icon={Settings}
+                      label="Settings"
+                      active={showSettings}
+                      onClick={() => setShowSettings(prev => !prev)}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          </motion.aside>
+            </motion.aside>
           )}
         </AnimatePresence>
 
@@ -2659,7 +2647,7 @@ export default function App() {
                         </div>
                         {/* Shimmer bars */}
                         <div className="space-y-2.5">
-                          {[3/4, 1/2, 2/3, 5/8, 3/5].map((w, i) => (
+                          {[3 / 4, 1 / 2, 2 / 3, 5 / 8, 3 / 5].map((w, i) => (
                             <motion.div
                               key={i}
                               animate={{ opacity: [0.25, 0.6, 0.25] }}
@@ -2681,7 +2669,7 @@ export default function App() {
                     {/* Greeting */}
                     <div>
                       <h1 className="text-4xl font-bold font-display text-slate-800 dark:text-white">
-                        {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()}
+                        {(() => { const h = new Date().getHours(); const greeting = h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; const name = user?.firstName; return name ? `${greeting}, ${name}` : greeting; })()}
                       </h1>
                       <p className="mt-2 text-base text-slate-500 dark:text-slate-400">What would you like to do?</p>
                     </div>
@@ -2696,6 +2684,7 @@ export default function App() {
                         { icon: <Network className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Mind Map', desc: 'Visualize concepts and relationships', action: () => setRightOpen(true) },
                         { icon: <Layers className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Flashcards', desc: 'Create AI-generated study flashcards', action: () => setRightOpen(true) },
                         { icon: <QuizIcon className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Quiz Mode', desc: 'Test your knowledge with AI-generated quizzes', action: () => setRightOpen(true) },
+                        { icon: <LayoutDashboard className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Insight Canvas', desc: 'Generate a visual infographic from your notebook', action: () => setRightOpen(true) },
                       ].map((card, i) => (
                         <button
                           key={i}
@@ -2754,11 +2743,10 @@ export default function App() {
                           <button
                             onClick={() => copyMessage(msg.content, idx)}
                             title="Copy"
-                            className={`p-1.5 rounded-lg transition-all ${
-                              copiedMsgIdx === idx
+                            className={`p-1.5 rounded-lg transition-all ${copiedMsgIdx === idx
                                 ? 'text-emerald-500'
                                 : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
-                            }`}
+                              }`}
                           >
                             {copiedMsgIdx === idx ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -2766,11 +2754,10 @@ export default function App() {
                             onClick={() => speakMessage(msg.content, idx)}
                             disabled={speakingMsgIdx !== null}
                             title="Read aloud"
-                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${
-                              speakingMsgIdx === idx
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${speakingMsgIdx === idx
                                 ? 'text-primary'
                                 : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-40'
-                            }`}
+                              }`}
                           >
                             {speakingMsgIdx === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
                           </button>
@@ -2793,7 +2780,7 @@ export default function App() {
                         <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
                       </header>
                       <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 text-slate-800 dark:text-slate-200 leading-relaxed shadow-sm border border-slate-100 dark:border-slate-700/50 overflow-hidden min-w-0">
-                          <div className="chat-html" dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
+                        <div className="chat-html" dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
                       </div>
                       {/* RAG source citation dots */}
                       {msg.sources && msg.sources.length > 0 && (
@@ -2803,35 +2790,35 @@ export default function App() {
                             const srcKey = `${idx}-${si}`;
                             const isOpen = openSourceKey === srcKey;
                             return (
-                            <div
-                              key={si}
-                              className="relative"
-                              data-source-popover
-                              onMouseEnter={() => setOpenSourceKey(srcKey)}
-                              onMouseLeave={() => setOpenSourceKey(null)}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => setOpenSourceKey(isOpen ? null : srcKey)}
-                                className="w-6 h-4 flex items-center justify-center rounded text-[11px] font-bold text-slate-400 dark:text-slate-500 hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-all tracking-widest leading-none"
-                                title={`${src.pdf_name} — chunk ${src.chunk_index + 1}`}
+                              <div
+                                key={si}
+                                className="relative"
+                                data-source-popover
+                                onMouseEnter={() => setOpenSourceKey(srcKey)}
+                                onMouseLeave={() => setOpenSourceKey(null)}
                               >
-                                ···
-                              </button>
-                              {/* Hover (desktop) / click (mobile) popover */}
-                              <div className={`absolute bottom-full left-0 pb-2 w-72 sm:w-80 z-50 ${isOpen ? 'block' : 'hidden'}`}>
-                                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
-                                  <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                                    <span className="text-[10px] font-bold text-primary truncate flex-1">{src.pdf_name}</span>
-                                    <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 shrink-0">chunk {src.chunk_index + 1} · {Math.round(src.score * 100)}% match</span>
-                                  </div>
-                                  <div className="max-h-48 overflow-y-auto px-3 py-2">
-                                    <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{src.text}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenSourceKey(isOpen ? null : srcKey)}
+                                  className="w-6 h-4 flex items-center justify-center rounded text-[11px] font-bold text-slate-400 dark:text-slate-500 hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-all tracking-widest leading-none"
+                                  title={`${src.pdf_name} — chunk ${src.chunk_index + 1}`}
+                                >
+                                  ···
+                                </button>
+                                {/* Hover (desktop) / click (mobile) popover */}
+                                <div className={`absolute bottom-full left-0 pb-2 w-72 sm:w-80 z-50 ${isOpen ? 'block' : 'hidden'}`}>
+                                  <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+                                    <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                                      <span className="text-[10px] font-bold text-primary truncate flex-1">{src.pdf_name}</span>
+                                      <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 shrink-0">chunk {src.chunk_index + 1} · {Math.round(src.score * 100)}% match</span>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto px-3 py-2">
+                                      <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{src.text}</p>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          );
+                            );
                           })}
                         </div>
                       )}
@@ -2841,11 +2828,10 @@ export default function App() {
                           <button
                             onClick={() => copyMessage(msg.content, idx)}
                             title="Copy"
-                            className={`p-1.5 rounded-lg transition-all ${
-                              copiedMsgIdx === idx
+                            className={`p-1.5 rounded-lg transition-all ${copiedMsgIdx === idx
                                 ? 'text-emerald-500'
                                 : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
-                            }`}
+                              }`}
                           >
                             {copiedMsgIdx === idx ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -2853,11 +2839,10 @@ export default function App() {
                             onClick={() => speakMessage(msg.content, idx)}
                             disabled={speakingMsgIdx !== null}
                             title="Read aloud"
-                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${
-                              speakingMsgIdx === idx
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-not-allowed ${speakingMsgIdx === idx
                                 ? 'text-primary'
                                 : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-40'
-                            }`}
+                              }`}
                           >
                             {speakingMsgIdx === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
                           </button>
@@ -2873,52 +2858,52 @@ export default function App() {
                 chatHistory[chatHistory.length - 1]?.role === 'user' ||
                 chatHistory[chatHistory.length - 1]?.content === ''
               ))) && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex gap-6 pl-0.5"
-                >
                   <motion.div
-                    animate={{ scale: [1, 1.12, 1], opacity: [1, 0.7, 1] }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-                    className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="flex gap-6 pl-0.5"
                   >
-                    <Sparkles className="w-5 h-5 text-white fill-white" />
-                  </motion.div>
-                  <div className="flex-1 space-y-2">
-                    <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
-                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-3">
-                      <div className="flex items-center gap-2">
-                        <motion.span
-                          animate={{ opacity: [0.4, 1, 0.4] }}
-                          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-                          className="text-xs font-semibold text-primary/70 font-display tracking-wide"
-                        >
-                          Thinking
-                        </motion.span>
-                        <div className="flex gap-1">
-                          {[0, 0.2, 0.4].map((delay, i) => (
-                            <motion.span
-                              key={i}
-                              animate={{ opacity: [0, 1, 0] }}
-                              transition={{ duration: 1.2, repeat: Infinity, delay }}
-                              className="text-primary/70 text-sm font-bold leading-none"
-                            >
-                              .
-                            </motion.span>
-                          ))}
+                    <motion.div
+                      animate={{ scale: [1, 1.12, 1], opacity: [1, 0.7, 1] }}
+                      transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                      className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/30"
+                    >
+                      <Sparkles className="w-5 h-5 text-white fill-white" />
+                    </motion.div>
+                    <div className="flex-1 space-y-2">
+                      <span className="text-[10px] font-bold font-display tracking-widest uppercase text-slate-400">Midy AI</span>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm space-y-3">
+                        <div className="flex items-center gap-2">
+                          <motion.span
+                            animate={{ opacity: [0.4, 1, 0.4] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                            className="text-xs font-semibold text-primary/70 font-display tracking-wide"
+                          >
+                            Thinking
+                          </motion.span>
+                          <div className="flex gap-1">
+                            {[0, 0.2, 0.4].map((delay, i) => (
+                              <motion.span
+                                key={i}
+                                animate={{ opacity: [0, 1, 0] }}
+                                transition={{ duration: 1.2, repeat: Infinity, delay }}
+                                className="text-primary/70 text-sm font-bold leading-none"
+                              >
+                                .
+                              </motion.span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4" />
+                          <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2" />
+                          <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-2/3" />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4" />
-                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2" />
-                        <motion.div animate={{ opacity: [0.3, 0.7, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }} className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full w-2/3" />
-                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                )}
 
               {/* ── Deep Research animation — shown while Serper+Firecrawl+Pinecone runs ── */}
               {isDeepResearching && (
@@ -3094,22 +3079,20 @@ export default function App() {
               )}
               {/* Input box — flex-col: top row has paperclip + textarea, bottom row has lang pill + buttons */}
               <div
-                className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${
-                  isRecording
+                className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${isRecording
                     ? 'border-red-400 dark:border-red-500'
                     : 'border-slate-200 dark:border-white/20'
-                }`}
+                  }`}
               >
                 {/* Top: Paperclip (top-aligned) + Textarea */}
                 <div className="flex items-start gap-2 px-2 pt-2 pb-0">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className={`mt-1 p-2 rounded-xl transition-all shrink-0 ${
-                      attachedImage || uploadingPdf
+                    className={`mt-1 p-2 rounded-xl transition-all shrink-0 ${attachedImage || uploadingPdf
                         ? 'text-primary bg-primary/10'
                         : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
+                      }`}
                     title="Attach image or PDF"
                   >
                     <Paperclip className="w-4 h-4" />
@@ -3160,30 +3143,29 @@ export default function App() {
                       </button>
 
                       <AnimatePresence>
-                      {showLangMenu && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                          transition={{ duration: 0.15, ease: 'easeOut' }}
-                          className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-60 min-w-40">
-                          {LANGUAGES.map(lang => (
-                            <button
-                              key={lang.code}
-                              type="button"
-                              onClick={() => { setSelectedLang(lang); setShowLangMenu(false); }}
-                              className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors ${
-                                selectedLang.code === lang.code
-                                  ? 'bg-primary/10 text-primary font-semibold'
-                                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              <span>{lang.label}</span>
-                              <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
-                            </button>
-                          ))}
-                        </motion.div>
-                      )}
+                        {showLangMenu && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                            transition={{ duration: 0.15, ease: 'easeOut' }}
+                            className="absolute bottom-full mb-2 left-0 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-60 min-w-40">
+                            {LANGUAGES.map(lang => (
+                              <button
+                                key={lang.code}
+                                type="button"
+                                onClick={() => { setSelectedLang(lang); setShowLangMenu(false); }}
+                                className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors ${selectedLang.code === lang.code
+                                    ? 'bg-primary/10 text-primary font-semibold'
+                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                  }`}
+                              >
+                                <span>{lang.label}</span>
+                                <span className="text-slate-400 dark:text-slate-500 text-[11px]">{lang.native}</span>
+                              </button>
+                            ))}
+                          </motion.div>
+                        )}
                       </AnimatePresence>
                     </div>
 
@@ -3194,11 +3176,10 @@ export default function App() {
                         type="button"
                         onClick={() => setIsWebSearch(prev => !prev)}
                         title={isWebSearch ? 'Web Search ON — click to disable' : 'Enable Web Search'}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
-                          isWebSearch
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${isWebSearch
                             ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
+                          }`}
                       >
                         <Globe className="w-3 h-3" />
                         Web Search
@@ -3209,11 +3190,10 @@ export default function App() {
                         type="button"
                         onClick={() => setIsDeepResearch(prev => !prev)}
                         title={isDeepResearch ? 'Deep Research ON — click to disable' : 'Enable Deep Research'}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${
-                          isDeepResearch
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all border ${isDeepResearch
                             ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
+                          }`}
                       >
                         <Microscope className="w-3 h-3" />
                         Deep Research
@@ -3225,11 +3205,10 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setMobileToolsOpen(prev => !prev)}
-                        className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all border ${
-                          (isWebSearch || isDeepResearch)
+                        className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all border ${(isWebSearch || isDeepResearch)
                             ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-800 dark:border-slate-200 shadow-sm'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                        }`}
+                          }`}
                         title="More options"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -3246,11 +3225,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => { setIsWebSearch(prev => !prev); setMobileToolsOpen(false); }}
-                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                                isWebSearch
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${isWebSearch
                                   ? 'bg-primary text-white'
                                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                              }`}
+                                }`}
                             >
                               <Globe className="w-3.5 h-3.5 shrink-0" />
                               Web Search
@@ -3260,11 +3238,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => { setIsDeepResearch(prev => !prev); setMobileToolsOpen(false); }}
-                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                                isDeepResearch
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${isDeepResearch
                                   ? 'bg-primary text-white'
                                   : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                              }`}
+                                }`}
                             >
                               <Microscope className="w-3.5 h-3.5 shrink-0" />
                               Deep Research
@@ -3283,13 +3260,12 @@ export default function App() {
                       onClick={toggleRecording}
                       disabled={isTranscribing}
                       title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
-                      className={`p-2 rounded-xl transition-all relative ${
-                        isRecording
+                      className={`p-2 rounded-xl transition-all relative ${isRecording
                           ? 'text-white bg-red-500 shadow-lg shadow-red-500/30'
                           : isTranscribing
                             ? 'text-slate-400 dark:text-slate-300 animate-pulse'
                             : 'text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 shadow-sm'
-                      }`}
+                        }`}
                     >
                       {isRecording && (
                         <span className="absolute inset-0 rounded-xl animate-ping bg-red-400/40" />
@@ -3348,127 +3324,128 @@ export default function App() {
               exit={{ x: 320, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
               className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-50 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
-            <div
-              className="w-80 h-full flex flex-col shrink-0">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
-                <div className="flex items-center gap-2">
-                  <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
-                  {/* Mobile close button */}
-                  <button
-                    className="lg:hidden p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    onClick={() => setRightDrawerOpen(false)}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+              <div
+                className="w-80 h-full flex flex-col shrink-0">
+                <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
+                      {/* Mobile close button */}
+                      <button
+                        className="lg:hidden p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                        onClick={() => setRightDrawerOpen(false)}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
+                </div>
+
+                <div ref={studioScrollRef} className="p-6 overflow-y-auto flex-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    {(() => {
+                      const scrollDown = () => setTimeout(() => studioScrollRef.current?.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' }), 950);
+                      return (<>
+                        <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
+                        <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
+                        <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
+                        <StudioTool icon={Film} label="Video Suggestions" onClick={scrollDown} />
+                        <StudioTool icon={Layers} label="Flashcards" onClick={scrollDown} />
+                        <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
+                        <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
+                        <StudioTool icon={Brain} label="MindSpeak" onClick={scrollDown} />
+                      </>);
+                    })()}
+                  </div>
+
+                  <div className="mt-8 space-y-4">
+                    <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500">Contextual Reference</h4>
+                    <motion.div
+                      whileHover={{ y: -2 }}
+                      className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-l-primary shadow-sm border border-slate-100 dark:border-slate-700"
+                    >
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
+                      <img
+                        className="mt-3 rounded-lg w-full h-24 object-cover"
+                        alt="Quantum particles"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaJQNo9Aqcgrq_ao1grn4YLD8RgenX-FXCJJRbJXn2uIOVGY4Pwyg6JCG77YJA7njolIxEbbynzDhzHTuXERlSPlFvoVb3fUA4cp7vEbqzO3i2x3kTnLkA-B0jNb-REaWtyXQV488d9zJfaCPzNHv4IYxXH7qBkbBKK6tlax1lqBpeaxa1WIDh-l5N02MEGw3VG-Pk7mSteSUXop45QpLuNbH-teniH0mRvyUeowznAJXbx3eZKpPe-5IYbcBdjmyeQoGsUPvOFKTo"
+                        referrerPolicy="no-referrer"
+                      />
+                    </motion.div>
+
+                    {/* ── Insight Canvas result box — per notebook ───────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingInsight || insightCanvasImages[activeNotebookId]) && (
+                        <motion.button
+                          key={`ic-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          disabled={isGeneratingInsight}
+                          onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                        >
+                          {/* Icon area */}
+                          <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                            <LayoutDashboard className="w-5 h-5 text-primary" />
+                            {isGeneratingInsight && (
+                              <span className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                            )}
+                          </div>
+                          {/* Text */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Insight Canvas</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                              {isGeneratingInsight ? 'Crafting infographic…' : 'Tap to view infographic'}
+                            </p>
+                          </div>
+                          {/* Arrow when ready */}
+                          {!isGeneratingInsight && (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                          )}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+
+                    {/* ── Mind Map result box — per notebook ─────────────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingMindMap || mindMapData[activeNotebookId]) && (
+                        <motion.button
+                          key={`mm-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          disabled={isGeneratingMindMap}
+                          onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                        >
+                          <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                            <Network className="w-5 h-5 text-primary dark:text-slate-300" />
+                            {isGeneratingMindMap && (
+                              <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Mind Map</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                              {isGeneratingMindMap ? 'Building mind map…' : 'Tap to explore map'}
+                            </p>
+                          </div>
+                          {!isGeneratingMindMap && (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                          )}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Transform your research into media assets.</p>
-            </div>
-
-          <div ref={studioScrollRef} className="p-6 overflow-y-auto flex-1">
-            <div className="grid grid-cols-2 gap-4">
-              {(() => {
-                const scrollDown = () => setTimeout(() => studioScrollRef.current?.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' }), 950);
-                return (<>
-                  <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
-                  <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
-                  <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
-                  <StudioTool icon={Film} label="Video Suggestions" onClick={scrollDown} />
-                  <StudioTool icon={Layers} label="Flashcards" onClick={scrollDown} />
-                  <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
-                  <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
-                </>);
-              })()}
-            </div>
-
-            <div className="mt-8 space-y-4">
-              <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500">Contextual Reference</h4>
-              <motion.div
-                whileHover={{ y: -2 }}
-                className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-l-primary shadow-sm border border-slate-100 dark:border-slate-700"
-              >
-                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2 tracking-wider">Decoherence in Qubits</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Environmental factors (temp, noise) leading to information loss in quantum systems...</p>
-                <img
-                  className="mt-3 rounded-lg w-full h-24 object-cover"
-                  alt="Quantum particles"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaJQNo9Aqcgrq_ao1grn4YLD8RgenX-FXCJJRbJXn2uIOVGY4Pwyg6JCG77YJA7njolIxEbbynzDhzHTuXERlSPlFvoVb3fUA4cp7vEbqzO3i2x3kTnLkA-B0jNb-REaWtyXQV488d9zJfaCPzNHv4IYxXH7qBkbBKK6tlax1lqBpeaxa1WIDh-l5N02MEGw3VG-Pk7mSteSUXop45QpLuNbH-teniH0mRvyUeowznAJXbx3eZKpPe-5IYbcBdjmyeQoGsUPvOFKTo"
-                  referrerPolicy="no-referrer"
-                />
-              </motion.div>
-
-              {/* ── Insight Canvas result box — per notebook ───────────── */}
-              <AnimatePresence>
-              {(isGeneratingInsight || insightCanvasImages[activeNotebookId]) && (
-                <motion.button
-                  key={`ic-${activeNotebookId}`}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  disabled={isGeneratingInsight}
-                  onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
-                >
-                  {/* Icon area */}
-                  <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
-                    <LayoutDashboard className="w-5 h-5 text-primary" />
-                    {isGeneratingInsight && (
-                      <span className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                    )}
-                  </div>
-                  {/* Text */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Insight Canvas</p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                      {isGeneratingInsight ? 'Crafting infographic…' : 'Tap to view infographic'}
-                    </p>
-                  </div>
-                  {/* Arrow when ready */}
-                  {!isGeneratingInsight && (
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
-                  )}
-                </motion.button>
-              )}
-              </AnimatePresence>
-
-              {/* ── Mind Map result box — per notebook ─────────────────── */}
-              <AnimatePresence>
-              {(isGeneratingMindMap || mindMapData[activeNotebookId]) && (
-                <motion.button
-                  key={`mm-${activeNotebookId}`}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  disabled={isGeneratingMindMap}
-                  onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
-                >
-                  <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
-                    <Network className="w-5 h-5 text-primary dark:text-slate-300" />
-                    {isGeneratingMindMap && (
-                      <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Mind Map</p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                      {isGeneratingMindMap ? 'Building mind map…' : 'Tap to explore map'}
-                    </p>
-                  </div>
-                  {!isGeneratingMindMap && (
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
-                  )}
-                </motion.button>
-              )}
-              </AnimatePresence>
-            </div>
-          </div>
-          </div>
-          </motion.aside>
+            </motion.aside>
           )}
         </AnimatePresence>
       </main>
