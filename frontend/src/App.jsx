@@ -254,6 +254,7 @@ export default function App() {
   const [newNotifTitle, setNewNotifTitle] = useState('');
   const [newNotifMessage, setNewNotifMessage] = useState('');
   const [sendingNotif, setSendingNotif] = useState(false);
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
   const visibleNotifs = notifications.filter(n => !dismissedNotifs.includes(n.id));
   const unreadCount = visibleNotifs.length;
@@ -413,6 +414,27 @@ export default function App() {
       await fetchNotifications();
     } finally {
       setSendingNotif(false);
+    }
+  };
+
+  const broadcastEmail = async () => {
+    if (!newNotifTitle.trim() || !newNotifMessage.trim()) return;
+    if (!window.confirm(`Send email to ALL users?\nSubject: ${newNotifTitle.trim()}`)) return;
+    setSendingBroadcast(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/broadcast-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject: newNotifTitle.trim(), body: newNotifMessage.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed');
+      alert(`✅ Email sent to ${data.recipients} recipient(s).`);
+    } catch (err) {
+      alert(`❌ Broadcast failed: ${err.message}`);
+    } finally {
+      setSendingBroadcast(false);
     }
   };
 
@@ -2010,13 +2032,23 @@ export default function App() {
                         rows={2}
                         className="w-full text-xs rounded-lg px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary/30 text-slate-800 dark:text-slate-100 resize-none"
                       />
-                      <button
-                        onClick={sendNotification}
-                        disabled={sendingNotif || !newNotifTitle.trim() || !newNotifMessage.trim()}
-                        className="w-full py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
-                      >
-                        {sendingNotif ? 'Sending...' : 'Send to Everyone'}
-                      </button>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={sendNotification}
+                          disabled={sendingNotif || !newNotifTitle.trim() || !newNotifMessage.trim()}
+                          className="flex-1 py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                        >
+                          {sendingNotif ? 'Sending...' : 'Notify Everyone'}
+                        </button>
+                        <button
+                          onClick={broadcastEmail}
+                          disabled={sendingBroadcast || !newNotifTitle.trim() || !newNotifMessage.trim()}
+                          title="Send email to all users"
+                          className="flex-1 py-1.5 text-xs font-semibold bg-slate-800 dark:bg-slate-700 text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                        >
+                          {sendingBroadcast ? 'Mailing...' : 'Mail Everyone'}
+                        </button>
+                      </div>
                     </div>
                   )}
 

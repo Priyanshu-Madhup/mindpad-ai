@@ -403,6 +403,36 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
+
+async def get_clerk_user_email(user_id: str) -> str:
+    """
+    Look up a user's primary email from Clerk using their user_id.
+    Used when the JWT doesn't embed the email claim (common with Clerk).
+    Returns empty string on failure.
+    """
+    clerk_secret = os.environ.get("CLERK_SECRET_KEY", "")
+    if not clerk_secret:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"https://api.clerk.com/v1/users/{user_id}",
+                headers={"Authorization": f"Bearer {clerk_secret}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        # Find the primary email address
+        primary_id = data.get("primary_email_address_id", "")
+        for e in data.get("email_addresses", []):
+            if e.get("id") == primary_id:
+                return e.get("email_address", "")
+        # Fallback: first email
+        emails = data.get("email_addresses", [])
+        return emails[0].get("email_address", "") if emails else ""
+    except Exception as exc:
+        print(f"[Clerk lookup] Failed for user {user_id[:12]}…: {exc}")
+        return ""
+
 # ── Models ─────────────────────────────────────────────────────────────────────
 class Message(BaseModel):
     role: str
@@ -641,6 +671,193 @@ async def delete_notification(notification_id: str, authorization: Optional[str]
         raise HTTPException(status_code=400, detail="Invalid notification ID")
     await notifications_col.delete_one({"_id": oid})
     return {"status": "deleted"}
+
+
+class BroadcastEmailRequest(BaseModel):
+    subject: str
+    body: str
+
+
+def _build_broadcast_html(subject: str, body_text: str) -> str:
+    """Wrap admin broadcast content in a branded Mindpad AI email template."""
+    # Convert newlines to <br> for HTML rendering
+    html_body = body_text.replace("\n", "<br/>")
+    return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>{subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#f0f2f4;font-family:'Inter','Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f4;padding:48px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+      <!-- Header -->
+      <tr>
+        <td style="background:#0D1B2A;border-radius:12px 12px 0 0;padding:40px 48px 32px;text-align:center;">
+          <img src="https://raw.githubusercontent.com/Priyanshu-Madhup/mindpad-ai/master/frontend/src/mindpad_ai_logo.png"
+               alt="Mindpad AI" width="52" height="52"
+               style="display:block;margin:0 auto 16px;border-radius:10px;"/>
+          <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.5px;line-height:1.2;">Mindpad AI</h1>
+          <p style="margin:8px 0 0;color:#94a3b8;font-size:13px;line-height:1.5;">{subject}</p>
+        </td>
+      </tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="background:#ffffff;padding:40px 48px 32px;">
+          <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.8;">{html_body}</p>
+          <table cellpadding="0" cellspacing="0" style="margin-top:32px;">
+            <tr>
+              <td style="border-radius:8px;background:#0D1B2A;">
+                <a href="https://mindpad-ai.vercel.app" target="_blank"
+                   style="display:inline-block;background:#0D1B2A;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;letter-spacing:0.04em;padding:13px 32px;border-radius:8px;">
+                  Open Mindpad AI &rarr;
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:32px 0 0;font-size:13px;color:#94a3b8;line-height:1.7;border-top:1px solid #f1f5f9;padding-top:20px;">
+            Reply to this email if you have questions. We read every message personally.
+          </p>
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="background:#f8fafc;border-radius:0 0 12px 12px;padding:16px 48px;border-top:1px solid #e2e8f0;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size:11px;color:#94a3b8;">&copy; 2025 Mindpad AI</td>
+              <td align="right" style="font-size:11px;color:#94a3b8;">mindpad.ai@gmail.com</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _send_broadcast_email_sync(to_emails: list, subject: str, html: str) -> dict:
+    """
+    Send a single email with all recipients in BCC — one SMTP call, all at once.
+    Returns {"sent": int, "error": str|None}.
+    """
+    if not MAIL_USER or not MAIL_PASS:
+        return {"sent": 0, "error": "MAIL_USER or MAIL_PASS not configured"}
+    if not to_emails:
+        return {"sent": 0, "error": "No recipients"}
+
+    print(f"[Broadcast email] Sending to {len(to_emails)} recipient(s) — subject: '{subject[:60]}'")
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"Mindpad AI <{MAIL_USER}>"
+        msg["To"]      = MAIL_USER          # visible To: is just the sender
+        msg["Bcc"]     = ", ".join(to_emails)
+        msg.attach(MIMEText(html, "html"))
+
+        all_recipients = [MAIL_USER] + to_emails
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+            server.login(MAIL_USER, MAIL_PASS)
+            server.sendmail(MAIL_USER, all_recipients, msg.as_string())
+
+        print(f"[Broadcast email] ✅ Sent to {len(to_emails)} recipient(s)")
+        return {"sent": len(to_emails), "error": None}
+
+    except smtplib.SMTPAuthenticationError as e:
+        err = f"SMTP auth failed — check MAIL_USER/MAIL_PASS: {e}"
+        print(f"[Broadcast email] ❌ {err}")
+        return {"sent": 0, "error": err}
+    except smtplib.SMTPException as e:
+        err = f"SMTP error: {e}"
+        print(f"[Broadcast email] ❌ {err}")
+        return {"sent": 0, "error": err}
+    except Exception as e:
+        err = f"Unexpected error: {e}"
+        print(f"[Broadcast email] ❌ {err}")
+        return {"sent": 0, "error": err}
+
+
+@app.post("/broadcast-email")
+async def broadcast_email(
+    body: BroadcastEmailRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """
+    Admin-only: fetch all Clerk user emails and send a branded broadcast email
+    using the title as subject and the body as content.
+    """
+    user_id, user_email = await get_current_user(authorization)
+    ADMIN_EMAIL = "priyanshumadhup@gmail.com"
+    ADMIN_USER_ID = "user_3BS0ZN5IlirMSNEj11PQ1iiBcpi"  # hardcoded admin Clerk user_id
+    # Accept by user_id (most reliable), JWT email, or Clerk-fetched email
+    is_admin = (
+        user_id == ADMIN_USER_ID
+        or user_email == ADMIN_EMAIL
+    )
+    if not is_admin:
+        # Last resort: look up email from Clerk API
+        fetched_email = await get_clerk_user_email(user_id)
+        is_admin = fetched_email == ADMIN_EMAIL
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    subject = body.subject.strip()
+    body_text = body.body.strip()
+    if not subject or not body_text:
+        raise HTTPException(status_code=400, detail="Subject and body are required")
+
+    # Fetch all user emails from Clerk
+    clerk_secret = os.environ.get("CLERK_SECRET_KEY", "")
+    if not clerk_secret:
+        raise HTTPException(status_code=500, detail="CLERK_SECRET_KEY not configured — add it to .env")
+
+    emails: list = []
+    offset = 0
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            while True:
+                resp = await client.get(
+                    "https://api.clerk.com/v1/users",
+                    headers={"Authorization": f"Bearer {clerk_secret}"},
+                    params={"limit": 100, "offset": offset},
+                )
+                resp.raise_for_status()
+                users = resp.json()
+                if not users:
+                    break
+                for u in users:
+                    for e in u.get("email_addresses", []):
+                        addr = e.get("email_address", "").strip()
+                        if addr:
+                            emails.append(addr)
+                if len(users) < 100:
+                    break
+                offset += 100
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch Clerk users: {exc}")
+
+    if not emails:
+        raise HTTPException(status_code=422, detail="No user emails found")
+
+    html = _build_broadcast_html(subject, body_text)
+
+    # Run synchronously in a thread so we can return the real result to the caller
+    result = await asyncio.to_thread(_send_broadcast_email_sync, emails, subject, html)
+
+    if result["error"]:
+        raise HTTPException(status_code=500, detail=f"Mail failed: {result['error']}")
+
+    print(f"[Broadcast email] Done — sent={result['sent']} recipient(s)")
+    return {"status": "sent", "recipients": result["sent"]}
 
 
 # ─── Notebooks CRUD ────────────────────────────────────────────────────────────

@@ -16,11 +16,13 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **PDF deduplication** — SHA-256 hash check reuses existing Pinecone vectors when the same PDF is re-uploaded, eliminating redundant embedding API calls; dedup anchors preserve the vector index even after a notebook is deleted
 - **Notion Integration** — import Notion pages directly into a notebook via OAuth 2.0; pages are indexed into Pinecone and come with an AI-generated summary
 - **Live Web Search** — Serper.dev-powered Google search injected into the prompt
-- **Deep Research Mode** — Serper → Firecrawl scraping → Pinecone vector retrieval pipeline
+- **Deep Research Mode** — Serper → Firecrawl scraping → dual-namespace Pinecone RAG (top 3 web chunks + top 2 PDF chunks retrieved separately and merged)
 - **AI Image Generation** — Gemini image model, persisted to Firebase Storage
 - **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
-- **Mind Map Generator** — D3-powered interactive mind map from your PDFs; robust JSON extraction handles reasoning-model `<think>` block artifacts
+- **Mind Map Generator** — D3-powered interactive mind map from your PDFs
 - **Multilingual Responses** — 12 Indian and global languages
+- **Preferences Panel** — quick-access modal for theme, language, and AI behaviour toggles
+- **Admin Broadcast** — admin can push in-app notifications **or** send branded emails to all registered users via Gmail SMTP
 
 ---
 
@@ -55,13 +57,14 @@ npm run dev                    # http://localhost:3000
 |---|---|
 | Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion, Clerk |
 | Backend | Python 3.11+, FastAPI, Uvicorn |
-| LLM / STT / TTS | Groq (LLaMA 3.3 70B, Whisper), Google Gemini |
-| Vector DB | Pinecone — `multilingual-e5-large` (1024-dim) |
+| LLM / STT / TTS | Groq (GPT-OSS 20B/120B, Whisper), Google Gemini |
+| Vector DB | Pinecone — `multilingual-e5-large` (1024-dim), dual namespaces |
 | Database | MongoDB Atlas (motor 3.x async driver) |
-| Auth | Clerk (RS256 JWT + webhooks) |
+| Auth | Clerk (RS256 JWT + webhooks + Backend API) |
 | Notion | Notion OAuth 2.0, Notion API v1 |
 | Search / Scrape | Serper.dev, Firecrawl |
 | Storage | Firebase Storage (generated images) |
+| Email | Gmail SMTP SSL — welcome emails + admin broadcast |
 | Hosting | Vercel (frontend), Railway (backend) |
 
 ---
@@ -71,17 +74,18 @@ npm run dev                    # http://localhost:3000
 ```
 mindpad_ai/
 ├── backend/
-│   ├── main.py            # Uvicorn entry point
-│   ├── chat.py            # FastAPI app — all core routes
-│   ├── rag.py             # PDF RAG pipeline
-│   ├── notion.py          # Notion OAuth 2.0 + sync + RAG + summary
-│   ├── deep_research.py   # Deep Research pipeline
-│   ├── support_chat.py    # Landing-page support chatbot
-│   ├── features.txt       # Product reference for support bot
+│   ├── main.py              # Uvicorn entry point
+│   ├── chat.py              # FastAPI app — all core routes
+│   ├── rag.py               # PDF RAG pipeline (upload, chunk, embed, retrieve, delete)
+│   ├── deep_research.py     # Deep Research pipeline (Serper → Firecrawl → Pinecone _dr namespace)
+│   ├── notion.py            # Notion OAuth 2.0 + sync + RAG + summary
+│   ├── support_chat.py      # Landing-page support chatbot
+│   ├── features.txt         # Product reference for support bot
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
-│       ├── App.jsx        # Main app shell, chat UI
+│       ├── App.jsx              # Main app shell, chat UI
+│       ├── PreferencesModal.jsx # Preferences panel (theme, language, AI toggles)
 │       ├── LandingPage.jsx
 │       ├── MindMapModal.jsx
 │       ├── AuthPage.jsx
@@ -100,13 +104,15 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 GROQ_API_KEY=
 GEMINI_API_KEY=
 PINECONE_API_KEY=
+PINECONE_INDEX_NAME=mindpad-ai
 MONGODB_URI=
 CLERK_FRONTEND_API=
 CLERK_WEBHOOK_SECRET=
+CLERK_SECRET_KEY=          # required for admin broadcast email (Clerk Backend API)
 SERPER_API_KEY=
 FIRECRAWL_API_KEY=
-MAIL_USER=
-MAIL_PASS=
+MAIL_USER=                 # Gmail address (e.g. mindpad.ai@gmail.com)
+MAIL_PASS=                 # Gmail App Password
 NOTION_CLIENT_ID=
 NOTION_CLIENT_SECRET=
 NOTION_STATE_SECRET=
