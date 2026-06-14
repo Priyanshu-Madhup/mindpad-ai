@@ -12,13 +12,14 @@
 
 Mindpad AI is a full-stack AI research workspace. You create isolated notebooks, each with its own persistent chat history, and can answer questions using:
 
-- **RAG over PDFs** — upload documents; the AI retrieves the most relevant chunks before answering
+- **RAG over PDFs** — upload documents via the sidebar source panel **or the chat bar attach button**; the AI retrieves the most relevant chunks before answering
+- **PDF deduplication** — SHA-256 hash check reuses existing Pinecone vectors when the same PDF is re-uploaded, eliminating redundant embedding API calls; dedup anchors preserve the vector index even after a notebook is deleted
 - **Notion Integration** — import Notion pages directly into a notebook via OAuth 2.0; pages are indexed into Pinecone and come with an AI-generated summary
 - **Live Web Search** — Serper.dev-powered Google search injected into the prompt
 - **Deep Research Mode** — Serper → Firecrawl scraping → Pinecone vector retrieval pipeline
 - **AI Image Generation** — Gemini image model, persisted to Firebase Storage
 - **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
-- **Mind Map Generator** — D3-powered interactive mind map from your PDFs
+- **Mind Map Generator** — D3-powered interactive mind map from your PDFs; robust JSON extraction handles reasoning-model `<think>` block artifacts
 - **Multilingual Responses** — 12 Indian and global languages
 
 ---

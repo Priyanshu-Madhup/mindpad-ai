@@ -140,37 +140,44 @@ async def decide_chunk_count(total_tokens: int, pdf_name: str) -> int:
     coherence vs. retrieval precision.  Hard constraints are enforced
     after the LLM responds:
       - max 1000 tokens / chunk
-      - min 200 tokens  / chunk (to avoid meaningless micro-chunks)
+      - min 100 tokens  / chunk (to avoid meaningless micro-chunks)
     """
-    prompt = (
-        f"You are a RAG chunking expert.\n"
-        f"PDF: \"{pdf_name}\" | Total tokens: {total_tokens}\n"
-        f"Constraints: each chunk must be 100–1000 tokens.\n"
-        f"Goal: choose a chunk count that gives precise, retrievable chunks. "
-        f"Prefer more, smaller chunks over fewer large ones when the document permits.\n"
-        f"Reply with ONLY a single integer. No explanation."
-    )
-
-    resp = await _groq.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[{"role": "user", "content": prompt}],
-        max_completion_tokens=8,
-        temperature=0,
-    )
-    raw = resp.choices[0].message.content.strip()
-
-    try:
-        n = int("".join(filter(str.isdigit, raw)) or "0")
-    except ValueError:
-        n = 0
-
     # Hard-floor: need at least ⌈tokens/1000⌉ chunks to stay under 1000/chunk
     min_n = max(1, -(-total_tokens // 1000))        # ceiling division
     # Hard-ceiling: no more than ⌊tokens/100⌋ chunks (100-token min per chunk)
     max_n = max(1, total_tokens // 100)
 
-    clamped = max(min_n, min(max(n, min_n), max_n, 50))
-    print(f"[RAG] Groq suggested {n} chunks → clamped to {clamped}")
+    prompt = (
+        f"You are a RAG chunking expert.\n"
+        f"Document: \"{pdf_name}\" | Total tokens: {total_tokens}\n"
+        f"Constraints: each chunk must be between 100 and 1000 tokens.\n"
+        f"Valid range for chunk count: {min_n} to {min(max_n, 50)}.\n"
+        f"Goal: choose the optimal chunk count for precise, retrievable semantic chunks. "
+        f"Prefer more, smaller chunks over fewer large ones when the document permits.\n"
+        f"Reply with ONLY a single integer inside <answer> tags. Example: <answer>12</answer>"
+    )
+
+    resp = await _groq.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[{"role": "user", "content": prompt}],
+        max_completion_tokens=256,
+        temperature=0.2,
+    )
+    raw = resp.choices[0].message.content.strip()
+
+    # Primary: extract value from <answer> tags
+    import re as _re
+    answer_match = _re.search(r"<answer>\s*(\d+)\s*</answer>", raw)
+    if answer_match:
+        n = int(answer_match.group(1))
+    else:
+        # Fallback: take the last standalone integer in the response
+        # (avoids grabbing token-count numbers from a reasoning preamble)
+        all_ints = _re.findall(r"\b(\d+)\b", raw)
+        n = int(all_ints[-1]) if all_ints else 0
+
+    clamped = max(min_n, min(n, max_n, 50))
+    print(f"[RAG] Groq suggested {n} chunks → clamped to {clamped} (valid range {min_n}–{min(max_n, 50)})")
     return clamped
 
 
@@ -310,12 +317,15 @@ async def retrieve_rag_context(
     user_id: str,
     doc_ids: List[str],
     top_k: int = 3,
+    namespace: Optional[str] = None,
 ) -> tuple:
     """
-    Embed *query*, query Pinecone in the user's namespace filtered to
-    *doc_ids*, and return:
+    Embed *query*, query Pinecone in the given namespace (defaults to the user's
+    PDF namespace) filtered to *doc_ids*, and return:
       - formatted context string (for injection into system prompt)
       - list of source dicts (for frontend hover citations)
+
+    Pass namespace=f"{user_id}_dr" to query the deep-research namespace.
 
     When multiple doc_ids are provided each doc is queried individually
     (1 chunk per doc guaranteed), then all results are merged and the
@@ -329,7 +339,8 @@ async def retrieve_rag_context(
         q_vec = await embed_texts([query], "query")
         index = await asyncio.to_thread(get_index)
 
-        print(f"[RAG] retrieve_rag_context called: top_k={top_k}, doc_ids={doc_ids}")
+        ns = namespace or user_id
+        print(f"[RAG] retrieve_rag_context called: top_k={top_k}, doc_ids={doc_ids}, namespace='{ns}'")
         # Unified query across all selected PDFs — cosine similarity decides
         # relevance.  All PDFs in a notebook share the same user namespace so a
         # single $in filter is all that's needed; no per-doc round-trips.
@@ -337,7 +348,7 @@ async def retrieve_rag_context(
             index.query,
             vector=q_vec[0],
             top_k=top_k,
-            namespace=user_id,
+            namespace=ns,
             include_metadata=True,
             filter={"doc_id": {"$in": doc_ids}},
         )
@@ -1001,10 +1012,19 @@ async def cleanup_user_all_data(user_id: str) -> None:
     result = await pdf_docs_col.delete_many({"user_id": user_id})
     print(f"[RAG] Deleted {result.deleted_count} pdf_docs rows for user {user_id[:12]}…")
 
-    # Delete entire Pinecone namespace for this user
+    # Delete entire Pinecone namespace for this user (PDF vectors)
     try:
         index = get_index()
         await asyncio.to_thread(index.delete, delete_all=True, namespace=user_id)
-        print(f"[RAG] Deleted Pinecone namespace for user {user_id[:12]}…")
+        print(f"[RAG] Deleted Pinecone PDF namespace for user {user_id[:12]}…")
     except Exception as e:
-        print(f"[RAG] Pinecone namespace delete failed for user {user_id[:12]}…: {e}")
+        print(f"[RAG] Pinecone PDF namespace delete failed for user {user_id[:12]}…: {e}")
+
+    # Delete the deep-research namespace ({user_id}_dr) as well
+    try:
+        index = get_index()
+        dr_namespace = f"{user_id}_dr"
+        await asyncio.to_thread(index.delete, delete_all=True, namespace=dr_namespace)
+        print(f"[RAG] Deleted Pinecone deep-research namespace for user {user_id[:12]}…")
+    except Exception as e:
+        print(f"[RAG] Pinecone DR namespace delete failed for user {user_id[:12]}…: {e}")

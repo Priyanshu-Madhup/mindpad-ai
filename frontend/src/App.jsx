@@ -52,6 +52,7 @@ import {
   ZoomOut,
   Maximize2,
   Minimize2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -65,6 +66,7 @@ import {
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
+import PreferencesModal from './PreferencesModal.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -233,6 +235,9 @@ export default function App() {
   const [syncingPageId, setSyncingPageId] = useState(null); // page_id being synced
   const [notionToast, setNotionToast] = useState(null);     // { type: 'success'|'error', msg }
   const [notionImportTargetId, setNotionImportTargetId] = useState(null); // notebook to import into (null = create new)
+
+  // ── Preferences modal ────────────────────────────────────────────────────
+  const [showPreferences, setShowPreferences] = useState(false);
 
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
@@ -1018,10 +1023,22 @@ export default function App() {
         const decoder = new TextDecoder();
         const SOURCES_MARKER = '\n__SOURCES_JSON__:';
         let rawAccumulated = ''; // full raw stream including sources marker
+        // Track first chunk: when deep research is active the DR indicator stays
+        // visible until the LLM actually starts streaming.  Dismissing it here
+        // (rather than in `finally`) prevents the DR bubble and the assistant
+        // bubble from appearing simultaneously.
+        let deepResearchDismissed = false;
 
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
+          // Dismiss the deep-research loading indicator as soon as the first
+          // token arrives — this is the precise moment the DR pipeline is done
+          // and the LLM has started responding.
+          if (!deepResearchDismissed) {
+            deepResearchDismissed = true;
+            setIsDeepResearching(false);
+          }
           const chunk = decoder.decode(value, { stream: true });
           rawAccumulated += chunk;
           // Derive display content directly from rawAccumulated so a marker
@@ -1699,6 +1716,24 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* ── Preferences Modal ─────────────────────────────────────────────────── */}
+      <PreferencesModal
+        open={showPreferences}
+        onClose={() => setShowPreferences(false)}
+        colorMode={colorMode}
+        setColorMode={setColorMode}
+        isResearchMode={isResearchMode}
+        setIsResearchMode={setIsResearchMode}
+        isDeepResearch={isDeepResearch}
+        setIsDeepResearch={setIsDeepResearch}
+        isWebSearch={isWebSearch}
+        setIsWebSearch={setIsWebSearch}
+        isMultimediaRetrieval={isMultimediaRetrieval}
+        setIsMultimediaRetrieval={setIsMultimediaRetrieval}
+        selectedLang={selectedLang}
+        setSelectedLang={setSelectedLang}
+      />
+
       {/* ── Notion Pages Modal ────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showNotionModal && (
@@ -1914,6 +1949,15 @@ export default function App() {
                 })()}
               </AnimatePresence>
             </div>
+            {/* Preferences */}
+            <button
+              onClick={() => setShowPreferences(prev => !prev)}
+              title="Preferences"
+              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
+            >
+              <SlidersHorizontal className="w-5 h-5" />
+            </button>
+
             {/* Bell / Notifications */}
             <div className="relative">
               <button

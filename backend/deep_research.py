@@ -66,6 +66,7 @@ async def fetch_serper_links(query: str, num: int = SERPER_NUM_RESULTS) -> List[
     try:
         payload = {"q": query, "num": num}
         headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
+        print(f"[DeepResearch] Serper key prefix: '{SERPER_API_KEY[:6]}…' len={len(SERPER_API_KEY)}")
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 "https://google.serper.dev/search",
@@ -207,16 +208,19 @@ async def index_scraped_content(
         for i in range(actual_chunks)
     ]
 
-    # Upsert to Pinecone
+    # Upsert to Pinecone — dedicated deep-research namespace keeps scraped
+    # content isolated from the user's PDF namespace so retrieval can be
+    # tuned per source (top-3 DR + top-2 docs) without cross-contamination.
+    dr_namespace = f"{user_id}_dr"
     try:
         index = await asyncio.to_thread(get_index)
         for batch_start in range(0, len(vectors), 100):
             await asyncio.to_thread(
                 index.upsert,
                 vectors=vectors[batch_start : batch_start + 100],
-                namespace=user_id,
+                namespace=dr_namespace,
             )
-        print(f"[DeepResearch] Upserted {actual_chunks} vectors → namespace='{user_id}'")
+        print(f"[DeepResearch] Upserted {actual_chunks} vectors → namespace='{dr_namespace}'")
     except Exception as e:
         print(f"[DeepResearch] Pinecone upsert error: {e}")
         return None

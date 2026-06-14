@@ -1107,11 +1107,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             if web_context:
                 print(f"[Web Search] Injecting {len(web_context)} chars of web context")
 
-        # ── Deep Research: Serper → Firecrawl → Pinecone → unified RAG ───────
-        # Scrape + index web content, then do ONE Pinecone query combining:
-        #   • all selected PDF doc_ids  (may be empty)
-        #   • the freshly-indexed deep-research doc_id
-        # → top-3 chunks ranked together across ALL sources by cosine similarity.
+        # ── Deep Research: Serper → Firecrawl → Pinecone → dual-namespace RAG ─
+        # Scraped content is indexed into a dedicated '{user_id}_dr' namespace,
+        # keeping it isolated from the user's PDF vectors.
+        # Retrieval then queries both namespaces separately:
+        #   • top 3 chunks from the deep-research namespace
+        #   • top 2 chunks from the PDF/document namespace
+        # and merges them as a single combined context for the LLM.
         if request.deep_research and not request.image_base64:
             print(f"[DeepResearch] Running pipeline for notebook={notebook_id}")
             dr_doc_id, dr_urls = await run_deep_research(
@@ -1120,25 +1122,46 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 notebook_id=notebook_id,
             )
             if dr_doc_id:
-                # Combine PDF doc_ids + deep-research doc_id → single unified query
-                combined_doc_ids = list(request.selected_pdf_ids or []) + [dr_doc_id]
-                unified_context, unified_sources = await retrieve_rag_context(
+                dr_namespace = f"{user_id}_dr"
+
+                # Top 3 chunks from deep-research namespace
+                dr_context, dr_sources_raw = await retrieve_rag_context(
                     query=last_user_msg.content,
                     user_id=user_id,
-                    doc_ids=combined_doc_ids,
-                    top_k=rag_top_k,
+                    doc_ids=[dr_doc_id],
+                    top_k=3,
+                    namespace=dr_namespace,
                 )
-                if unified_context:
-                    web_context = ""  # don't double-inject web snippets
-                    rag_context = unified_context
-                    rag_sources = unified_sources
-                    for src in rag_sources:
-                        src["scraped_urls"] = dr_urls
-                    pdf_count = len(request.selected_pdf_ids or [])
-                    print(f"[DeepResearch] Unified RAG: {len(unified_context)} chars from "
-                          f"{pdf_count} PDF(s) + 1 deep-research doc → top-3 chunks")
+                for src in dr_sources_raw:
+                    src["scraped_urls"] = dr_urls
+
+                # Top 2 chunks from PDF docs namespace (only when PDFs are selected)
+                pdf_context, pdf_sources_raw = "", []
+                if request.selected_pdf_ids:
+                    pdf_context, pdf_sources_raw = await retrieve_rag_context(
+                        query=last_user_msg.content,
+                        user_id=user_id,
+                        doc_ids=request.selected_pdf_ids,
+                        top_k=2,
+                    )
+
+                # Merge both results into a single context block
+                combined_parts = []
+                if dr_context:
+                    combined_parts.append("=== DEEP RESEARCH (web sources) ===\n" + dr_context)
+                if pdf_context:
+                    combined_parts.append("=== DOCUMENT SOURCES (PDFs) ===\n" + pdf_context)
+
+                if combined_parts:
+                    web_context = ""  # suppress plain web-search snippets
+                    rag_context = "\n\n".join(combined_parts)
+                    rag_sources = dr_sources_raw + pdf_sources_raw
+                    print(
+                        f"[DeepResearch] Dual-namespace RAG: {len(dr_sources_raw)} DR chunk(s) "
+                        f"+ {len(pdf_sources_raw)} PDF chunk(s)"
+                    )
                 else:
-                    print("[DeepResearch] Unified query returned no chunks — falling back to empty context")
+                    print("[DeepResearch] Both namespace queries returned no chunks")
             else:
                 # Indexing failed — fall back to PDF-only RAG if PDFs are selected
                 print("[DeepResearch] Pipeline returned no doc_id — falling back to PDF-only RAG")
