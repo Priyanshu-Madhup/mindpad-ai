@@ -21,7 +21,8 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
 - **Mind Map Generator** — D3-powered interactive mind map from your PDFs
 - **Multilingual Responses** — 12 Indian and global languages
-- **Preferences Panel** — quick-access modal for theme, language, and AI behaviour toggles
+- **Storage Usage Dashboard** — Preferences panel shows real-time Firebase storage consumption (PDFs + Insight Canvas) against a 200 MB cap with a segmented progress bar, per-file breakdown, and one-click permanent deletion with cascade cleanup across Firebase Storage and MongoDB
+- **Preferences Panel** — quick-access modal for theme, language, AI behaviour toggles, and storage management
 - **Admin Broadcast** — admin can push in-app notifications **or** send branded emails to all registered users via Gmail SMTP
 
 ---
@@ -79,13 +80,14 @@ mindpad_ai/
 │   ├── rag.py               # PDF RAG pipeline (upload, chunk, embed, retrieve, delete)
 │   ├── deep_research.py     # Deep Research pipeline (Serper → Firecrawl → Pinecone _dr namespace)
 │   ├── notion.py            # Notion OAuth 2.0 + sync + RAG + summary
+│   ├── storage.py           # Storage usage & deletion API (GET /storage/usage, DELETE /storage/pdf|canvas)
 │   ├── support_chat.py      # Landing-page support chatbot
 │   ├── features.txt         # Product reference for support bot
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
 │       ├── App.jsx              # Main app shell, chat UI
-│       ├── PreferencesModal.jsx # Preferences panel (theme, language, AI toggles)
+│       ├── PreferencesModal.jsx # Preferences panel — storage usage dashboard + theme/language/AI toggles
 │       ├── LandingPage.jsx
 │       ├── MindMapModal.jsx
 │       ├── AuthPage.jsx

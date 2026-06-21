@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, SlidersHorizontal, HardDrive, FileText,
   Image as ImageIcon, Loader2, RefreshCw,
@@ -9,7 +9,7 @@ import { storage } from './firebase.jsx';
 import { ref, getMetadata, deleteObject } from 'firebase/storage';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const MAX_BYTES = 200 * 1024 * 1024; // 200 MB cap per user
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB cap per user
 
 function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
@@ -173,7 +173,7 @@ export default function PreferencesModal({
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                   <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Storage Usage</span>
-                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">200 MB limit</span>
+                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">50 MB limit</span>
                   {loadingStorage
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 ml-1.5" />
                     : (
@@ -232,7 +232,7 @@ export default function PreferencesModal({
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-slate-500 dark:text-slate-400">
                           {formatBytes(storageData.totalBytes)}{' '}
-                          <span className="text-slate-400 dark:text-slate-600">/ 200 MB used</span>
+                          <span className="text-slate-400 dark:text-slate-600">/ 50 MB used</span>
                         </span>
                         <span className={`text-xs font-bold tabular-nums ${usedColor}`}>
                           {usedPct.toFixed(1)}%
