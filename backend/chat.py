@@ -62,6 +62,10 @@ app.include_router(deep_research_router)
 from notion import router as notion_router, cleanup_notion_connection
 app.include_router(notion_router)
 
+# Mount the Storage usage router (/storage/usage endpoint)
+from storage import router as storage_router
+app.include_router(storage_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription

@@ -1753,6 +1753,24 @@ export default function App() {
         setIsMultimediaRetrieval={setIsMultimediaRetrieval}
         selectedLang={selectedLang}
         setSelectedLang={setSelectedLang}
+        user={user}
+        getToken={getToken}
+        onPdfDeleted={(docId) => {
+          setNotebookPdfs(prev => {
+            const next = {};
+            for (const [nbId, pdfs] of Object.entries(prev)) {
+              next[nbId] = pdfs.filter(p => p.doc_id !== docId);
+            }
+            return next;
+          });
+        }}
+        onCanvasDeleted={(notebookId) => {
+          setInsightCanvasImages(prev => {
+            const next = { ...prev };
+            delete next[notebookId];
+            return next;
+          });
+        }}
       />
 
       {/* ── Notion Pages Modal ────────────────────────────────────────────────── */}
