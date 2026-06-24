@@ -66,6 +66,10 @@ app.include_router(notion_router)
 from storage import router as storage_router
 app.include_router(storage_router)
 
+# Mount the Plans / pricing router (/plans/* endpoints)
+from plans import router as plans_router
+app.include_router(plans_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription

@@ -54,6 +54,7 @@ import {
   Minimize2,
   SlidersHorizontal,
   Brain,
+  Crown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -68,6 +69,8 @@ import {
 import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
+import PricingModal from './PricingModal.jsx';
+import PaymentPage from './PaymentPage.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -238,6 +241,8 @@ export default function App() {
 
   // ── Preferences modal ────────────────────────────────────────────────────
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showPricing, setShowPricing]         = useState(false);
+  const [selectedPlan, setSelectedPlan]       = useState(null);
 
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
@@ -1773,6 +1778,38 @@ export default function App() {
         }}
       />
 
+      {/* ── Pricing Modal ─────────────────────────────────────────────────────── */}
+      <PricingModal
+        open={showPricing}
+        onClose={() => setShowPricing(false)}
+        onSelectPlan={(plan) => {
+          setSelectedPlan(plan);
+          setShowPricing(false);
+        }}
+      />
+
+      {/* ── Payment Page (full-screen overlay) ───────────────────────────────── */}
+      <AnimatePresence>
+        {selectedPlan && (
+          <motion.div
+            key="payment-page"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="fixed inset-0 z-60 overflow-y-auto"
+          >
+            <PaymentPage
+              plan={selectedPlan}
+              onBack={() => {
+                setSelectedPlan(null);
+                setShowPricing(true);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Notion Pages Modal ────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showNotionModal && (
@@ -1988,6 +2025,19 @@ export default function App() {
                 })()}
               </AnimatePresence>
             </div>
+            {/* Crown / Upgrade button */}
+            <button
+              onClick={() => {
+                setSidebarOpen(false);
+                setRightDrawerOpen(false);
+                setShowPricing(true);
+              }}
+              title="Upgrade plan"
+              className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors rounded-full"
+            >
+              <Crown className="w-5 h-5" />
+            </button>
+
             {/* Preferences */}
             <button
               onClick={() => setShowPreferences(prev => !prev)}
@@ -2152,7 +2202,7 @@ export default function App() {
         {/* Left Column: Notebooks Sidebar */}
         {/* Left sidebar — mobile overlay */}
         <AnimatePresence>
-          {(!isMd && sidebarOpen) && (
+          {(!isMd && sidebarOpen && !showPricing) && (
             <motion.div
               key="left-overlay"
               initial={{ opacity: 0 }}
@@ -2167,7 +2217,7 @@ export default function App() {
 
         {/* Left sidebar panel */}
         <AnimatePresence>
-          {(isMd ? leftOpen : sidebarOpen) && (
+          {(isMd ? leftOpen : sidebarOpen) && !showPricing && (
             <motion.aside
               key="left-sidebar"
               initial={{ x: -256, opacity: 0 }}
@@ -2614,7 +2664,7 @@ export default function App() {
 
         {/* Center Column: AI Chat Interface */}
         <motion.section
-          animate={{ marginLeft: (isMd && leftOpen) ? 256 : 0, marginRight: (isLg && rightOpen) ? 320 : 0 }}
+          animate={{ marginLeft: (isMd && leftOpen && !showPricing && !selectedPlan) ? 256 : 0, marginRight: (isLg && rightOpen && !showPricing && !selectedPlan) ? 320 : 0 }}
           transition={{
             marginLeft: { type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] },
             marginRight: { type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] },
@@ -3334,7 +3384,7 @@ export default function App() {
 
         {/* Right Column: AI Studio Panel */}
         <AnimatePresence>
-          {(isLg ? rightOpen : rightDrawerOpen) && (
+          {(isLg ? rightOpen : rightDrawerOpen) && !showPricing && !selectedPlan && (
             <motion.aside
               key="right-sidebar"
               initial={{ x: 320, opacity: 0 }}
