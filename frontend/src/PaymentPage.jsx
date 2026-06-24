@@ -304,7 +304,7 @@ export default function PaymentPage({ plan, onBack }) {
               disabled={!form.agreed}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-primary dark:bg-white dark:text-slate-900 hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {finalPrice === 0 ? 'Continue for free' : `Proceed to Pay &#8377;${finalPrice} / month`}
+              {finalPrice === 0 ? 'Continue for free' : `Proceed to Pay ₹${finalPrice} / month`}
             </button>
 
             <p className="text-center text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-center gap-1.5">
