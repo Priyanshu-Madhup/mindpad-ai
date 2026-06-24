@@ -328,13 +328,13 @@ const MARQUEE_FEATURES = [
   { icon: Network,      title: 'Mind Map Generation',    description: 'Visualize complex connections between your sources in an interactive knowledge graph.' },
   { icon: Sparkles,     title: 'Dual-Pipeline RAG',      description: 'Hybrid dense + sparse retrieval for precise, grounded answers from your documents.' },
   { icon: FileText,     title: 'PDF Intelligence',       description: 'Chat with any PDF — extract insights, summarize chapters, and cross-reference instantly.' },
-  { icon: Search,       title: 'Semantic Vector Search', description: 'Pinecone-powered vector search that understands meaning, not just keywords.' },
+  { icon: Search,       title: 'Semantic Search',        description: 'AI-powered search that understands meaning, not just keywords — across all your documents.' },
   { icon: Podcast,      title: 'Audio Podcast',          description: 'Transform research papers into engaging spoken audio you can learn from on the go.' },
   { icon: Eye,          title: 'Insight Canvas',         description: 'AI-generated visual summaries that map key ideas from your entire notebook.' },
   { icon: Palette,      title: 'AI Image Generation',    description: 'Create professional diagrams and visuals from natural language prompts.' },
   { icon: CheckSquare,  title: 'Flashcards & Quiz',      description: 'Automatically extract key concepts into active-recall sets and adaptive quizzes.' },
-  { icon: Globe,        title: 'Deep Web Research',      description: 'Serper + Firecrawl pipeline scrapes and synthesizes live web sources into your notes.' },
-  { icon: Mic,          title: 'Voice Input & TTS',      description: 'Dictate queries with Whisper transcription and hear responses via Orpheus TTS.' },
+  { icon: Globe,        title: 'Deep Web Research',      description: 'Mindpad reads the top web pages in full and synthesizes live sources directly into your answers.' },
+  { icon: Mic,          title: 'Voice Input & TTS',      description: 'Dictate your queries with AI speech recognition and hear any response read aloud.' },
   { icon: Film,         title: 'Visual Podcast',         description: 'Cinematic slides and visual aids synchronized with your research narrative.' },
   { icon: Zap,          title: 'Multi-language Output',  description: 'Receive responses in Hindi, Tamil, Bengali, Marathi, and more — instantly.' },
 ];
@@ -593,21 +593,27 @@ STRICT RULES — follow these without exception:
 5. If you don't know the answer from the reference below, say so.
 
 MINDPAD AI REFERENCE:
-Mindpad AI is an intelligent research workspace for students and researchers. Key features:
-- Unlimited notebooks with persistent AI chat history (MongoDB)
-- AI Chat powered by Groq (LLaMA) — streaming, multimodal (images), TTS, copy/share
-- Voice Input via Groq Whisper STT
-- PDF Upload & RAG: chunked, embedded (multilingual-e5-large), stored in Pinecone. SHA-256 dedup. Auto-summary on upload.
-- Web Search via Serper.dev (toggle in chat bar)
-- Deep Research: Serper → Firecrawl scraping → Pinecone RAG pipeline
-- Image Generation via NVIDIA Stable Diffusion, stored in Firebase
-- Research Mode: higher-reasoning model (gpt-oss-120b)
-- Multi-language output: English, Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, Gujarati, Punjabi, Malayalam
-- AI Studio: Mind Map, Audio Podcast, Visual Podcast, Flashcards, Quiz Mode (coming soon)
-- Dark / Light / OLED modes, mobile-responsive
-- Auth via Clerk. Frontend on Vercel, Backend on Render.
-- Free beta; Pro features coming soon.
-- Contact/support: chat widget on landing page or https://mindpad-ai.vercel.app`;
+Mindpad AI is an intelligent research workspace designed for students, scholars, researchers, and lifelong learners. It combines a notebook-style interface with a powerful AI assistant called Midy AI.
+
+KEY FEATURES:
+- Unlimited notebooks, each with its own persistent AI chat history that survives page refreshes
+- AI Chat (Midy AI): fast streaming responses, attach images and ask questions about them, copy messages, read any message aloud
+- Voice Input: record voice messages and have them transcribed automatically
+- PDF Upload: upload PDFs and the AI reads and understands them, generates a summary, and suggests a notebook name. Select multiple PDFs and the AI answers from all of them at once. Re-uploading the same PDF is instant.
+- Notion Integration: connect your Notion account and import pages directly into a notebook — the AI can answer questions about them just like PDFs
+- Web Search: toggle in the chat bar to get live, cited web results injected into the AI's answer
+- Deep Research Mode: the AI searches the web, reads the top pages in full, and answers from that content. Combines with PDFs if selected. Takes 20-60 seconds with a progress animation.
+- AI Image Generation: ask Midy AI to draw or generate an image in natural language — images are saved permanently across sessions
+- Text-to-Speech: click the speaker icon on any AI message to hear it read aloud
+- Research Mode: switch to a more powerful AI model for complex, analytical tasks — produces longer, cited, structured responses
+- 12 Languages: English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam, Marathi, Gujarati, Punjabi, Urdu, Odia
+- Mind Map Generator: generate an interactive visual mind map from your PDFs — collapsible nodes, pan, zoom, fullscreen
+- Insight Canvas: generate an infographic/visual summary from selected PDFs, saved per notebook
+- AI Studio: houses Mind Map, Insight Canvas, and upcoming tools (Audio Podcast, Flashcards, Quiz Mode, and more)
+- Storage Dashboard: view your storage usage (200 MB limit), see per-file sizes, and permanently delete files — in the Preferences panel
+- Dark Mode, Black (OLED) Mode, Light Mode — toggle in Settings
+- Fully responsive on mobile and tablet
+- Free during beta. Website: https://mindpad-ai.vercel.app. Contact: mindpad.ai@gmail.com`;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
