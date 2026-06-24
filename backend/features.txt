@@ -9,151 +9,110 @@ Mindpad AI is an intelligent research workspace designed for students, scholars,
 ## CORE FEATURES
 
 ### 1. Notebooks
-- Users can create unlimited notebooks to organise research topics, projects, or subjects.
-- Each notebook has a persistent AI chat history that survives page refreshes.
+- Create unlimited notebooks to organise research topics, projects, or subjects.
+- Each notebook has its own persistent AI chat history that survives page refreshes.
 - Notebooks can be renamed by double-clicking the name.
-- Notebooks are sorted by creation time (most recent at top).
-- Deleting a notebook cascades: removes PDF metadata, Pinecone vectors, and Notion-imported content.
+- Deleting a notebook permanently removes all associated PDFs, imported content, and chat history.
 
 ### 2. AI Chat — Midy AI
-- Powered by Groq (llama-3.3-70b-versatile by default) for fast, streaming responses.
-- Research Mode switches to openai/gpt-oss-120b for higher-reasoning tasks.
-- Responds in clean, formatted HTML (headings, tables, code blocks, lists, blockquotes).
-- Full conversation history is persisted to MongoDB so chats survive refreshes.
-- Supports multimodal input: users can attach images and ask questions about them.
-- Supports text-to-speech (TTS) — click the speaker icon on any AI message.
-- Users can copy any message with a single click.
+- A fast, streaming AI assistant that responds in clean formatted output (headings, tables, code blocks, lists).
+- Your full conversation history is saved per notebook — returning later restores the complete chat.
+- Attach images directly in the chat and ask questions about them.
+- Click the speaker icon on any AI message to hear it read aloud.
+- Copy any message with a single click.
 
 ### 3. Voice Input (Speech-to-Text)
-- Record voice messages directly in the chat.
-- Uses Groq Whisper large-v3-turbo for fast, accurate transcription.
-- Animated mic recording UI with live "Listening…" feedback.
+- Record voice messages directly in the chat using your microphone.
+- AI-powered speech recognition transcribes your words accurately and quickly.
+- Animated recording UI with live "Listening…" feedback.
 - Transcribed text is inserted into the chat input automatically.
 
-### 4. PDF Upload & RAG (Retrieval-Augmented Generation)
-- Upload one or more PDF documents per notebook via the sidebar source panel or the chat bar attach button.
-- Documents are dynamically chunked (200–1000 tokens per chunk) using Groq to decide the optimal chunk count.
-- Chunks are embedded using multilingual-e5-large and stored in Pinecone (user-isolated namespace).
-- SHA-256 deduplication: re-uploading the same PDF reuses existing vectors instantly — zero re-embedding cost.
-- An automatic AI summary and a suggested notebook name are generated for each PDF immediately after upload.
-- Users can select multiple PDFs; the AI retrieves relevant chunks from all selected PDFs combined.
-- When multiple PDFs are selected, each PDF is guaranteed at least one chunk in the top results.
-- PDF metadata (token count, chunks, tokens/chunk) is visible via an info icon tooltip.
+### 4. PDF Upload & AI Knowledge Base
+- Upload one or more PDF documents per notebook via the sidebar or the chat bar attach button.
+- The AI automatically reads and understands each PDF, generates a summary, and suggests a notebook name.
+- Smart deduplication: re-uploading the same PDF is instant — no redundant processing.
+- Select multiple PDFs and the AI answers from all of them at once.
+- PDF info (page count, size) is visible via an info icon tooltip.
 
 ### 5. Notion Integration
-- Import Notion pages directly into a notebook via Notion OAuth 2.0.
-- Imported pages are chunked, embedded, and indexed into Pinecone — identical to the PDF RAG pipeline.
-- An AI-generated summary is produced for each imported Notion page.
-- Notion content is retrievable in all the same ways as uploaded PDFs (web search, deep research, etc.).
+- Connect your Notion account and import any Notion page directly into a notebook.
+- Imported pages are processed so the AI can answer questions about them — just like a PDF.
+- An AI-generated summary is produced for each imported page.
 
 ### 6. Web Search
-- Toggle "Web Search" in the chat input bar to enable live web results via Serper.dev.
-- The top-5 search results (answer box, knowledge graph, organic snippets) are injected as context.
-- Midy AI answers with up-to-date information and cites sources.
+- Toggle "Web Search" in the chat input bar to pull in live search results before answering.
+- Midy AI answers with up-to-date information and cites the sources it used.
 
 ### 7. Deep Research Mode
-- Toggle "Deep Research" in the chat input bar or Settings.
-- Workflow: Serper API (5 URLs) → Firecrawl web scraping → dynamic chunking → Pinecone upsert → top-3 RAG retrieval.
-- Scraped content is vectorised and stored in a separate user namespace ({user_id}_dr) to avoid displacing PDF chunks.
-- The AI answers strictly from the retrieved vector chunks, not raw web snippets.
-- If PDFs are also selected, PDF chunks (top 2) and web-scraped chunks (top 3) are merged with labelled sections.
-- A four-phase loading animation shows progress: "Searching web via Serper" → "Scraping top pages with Firecrawl" → "Chunking & embedding content" → "Retrieving top-3 relevant chunks".
-- Firecrawl caches pages for 1 hour; inaccessible pages (e.g. 403 errors) are gracefully skipped.
+- Toggle "Deep Research" for a thorough, multi-step research process on any topic.
+- Mindpad AI searches the web, reads the top pages in full, and then answers from that content.
+- If PDFs are also selected, the AI combines insights from both your documents and the live web.
+- A four-phase loading animation shows progress while research runs (typically 20–60 seconds).
 
 ### 8. AI Image Generation
-- Uses Google Gemini (gemini-3-pro-image-preview) to generate images from text prompts.
-- Detected automatically from natural language ("generate an image of…", "draw me…", etc.).
-- Generated images are uploaded to Firebase Storage for permanent, cross-device persistence.
-- Images persist in chat history across sessions and devices.
-- Users can copy or download generated images directly from the chat.
+- Ask Midy AI to generate an image using natural language ("draw me…", "generate an image of…").
+- Images are detected automatically — no special command needed.
+- Generated images are saved permanently and are accessible across sessions and devices.
+- Copy or download generated images directly from the chat.
 
-### 9. Text-to-Speech (TTS)
+### 9. Text-to-Speech
 - Click the speaker icon on any AI message to hear it read aloud.
-- Uses Google Gemini TTS (gemini-3.1-flash-tts-preview, voice "Kore").
-- Produces WAV audio (16-bit mono PCM, 24 kHz) played directly in the browser.
-- A stop button is shown while audio is playing.
+- Audio plays directly in the browser with a stop button shown while playing.
 
 ### 10. Research Mode
-- Activate in Settings to switch the model to openai/gpt-oss-120b (higher-reasoning variant).
-- RAG top_k increases from 3 to 5 for broader document retrieval.
-- Responses are longer and more analytical: minimum 400 words, multi-section HTML, cited sources, comparison tables.
-- Optimised for complex, multi-step analytical tasks and long-form synthesis.
+- Activate in Settings to switch to a more powerful AI model for complex tasks.
+- Produces longer, more analytical responses with cited sources, structured sections, and comparison tables.
+- Best for in-depth academic analysis, multi-step reasoning, and long-form synthesis.
 
 ### 11. Language Selection
-- Choose response language from the input bar: English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam, Marathi, Gujarati, Punjabi, Urdu, Odia (12 languages total).
+- Choose from 12 languages: English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam, Marathi, Gujarati, Punjabi, Urdu, Odia.
 - The AI responds entirely in the selected language, including all headings and prose.
-- Selection is persisted in localStorage so it survives page refreshes.
+- Your language preference is saved and restored on every visit.
 
 ### 12. Settings Panel
 - Toggle Dark Mode, Black (OLED) Mode, or Light Mode.
-- Enable/disable Research Mode (advanced reasoning, gpt-oss-120b model).
-- Enable/disable Deep Research (Serper + Firecrawl + RAG pipeline).
-- Settings are persisted in localStorage so they survive refreshes.
+- Enable/disable Research Mode (deeper, more analytical AI responses).
+- Enable/disable Deep Research (full web reading pipeline).
+- All settings are saved and restored on every visit.
 
 ### 13. Preferences Panel
 - Opened via the sliders icon in the top navbar.
 - Contains theme toggles, language selection, AI behaviour settings, and the Storage Usage Dashboard.
 
 ### 14. Storage Usage Dashboard
-- Shows real-time Firebase storage consumption (PDFs + Insight Canvas images) against a 200 MB cap.
-- Segmented progress bar distinguishes Documents from Insight Canvas usage.
-- Per-file breakdown with name, size, and one-click permanent deletion.
-- Deletion cascades: removes the file from Firebase Storage, MongoDB metadata, and Pinecone vectors (for PDFs).
-- Warning banner appears when usage exceeds 80% or 90%.
-- Manual refresh button re-fetches sizes on demand.
+- See your total storage usage (uploaded PDFs + Insight Canvas images) against a 200 MB limit.
+- A progress bar shows how much of your allowance is used, broken down by category.
+- Per-file list with name, size, and a one-click permanent delete button.
+- Deletion is permanent and removes the file from all systems.
+- Warning shown when usage exceeds 80% or 90% of the limit.
 
 ### 15. Mind Map Generator
-- Generates an interactive D3-powered mind map from selected PDF documents.
-- The tree layout is left-to-right with collapsible/expandable nodes.
-- Supports pan (drag), scroll-to-zoom, pinch-to-zoom on mobile, and fullscreen toggle.
-- Mind map data is saved per-notebook and persists across sessions.
+- Generates an interactive visual mind map from your selected PDF documents.
+- Nodes can be expanded or collapsed by clicking; the layout is left-to-right.
+- Supports pan (drag), scroll-to-zoom, pinch-to-zoom on mobile, and fullscreen.
+- Mind map is saved per-notebook and persists across sessions.
 
 ### 16. Insight Canvas
-- Generates an infographic/visual summary from selected PDFs.
-- The generated canvas URL is stored per-notebook and displayed in the AI Studio panel when the notebook is reopened.
-- Persists across sessions via Firebase Storage.
+- Generates an infographic or visual summary from selected PDFs.
+- Saved per-notebook and shown in the AI Studio panel when you reopen the notebook.
 
 ### 17. AI Studio (Right Panel)
-- Accessible via the panel icon in the header (also available on mobile via a slide-in drawer).
-- Houses tools including Mind Map and Insight Canvas, with more coming: Audio Podcast, Visual Podcast, Video Suggestions, Flashcards, Quiz Mode.
+- Accessible via the panel icon in the header (slide-in drawer on mobile).
+- Currently houses Mind Map and Insight Canvas. Coming soon: Audio Podcast, Visual Podcast, Video Suggestions, Flashcards, Quiz Mode.
 
-### 18. Notifications & Admin Broadcast
-- Admin can push in-app notifications visible to all users with a bell-badge unread count.
-- Admin can also send branded HTML emails to all registered users via Gmail SMTP.
-- Notifications are dismissible; dismissed state is tracked in localStorage per user.
+### 18. Notifications
+- Admins can push in-app announcements visible to all users via a bell icon with an unread badge.
+- Notifications are dismissible.
 
 ### 19. Welcome Email
-- New users receive a branded HTML welcome email the first time they open a notebook.
-- Sent via Gmail SMTP; only fires once per account (tracked in MongoDB users_meta collection).
+- New users receive a welcome email the first time they open a notebook. Sent only once.
 
 ### 20. Mobile Support
 - Fully responsive layout optimised for phones and tablets.
-- Left sidebar opens as a slide-in drawer (hamburger menu).
-- Right AI Studio panel opens as a mobile drawer (panel icon in header).
-- Web Search and Deep Research collapse into a + button on mobile to save space.
+- Sidebar opens as a slide-in drawer via the hamburger menu.
+- AI Studio panel opens as a mobile drawer via the panel icon.
+- Web Search and Deep Research collapse into a + button on mobile to save input bar space.
 - Language selector always visible on mobile.
-
----
-
-## TECHNICAL STACK
-
-### Frontend
-- React 19 (Vite), Tailwind CSS v4, Framer Motion
-- Clerk for authentication (sign-in/sign-up, RS256 JWT)
-- Firebase Storage for image and canvas persistence
-- Deployed on Vercel
-
-### Backend
-- Python 3.11+, FastAPI, async/await throughout
-- MongoDB (motor async driver) for chat history, notebooks, PDF metadata, user meta, notifications
-- Pinecone for vector storage (multilingual-e5-large embeddings, 1024-dim, cosine similarity)
-- Groq API: llama-3.3-70b-versatile chat (streaming), Whisper STT, dynamic chunk-count decisions
-- Google Gemini API: image generation (gemini-3-pro-image-preview), TTS (gemini-3.1-flash-tts-preview)
-- Notion OAuth 2.0 + Notion API v1: page import and indexing
-- Serper.dev: web search link retrieval
-- Firecrawl: async web scraping with 1-hour cache
-- Gmail SMTP SSL: welcome emails and admin broadcast
-- Deployed on Railway
 
 ---
 
@@ -174,25 +133,25 @@ Mindpad AI is an intelligent research workspace designed for students, scholars,
 ## FREQUENTLY ASKED QUESTIONS
 
 Q: Is my data private?
-A: Yes. All vectors are stored in a user-isolated Pinecone namespace keyed to your Clerk user ID. Your PDFs, Notion pages, and chat history are tied to your account and never shared with other users.
+A: Yes. Your PDFs, Notion pages, and chat history are all tied to your account and never shared with other users.
 
 Q: What happens to my data if I delete my account?
-A: Clerk fires a webhook. The backend deletes all notebooks, PDF metadata, Notion content, and all Pinecone vectors (both PDF and Deep Research namespaces) associated with your user ID.
+A: All your notebooks, uploaded PDFs, Notion content, and chat history are permanently deleted from our systems.
 
 Q: How long does Deep Research take?
-A: Typically 20–60 seconds depending on the number of pages Firecrawl needs to scrape. A four-phase loading animation shows progress.
+A: Typically 20–60 seconds. A four-phase loading animation shows progress while it searches and processes web content.
 
 Q: Can I use multiple PDFs at once?
-A: Yes. Select any number of PDFs in your notebook sidebar. The AI will retrieve relevant chunks from all selected PDFs and synthesise a unified answer.
+A: Yes. Select any number of PDFs in your notebook sidebar and the AI will answer from all of them at once.
 
 Q: Does the AI remember my past conversations?
-A: Yes. Each notebook has its own persistent chat history stored in MongoDB. Refreshing the page or returning later restores the full conversation.
+A: Yes. Each notebook has its own persistent chat history. Refreshing the page or returning later restores the full conversation.
 
 Q: What languages can the AI respond in?
 A: English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam, Marathi, Gujarati, Punjabi, Urdu, and Odia (12 languages total).
 
 Q: Can I import from Notion?
-A: Yes. Connect your Notion account via OAuth 2.0 and import any page directly into a notebook. The content is indexed for RAG just like a PDF.
+A: Yes. Connect your Notion account and import any page directly into a notebook. The content becomes searchable and the AI can answer questions about it, just like a PDF.
 
 Q: Is there a mobile app?
 A: Not yet. The web app is fully responsive and works great on phones and tablets.
