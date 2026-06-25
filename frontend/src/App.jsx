@@ -244,6 +244,14 @@ export default function App() {
   const [showPricing, setShowPricing]         = useState(false);
   const [selectedPlan, setSelectedPlan]       = useState(null);
 
+  // ── Subscription plan ─────────────────────────────────────────────────────
+  // Initialized from localStorage so the badge survives page refreshes instantly.
+  // The API call in fetchMyPlan() validates and updates the cache on every login.
+  const [userPlan, setUserPlan] = useState(() => {
+    try { return localStorage.getItem('mindpad_user_plan') || 'free'; }
+    catch { return 'free'; }
+  });
+
   // ── Notifications ──────────────────────────────────────────────────────────
   const ADMIN_EMAIL = 'priyanshumadhup@gmail.com';
   const userEmail = user?.primaryEmailAddress?.emailAddress || '';
@@ -613,6 +621,9 @@ export default function App() {
       const list = data.notebooks || [];
       setNotebooks(list);
 
+      // Sync plan from backend (includes auto-downgrade check)
+      if (data.plan) setUserPlan(data.plan);
+
       // Restore persisted Insight Canvas URLs for all notebooks
       const savedCanvases = {};
       list.forEach(nb => { if (nb.insight_canvas_url) savedCanvases[nb.id] = nb.insight_canvas_url; });
@@ -936,6 +947,33 @@ export default function App() {
     }
   }, [chatHistory, isStreaming]);
 
+  // ── Standalone plan fetch ─────────────────────────────────────────────────────────────
+  // Hits /plans/my-plan directly so the navbar badge is always accurate,
+  // independent of whether loadNotebooks succeeded.
+  // Also writes to localStorage so the badge is instant on the NEXT refresh.
+  const fetchMyPlan = async () => {
+    try {
+      let token = await getToken();
+      if (!token) {
+        await new Promise(r => setTimeout(r, 1000));
+        token = await getToken();
+      }
+      if (!token) return;
+      const res = await fetch(`${BACKEND_URL}/plans/my-plan`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const plan = data.plan || 'free';
+      console.log(`[Plan] Fetched from MongoDB: ${plan}`);
+      setUserPlan(plan);
+      // Cache so next page refresh shows badge immediately
+      try { localStorage.setItem('mindpad_user_plan', plan); } catch {}
+    } catch (err) {
+      console.warn('[Plan] fetchMyPlan error:', err);
+    }
+  };
+
   // Auth state drives view — sign in → workspace, sign out → landing.
   // We also call loadNotebooks() directly here to avoid waiting for the
   // notebooks useEffect to fire on the NEXT render cycle, which adds
@@ -945,9 +983,12 @@ export default function App() {
     if (isSignedIn) {
       setView('workspace');
       loadNotebooks(); // fire immediately — don't wait for view state to propagate
+      fetchMyPlan();   // fetch plan badge from MongoDB independently
     } else {
       setView('landing');
       setChatHistory([]); // Clear stale history on sign-out
+      setUserPlan('free'); // reset badge on sign-out
+      try { localStorage.setItem('mindpad_user_plan', 'free'); } catch {} // clear cache
     }
   }, [isSignedIn, isLoaded]);
 
@@ -1760,6 +1801,7 @@ export default function App() {
         setSelectedLang={setSelectedLang}
         user={user}
         getToken={getToken}
+        userPlan={userPlan}
         onPdfDeleted={(docId) => {
           setNotebookPdfs(prev => {
             const next = {};
@@ -1782,6 +1824,7 @@ export default function App() {
       <PricingModal
         open={showPricing}
         onClose={() => setShowPricing(false)}
+        currentPlan={userPlan}
         onSelectPlan={(plan) => {
           setSelectedPlan(plan);
           setShowPricing(false);
@@ -1804,6 +1847,16 @@ export default function App() {
               onBack={() => {
                 setSelectedPlan(null);
                 setShowPricing(true);
+              }}
+              getToken={getToken}
+              userEmail={userEmail}
+              userName={user?.fullName || user?.firstName || ''}
+              onPaymentSuccess={(planId) => {
+                setUserPlan(planId);
+                try { localStorage.setItem('mindpad_user_plan', planId); } catch {}
+                setSelectedPlan(null);
+                // Reload workspace state — backend may have restarted during checkout
+                loadNotebooks();
               }}
             />
           </motion.div>
@@ -2192,6 +2245,21 @@ export default function App() {
               <PanelRight className="w-5 h-5" />
             </button>
             <Show when="signed-in">
+              {/* Plan badge — shows Plus or Pro next to avatar */}
+              {userPlan !== 'free' && (
+                <button
+                  onClick={() => setShowPricing(true)}
+                  title={`${userPlan === 'plus' ? 'Plus' : 'Pro'} plan — click to manage`}
+                  className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all hover:opacity-80 ${
+                    userPlan === 'pro'
+                      ? 'bg-[#0D1B2A] text-white dark:bg-white dark:text-slate-900'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  }`}
+                >
+                  <Crown className="w-3 h-3" />
+                  {userPlan === 'pro' ? 'Pro' : 'Plus'}
+                </button>
+              )}
               <UserButton afterSignOutUrl="/" />
             </Show>
           </div>

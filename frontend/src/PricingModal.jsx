@@ -10,7 +10,6 @@ const PLANS = [
     period: 'forever',
     borderClass: 'border-slate-200 dark:border-slate-700',
     headerClass: 'bg-slate-50 dark:bg-slate-800/50',
-    btnClass: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-default',
     features: [
       '50 MB storage',
       'Unlimited notebooks',
@@ -24,8 +23,6 @@ const PLANS = [
       'Basic AI Studio access',
       'Mind Map generator',
     ],
-    cta: 'Current Plan',
-    disabled: true,
   },
   {
     id: 'plus',
@@ -35,7 +32,6 @@ const PLANS = [
     badge: 'Popular',
     borderClass: 'border-slate-400 dark:border-slate-500',
     headerClass: 'bg-slate-100 dark:bg-slate-800',
-    btnClass: 'bg-[#0D1B2A] dark:bg-slate-200 text-white dark:text-slate-900 hover:opacity-90',
     features: [
       '200 MB storage',
       'Unlimited notebooks',
@@ -52,8 +48,6 @@ const PLANS = [
       'Better AI model',
       'Priority support',
     ],
-    cta: 'Upgrade to Plus',
-    disabled: false,
   },
   {
     id: 'pro',
@@ -64,7 +58,6 @@ const PLANS = [
     borderClass: 'border-[#0D1B2A] dark:border-slate-300',
     headerClass: 'bg-[#0D1B2A] dark:bg-slate-800',
     headerTextClass: 'text-white',
-    btnClass: 'bg-[#0D1B2A] dark:bg-white text-white dark:text-slate-900 hover:opacity-90',
     features: [
       '500 MB storage',
       'Unlimited notebooks',
@@ -82,17 +75,27 @@ const PLANS = [
       'Dedicated priority support',
       'Early access to new features',
     ],
-    cta: 'Upgrade to Pro',
-    disabled: false,
   },
 ];
 
-export default function PricingModal({ open, onClose, onSelectPlan }) {
+/** Returns CTA label and disabled state based on current plan vs this plan tier. */
+function getPlanCta(planId, currentPlan) {
+  const order = { free: 0, plus: 1, pro: 2 };
+  const current = order[currentPlan] ?? 0;
+  const target  = order[planId]  ?? 0;
+
+  if (planId === currentPlan) return { label: '✓ Current Plan', disabled: true, isCurrent: true };
+  if (target < current)       return { label: 'Downgrade',      disabled: true, isCurrent: false };
+  if (planId === 'free')      return { label: 'Free Plan',      disabled: true, isCurrent: false };
+  return { label: `Upgrade to ${planId === 'plus' ? 'Plus' : 'Pro'}`, disabled: false, isCurrent: false };
+}
+
+export default function PricingModal({ open, onClose, onSelectPlan, currentPlan = 'free' }) {
   return (
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop — starts below navbar, above sidebars */}
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -103,7 +106,7 @@ export default function PricingModal({ open, onClose, onSelectPlan }) {
             onClick={onClose}
           />
 
-          {/* Centering container — full width, above sidebars */}
+          {/* Centering container */}
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: -12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -114,83 +117,102 @@ export default function PricingModal({ open, onClose, onSelectPlan }) {
           >
             {/* Panel */}
             <div className="pointer-events-auto w-full max-w-4xl max-h-[82vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <Crown className="w-4 h-4 text-primary" />
-                <span className="text-base font-bold font-display text-slate-900 dark:text-slate-100">Choose Your Plan</span>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Plans grid */}
-            <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {PLANS.map((plan) => (
-                <div
-                  key={plan.id}
-                  className={`relative flex flex-col rounded-xl border-2 ${plan.borderClass} overflow-hidden`}
-                >
-                  {/* Badge */}
-                  {plan.badge && (
-                    <div className="absolute top-2.5 right-2.5">
-                      <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">
-                        {plan.badge}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Plan header */}
-                  <div className={`px-4 pt-4 pb-3 ${plan.headerClass}`}>
-                    <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${plan.headerTextClass || 'text-slate-500 dark:text-slate-400'}`}>
-                      {plan.name}
-                    </p>
-                    <div className="flex items-end gap-1">
-                      <span className={`text-2xl font-extrabold font-display ${plan.headerTextClass || 'text-slate-900 dark:text-white'}`}>
-                        {plan.price}
-                      </span>
-                      <span className={`text-xs mb-0.5 ${plan.headerTextClass ? 'text-white/60' : 'text-slate-400'}`}>
-                        /{plan.period}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Features */}
-                  <div className="px-4 py-3 flex-1 space-y-1.5">
-                    {plan.features.map((feat, i) => (
-                      <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
-                        <Check className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
-                        <span>{feat}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* CTA */}
-                  <div className="px-4 pb-4 pt-2">
-                    <button
-                      disabled={plan.disabled}
-                      onClick={() => !plan.disabled && onSelectPlan(plan)}
-                      className={`w-full py-2 rounded-lg text-xs font-bold transition-all duration-150 ${plan.btnClass}`}
-                    >
-                      {plan.cta}
-                    </button>
-                  </div>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <Crown className="w-4 h-4 text-primary" />
+                  <span className="text-base font-bold font-display text-slate-900 dark:text-slate-100">Choose Your Plan</span>
                 </div>
-              ))}
-            </div>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-            {/* Footer */}
-            <div className="shrink-0 px-5 py-3 border-t border-slate-100 dark:border-slate-800 text-center">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                All prices in INR · Cancel anytime · Payments are secure and encrypted
-              </p>
+              {/* Plans grid */}
+              <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {PLANS.map((plan) => {
+                  const { label, disabled, isCurrent } = getPlanCta(plan.id, currentPlan);
+                  const btnClass = isCurrent
+                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 cursor-default'
+                    : disabled
+                      ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-default'
+                      : plan.id === 'pro'
+                        ? 'bg-[#0D1B2A] dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
+                        : 'bg-[#0D1B2A] dark:bg-slate-200 text-white dark:text-slate-900 hover:opacity-90';
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className={`relative flex flex-col rounded-xl border-2 ${plan.borderClass} overflow-hidden ${isCurrent ? 'ring-2 ring-emerald-400/40' : ''}`}
+                    >
+                      {/* Badge */}
+                      {plan.badge && !isCurrent && (
+                        <div className="absolute top-2.5 right-2.5">
+                          <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">
+                            {plan.badge}
+                          </span>
+                        </div>
+                      )}
+                      {isCurrent && (
+                        <div className="absolute top-2.5 right-2.5">
+                          <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                            Active
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Plan header */}
+                      <div className={`px-4 pt-4 pb-3 ${plan.headerClass}`}>
+                        <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${plan.headerTextClass || 'text-slate-500 dark:text-slate-400'}`}>
+                          {plan.name}
+                        </p>
+                        <div className="flex items-end gap-1">
+                          <span className={`text-2xl font-extrabold font-display ${plan.headerTextClass || 'text-slate-900 dark:text-white'}`}>
+                            {plan.price}
+                          </span>
+                          <span className={`text-xs mb-0.5 ${plan.headerTextClass ? 'text-white/60' : 'text-slate-400'}`}>
+                            /{plan.period}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Features */}
+                      <div className="px-4 py-3 flex-1 space-y-1.5">
+                        {plan.features.map((feat, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                            <Check className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
+                            <span>{feat}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* CTA */}
+                      <div className="px-4 pb-4 pt-2">
+                        <button
+                          disabled={disabled}
+                          onClick={() => !disabled && onSelectPlan(plan)}
+                          className={`w-full py-2 rounded-lg text-xs font-bold transition-all duration-150 ${btnClass}`}
+                        >
+                          {label}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="shrink-0 px-5 py-3 border-t border-slate-100 dark:border-slate-800 text-center">
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  All prices in INR · Cancel anytime · Payments secured by Razorpay
+                </p>
+              </div>
             </div>
-          </div>{/* end panel */}
-          </motion.div>{/* end centering container */}
+          </motion.div>
         </>
       )}
     </AnimatePresence>

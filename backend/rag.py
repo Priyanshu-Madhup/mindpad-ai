@@ -412,6 +412,31 @@ async def upload_pdf(
     pdf_bytes = await file.read()
     filename = file.filename or "document.pdf"
 
+    # ── Storage cap check ──────────────────────────────────────────────────────
+    # Read user's plan-based storage limit (default 50 MB for free)
+    _users_meta_col = _db["users_meta"]
+    _meta = await _users_meta_col.find_one({"user_id": user_id}, {"storage_limit_mb": 1, "plan": 1})
+    _limit_mb  = (_meta or {}).get("storage_limit_mb", 50)
+    _limit_bytes = _limit_mb * 1024 * 1024
+
+    # Sum up sizes of all previously uploaded PDFs for this user
+    _used_bytes = 0
+    async for _pdoc in pdf_docs_col.find({"user_id": user_id}, {"size": 1}):
+        _used_bytes += _pdoc.get("size", 0)
+
+    if _used_bytes + len(pdf_bytes) > _limit_bytes:
+        _used_mb = round(_used_bytes / (1024 * 1024), 1)
+        _file_mb = round(len(pdf_bytes) / (1024 * 1024), 1)
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Storage limit reached. You have used {_used_mb} MB of your "
+                f"{_limit_mb} MB quota. This file is {_file_mb} MB. "
+                f"Upgrade your plan to get more storage."
+            ),
+        )
+    # ──────────────────────────────────────────────────────────────────────────
+
     # ── 0. Deduplication: hash the raw bytes ───────────────────────────────────
     pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
     print(f"[RAG] PDF hash for '{filename}': {pdf_hash[:16]}…")

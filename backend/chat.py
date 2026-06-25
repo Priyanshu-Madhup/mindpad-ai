@@ -914,18 +914,52 @@ async def list_notebooks(
             await users_meta_col.update_one(
                 {"user_id": user_id},
                 {"$set": {"user_id": user_id, "welcomed": True,
-                          "welcomed_at": datetime.now(timezone.utc)}},
+                          "welcomed_at": datetime.now(timezone.utc),
+                          "email": user_email}},  # store email so upgrade emails can find it
                 upsert=True,
             )
             threading.Thread(
                 target=_send_welcome_email_sync, args=(user_email, user_id), daemon=True
             ).start()
+        else:
+            # Always keep email up-to-date (user may change primary email address)
+            await users_meta_col.update_one(
+                {"user_id": user_id},
+                {"$set": {"email": user_email}},
+            )
     else:
         print(f"[Welcome email] No email for user {user_id[:12]}… — skipping")
     # ───────────────────────────────────────────────────────────────────────────
 
     # Strip messages from the response (frontend doesn't need them here)
-    return {"notebooks": [fmt_notebook(d) for d in docs]}
+
+    # ── Fetch plan info for navbar badge ──────────────────────────────────────
+    plan_info = {"plan": "free", "plan_expires_at": None}
+    try:
+        meta_doc = await users_meta_col.find_one({"user_id": user_id}, {"plan": 1, "plan_expires_at": 1})
+        if meta_doc:
+            stored_plan = meta_doc.get("plan", "free")
+            expires_at  = meta_doc.get("plan_expires_at")
+            # Normalize to UTC-aware (handles naive datetimes set manually via Atlas)
+            if expires_at and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            # Auto-downgrade expired plans
+            if stored_plan != "free" and expires_at and expires_at < datetime.now(timezone.utc):
+                await users_meta_col.update_one(
+                    {"user_id": user_id},
+                    {"$set": {"plan": "free", "plan_expires_at": None}},
+                )
+                stored_plan = "free"
+                expires_at  = None
+            plan_info = {
+                "plan": stored_plan,
+                "plan_expires_at": expires_at.isoformat() if expires_at else None,
+            }
+    except Exception as _pe:
+        print(f"[Plan lookup] Warning: {_pe}")
+    # ──────────────────────────────────────────────────────────────────────────
+
+    return {"notebooks": [fmt_notebook(d) for d in docs], **plan_info}
 
 
 @app.post("/notebooks")

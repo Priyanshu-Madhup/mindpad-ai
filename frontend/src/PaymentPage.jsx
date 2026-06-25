@@ -1,21 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Crown, Tag, Check, ShieldCheck, User, Mail, Phone, MapPin, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Crown, Tag, Check, ShieldCheck, User, Mail, Phone, MapPin, ChevronDown, Loader2 } from 'lucide-react';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 // ── Country codes with flags ────────────────────────────────────────────────
 const COUNTRY_CODES = [
-  { code: 'IN', dial: '+91',  flag: '\uD83C\uDDEE\uD83C\uDDF3', name: 'India' },
-  { code: 'US', dial: '+1',   flag: '\uD83C\uDDFA\uD83C\uDDF8', name: 'USA' },
-  { code: 'GB', dial: '+44',  flag: '\uD83C\uDDEC\uD83C\uDDE7', name: 'UK' },
-  { code: 'AU', dial: '+61',  flag: '\uD83C\uDDE6\uD83C\uDDFA', name: 'Australia' },
-  { code: 'CA', dial: '+1',   flag: '\uD83C\uDDE8\uD83C\uDDE6', name: 'Canada' },
-  { code: 'SG', dial: '+65',  flag: '\uD83C\uDDF8\uD83C\uDDEC', name: 'Singapore' },
-  { code: 'AE', dial: '+971', flag: '\uD83C\uDDE6\uD83C\uDDEA', name: 'UAE' },
-  { code: 'DE', dial: '+49',  flag: '\uD83C\uDDE9\uD83C\uDDEA', name: 'Germany' },
-  { code: 'FR', dial: '+33',  flag: '\uD83C\uDDEB\uD83C\uDDF7', name: 'France' },
-  { code: 'JP', dial: '+81',  flag: '\uD83C\uDDEF\uD83C\uDDF5', name: 'Japan' },
-  { code: 'NZ', dial: '+64',  flag: '\uD83C\uDDF3\uD83C\uDDFF', name: 'New Zealand' },
-  { code: 'ZA', dial: '+27',  flag: '\uD83C\uDDFF\uD83C\uDDE6', name: 'South Africa' },
+  { code: 'IN', dial: '+91',  flag: '🇮🇳', name: 'India' },
+  { code: 'US', dial: '+1',   flag: '🇺🇸', name: 'USA' },
+  { code: 'GB', dial: '+44',  flag: '🇬🇧', name: 'UK' },
+  { code: 'AU', dial: '+61',  flag: '🇦🇺', name: 'Australia' },
+  { code: 'CA', dial: '+1',   flag: '🇨🇦', name: 'Canada' },
+  { code: 'SG', dial: '+65',  flag: '🇸🇬', name: 'Singapore' },
+  { code: 'AE', dial: '+971', flag: '🇦🇪', name: 'UAE' },
+  { code: 'DE', dial: '+49',  flag: '🇩🇪', name: 'Germany' },
+  { code: 'FR', dial: '+33',  flag: '🇫🇷', name: 'France' },
+  { code: 'JP', dial: '+81',  flag: '🇯🇵', name: 'Japan' },
+  { code: 'NZ', dial: '+64',  flag: '🇳🇿', name: 'New Zealand' },
+  { code: 'ZA', dial: '+27',  flag: '🇿🇦', name: 'South Africa' },
 ];
 
 // ── India states ────────────────────────────────────────────────────────────
@@ -85,48 +87,71 @@ const PLANS = {
 
 const INPUT = 'w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 dark:focus:border-slate-500 transition';
 
-export default function PaymentPage({ plan, onBack }) {
+// ── Load Razorpay checkout.js once ──────────────────────────────────────────
+function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (document.getElementById('razorpay-checkout-js')) { resolve(true); return; }
+    const script = document.createElement('script');
+    script.id  = 'razorpay-checkout-js';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload  = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+export default function PaymentPage({ plan, onBack, getToken, userEmail, userName, onPaymentSuccess }) {
   const p = PLANS[plan?.id] ?? PLANS.plus;
 
   const [form, setForm] = useState({
-    name: '', email: '',
+    name: userName || '', email: userEmail || '',
     dialCode: 'IN', phone: '',
     address: '', country: 'IN', state: '', city: '', zip: '',
     coupon: '', agreed: false,
   });
-  const [couponState, setCouponState] = useState('idle');
-  const [discount, setDiscount] = useState(0);
-  const [couponError, setCouponError] = useState('');
+  const [couponState, setCouponState]   = useState('idle');
+  const [discount, setDiscount]         = useState(0);
+  const [couponError, setCouponError]   = useState('');
+  const [paying, setPaying]             = useState(false);
+  const [payError, setPayError]         = useState('');
+  const [paySuccess, setPaySuccess]     = useState(false);
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
-  // When country changes, reset state+city
-  const handleCountryChange = (e) => {
-    setForm((prev) => ({ ...prev, country: e.target.value, state: '', city: '' }));
-  };
-  // When state changes, reset city
-  const handleStateChange = (e) => {
-    setForm((prev) => ({ ...prev, state: e.target.value, city: '' }));
-  };
+  const handleCountryChange = (e) => setForm((prev) => ({ ...prev, country: e.target.value, state: '', city: '' }));
+  const handleStateChange   = (e) => setForm((prev) => ({ ...prev, state: e.target.value, city: '' }));
 
-  const isIndia    = form.country === 'IN';
-  const stateList  = isIndia ? INDIA_STATES : [];
-  const cityList   = useMemo(() => (isIndia && form.state ? INDIA_CITIES[form.state] || [] : []), [form.country, form.state]);
+  const isIndia   = form.country === 'IN';
+  const stateList = isIndia ? INDIA_STATES : [];
+  const cityList  = useMemo(() => (isIndia && form.state ? INDIA_CITIES[form.state] || [] : []), [form.country, form.state]);
 
   const selectedDial = COUNTRY_CODES.find((c) => c.code === form.dialCode) || COUNTRY_CODES[0];
 
+  // ── Coupon validation (hits real backend) ──────────────────────────────────
   const applyCoupon = async () => {
     if (!form.coupon.trim()) return;
     setCouponState('loading');
     setCouponError('');
-    await new Promise((r) => setTimeout(r, 700));
-    if (form.coupon.trim().toUpperCase() === 'MINDPAD20') {
-      setDiscount(20);
-      setCouponState('valid');
-    } else {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/plans/validate-coupon`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: form.coupon.trim(), plan_id: plan?.id }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setDiscount(data.discount_pct);
+        setCouponState('valid');
+      } else {
+        setDiscount(0);
+        setCouponState('invalid');
+        setCouponError(data.message || 'Invalid or expired coupon code.');
+      }
+    } catch {
       setDiscount(0);
       setCouponState('invalid');
-      setCouponError('Invalid or expired coupon code.');
+      setCouponError('Could not validate coupon. Try again.');
     }
   };
 
@@ -134,11 +159,136 @@ export default function PaymentPage({ plan, onBack }) {
   const discountAmt = Math.round(basePrice * discount / 100);
   const finalPrice  = basePrice - discountAmt;
 
-  const handleSubmit = (e) => {
+  // ── Razorpay checkout handler ──────────────────────────────────────────────
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Billing details collected — hand off to Razorpay payment gateway
-    alert('Redirecting to payment gateway (Razorpay integration coming soon).');
+    setPayError('');
+    setPaying(true);
+
+    try {
+      // 1. Load Razorpay script
+      const loaded = await loadRazorpayScript();
+      if (!loaded) throw new Error('Failed to load Razorpay SDK. Check your internet connection.');
+
+      // 2. Create order on our backend
+      const token = await getToken();
+      const orderRes = await fetch(`${BACKEND_URL}/plans/create-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          plan_id:     plan?.id,
+          coupon_code: couponState === 'valid' ? form.coupon.trim() : null,
+        }),
+      });
+      if (!orderRes.ok) {
+        const err = await orderRes.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to create payment order.');
+      }
+      const orderData = await orderRes.json();
+
+      // 3. Open Razorpay Standard Checkout
+      await new Promise((resolve, reject) => {
+        const dialCode = COUNTRY_CODES.find(c => c.code === form.dialCode)?.dial || '+91';
+        const options = {
+          key:         orderData.key_id,
+          amount:      orderData.amount,
+          currency:    orderData.currency,
+          name:        'Mindpad AI',
+          description: `${orderData.plan_name} Plan — Monthly`,
+          image:       'https://raw.githubusercontent.com/Priyanshu-Madhup/mindpad-ai/master/frontend/src/mindpad_ai_logo.png',
+          order_id:    orderData.order_id,
+          prefill: {
+            name:    form.name,
+            email:   form.email,
+            contact: `${dialCode}${form.phone}`,
+          },
+          notes: {
+            plan_id: plan?.id,
+            address: `${form.address}, ${form.city}, ${form.state}, ${form.zip}`,
+          },
+          theme: { color: '#0D1B2A' },
+          modal: {
+            ondismiss: () => reject(new Error('DISMISSED')),
+          },
+          handler: async (response) => {
+            try {
+              // 4. Verify payment signature on backend.
+              // IMPORTANT: fetch a fresh token here — the one captured before rzp.open()
+              // may have expired if the user spent time on the checkout screen.
+              const freshToken = await getToken();
+              const verifyRes = await fetch(`${BACKEND_URL}/plans/verify-payment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${freshToken}` },
+                body: JSON.stringify({
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_order_id:   response.razorpay_order_id,
+                  razorpay_signature:  response.razorpay_signature,
+                  plan_id:             plan?.id,
+                  coupon_code:         couponState === 'valid' ? form.coupon.trim() : null,
+                }),
+              });
+              if (!verifyRes.ok) {
+                const err = await verifyRes.json().catch(() => ({}));
+                reject(new Error(err.detail || 'Payment verification failed.'));
+                return;
+              }
+              const verifyData = await verifyRes.json();
+              resolve(verifyData);
+            } catch (verifyErr) {
+              reject(verifyErr);
+            }
+          },
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', (response) => {
+          reject(new Error(response.error?.description || 'Payment failed.'));
+        });
+        rzp.open();
+      });
+
+      // 5. Payment successful!
+      setPaySuccess(true);
+      onPaymentSuccess?.(plan?.id);
+
+    } catch (err) {
+      if (err.message !== 'DISMISSED') {
+        setPayError(err.message || 'Payment failed. Please try again.');
+      }
+    } finally {
+      setPaying(false);
+    }
   };
+
+  // ── Success screen ─────────────────────────────────────────────────────────
+  if (paySuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-10 max-w-md w-full text-center shadow-xl"
+        >
+          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
+            <Check className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+            Welcome to {p.label}! 🎉
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+            Your subscription is now active. Enjoy all {p.label} features for the next 30 days.
+          </p>
+          <button
+            onClick={onBack}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white bg-[#0D1B2A] dark:bg-white dark:text-slate-900 hover:opacity-90 transition"
+          >
+            Back to Workspace
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -193,7 +343,6 @@ export default function PaymentPage({ plan, onBack }) {
                   <Phone className="w-3 h-3" /> Phone number <span className="text-red-400">*</span>
                 </label>
                 <div className="flex gap-2">
-                  {/* Country code + flag picker */}
                   <div className="relative shrink-0">
                     <select
                       value={form.dialCode}
@@ -206,7 +355,6 @@ export default function PaymentPage({ plan, onBack }) {
                     </select>
                     <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
                   </div>
-                  {/* Flag display + number input */}
                   <div className="flex-1 relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base select-none pointer-events-none">{selectedDial.flag}</span>
                     <input
@@ -244,7 +392,6 @@ export default function PaymentPage({ plan, onBack }) {
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                {/* State — dropdown for India, free text otherwise */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-500 dark:text-slate-400">State <span className="text-red-400">*</span></label>
                   {isIndia ? (
@@ -259,7 +406,6 @@ export default function PaymentPage({ plan, onBack }) {
                     <input required type="text" placeholder="State" value={form.state} onChange={set('state')} className={INPUT} />
                   )}
                 </div>
-                {/* City — dropdown when India + state chosen, free text otherwise */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-500 dark:text-slate-400">City <span className="text-red-400">*</span></label>
                   {isIndia && cityList.length > 0 ? (
@@ -298,18 +444,29 @@ export default function PaymentPage({ plan, onBack }) {
               </span>
             </label>
 
-            {/* Submit — hands off to Razorpay */}
+            {/* Pay error banner */}
+            {payError && (
+              <div className="px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400">
+                {payError}
+              </div>
+            )}
+
+            {/* Submit — opens Razorpay */}
             <button
               type="submit"
-              disabled={!form.agreed}
-              className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-primary dark:bg-white dark:text-slate-900 hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={!form.agreed || paying}
+              className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-[#0D1B2A] dark:bg-white dark:text-slate-900 hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {finalPrice === 0 ? 'Continue for free' : `Proceed to Pay ₹${finalPrice} / month`}
+              {paying ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+              ) : (
+                finalPrice === 0 ? 'Continue for free' : `Pay ₹${finalPrice} / month via Razorpay`
+              )}
             </button>
 
             <p className="text-center text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3 h-3" />
-              Card details are securely collected by our payment partner. We never store card information.
+              Card details are securely collected by Razorpay. We never store card information.
             </p>
 
           </form>
@@ -376,11 +533,11 @@ export default function PaymentPage({ plan, onBack }) {
                   disabled={couponState === 'valid' || couponState === 'loading' || !form.coupon.trim()}
                   className="px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 hover:opacity-80 transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                 >
-                  {couponState === 'loading' ? '...' : couponState === 'valid' ? 'Applied' : 'Apply'}
+                  {couponState === 'loading' ? '...' : couponState === 'valid' ? 'Applied ✓' : 'Apply'}
                 </button>
               </div>
               {couponState === 'valid' && (
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <Check className="w-3 h-3" /> {discount}% discount applied
                 </p>
               )}
@@ -396,7 +553,7 @@ export default function PaymentPage({ plan, onBack }) {
                 <span>&#8377;{basePrice}</span>
               </div>
               {discount > 0 && (
-                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
                   <span>Discount ({discount}%)</span>
                   <span>-&#8377;{discountAmt}</span>
                 </div>
