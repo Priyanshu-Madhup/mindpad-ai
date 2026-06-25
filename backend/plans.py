@@ -195,15 +195,6 @@ async def get_my_plan(authorization: Optional[str] = Header(None)):
     }
 
 
-@router.get("/{plan_id}")
-async def get_plan(plan_id: str):
-    """Return details for a specific plan."""
-    plan = PLANS.get(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found.")
-    return plan
-
-
 @router.post("/validate-coupon", response_model=CouponResponse)
 async def validate_coupon(body: CouponRequest):
     """Validate a coupon code for a given plan."""
@@ -467,6 +458,13 @@ async def verify_payment(
                 "plan_payment_id":   body.razorpay_payment_id,
                 "plan_updated_at":   datetime.now(timezone.utc),
                 "storage_limit_mb": storage_limit,   # enforced by /upload-pdf
+                # Mark user as welcomed so the generic free welcome email in chat.py
+                # is never sent on top of this plan-specific upgrade email.
+                # $setOnInsert would be ideal but we use $set to cover existing docs
+                # that may not have the flag yet (e.g., user upgraded immediately
+                # after sign-up before ever opening a notebook).
+                "welcomed":          True,
+                "welcomed_at":       datetime.now(timezone.utc),
             },
         },
         upsert=True,

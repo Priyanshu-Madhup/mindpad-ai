@@ -74,7 +74,6 @@ app.include_router(plans_router)
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
 gemini_client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))  # shared client — reused per process
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
@@ -343,15 +342,6 @@ async def generate_image_gemini(prompt: str) -> tuple:
     return filename, data_url
 
 
-@app.get("/test-image")
-async def test_image():
-    """Debug endpoint: test Gemini image generation with a fixed prompt."""
-    try:
-        filename, data_url = await generate_image_gemini("a beautiful sunset over the ocean, photorealistic")
-        return {"status": "ok", "filename": filename, "data_url_length": len(data_url)}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-
 # ── Image file endpoint ────────────────────────────────────────────────
 @app.get("/images/{filename}")
 async def serve_image(filename: str):
@@ -551,36 +541,6 @@ async def clerk_webhook(request: Request):
 
     return {"status": "ok"}
 
-
-@app.post("/test-email")
-async def test_email(authorization: Optional[str] = Header(None)):
-    """
-    Debug endpoint: send a test welcome email to the authenticated user's address.
-    Useful for verifying SMTP credentials without needing a fresh signup.
-    """
-    user_id, jwt_email = await get_current_user(authorization)
-    if not jwt_email:
-        raise HTTPException(status_code=400, detail="No email in JWT — pass X-User-Email header instead")
-
-    import threading as _threading
-    _threading.Thread(
-        target=_send_welcome_email_sync, args=(jwt_email, user_id), daemon=True
-    ).start()
-    return {"status": "queued", "to": jwt_email}
-
-
-@app.post("/reset-welcome")
-async def reset_welcome(authorization: Optional[str] = Header(None)):
-    """
-    Debug endpoint: clear the 'welcomed' flag so the welcome email fires again
-    on the next GET /notebooks call. Useful for re-testing without a new account.
-    """
-    user_id, _ = await get_current_user(authorization)
-    result = await users_meta_col.update_one(
-        {"user_id": user_id},
-        {"$set": {"welcomed": False}},
-    )
-    return {"status": "reset", "modified": result.modified_count}
 
 
 # ── Text-to-Speech ─────────────────────────────────────────────────────────────
@@ -888,11 +848,12 @@ async def list_notebooks(
     # ── First-time user: send welcome email once ───────────────────────────────
     # Two-signal check for a truly new user:
     #   1. No welcomed flag in users_meta (primary gate against duplicates)
-    #   2. Zero "role: user" messages across ALL notebooks (your idea — catches
-    #      accounts where the flag was set before the email actually sent)
+    #   2. Zero "role: user" messages across ALL notebooks (catches accounts
+    #      where the flag was set before the email actually sent)
     if user_email:
         meta = await users_meta_col.find_one({"user_id": user_id})
         already_welcomed = meta.get("welcomed", False) if meta else False
+        current_plan = meta.get("plan", "free") if meta else "free"
 
         # Count total user messages across all notebooks
         total_user_messages = sum(
@@ -906,7 +867,7 @@ async def list_notebooks(
 
         print(
             f"[Welcome email] user={user_id[:12]}… | welcomed={already_welcomed} | "
-            f"user_msgs={total_user_messages} | will_send={is_new_user}"
+            f"plan={current_plan} | user_msgs={total_user_messages} | will_send={is_new_user}"
         )
 
         if is_new_user:
@@ -918,9 +879,18 @@ async def list_notebooks(
                           "email": user_email}},  # store email so upgrade emails can find it
                 upsert=True,
             )
-            threading.Thread(
-                target=_send_welcome_email_sync, args=(user_email, user_id), daemon=True
-            ).start()
+            # If the user is already on a paid plan, they already received the
+            # plan-specific upgrade email from verify_payment — skip the generic
+            # free welcome so they don't get two emails.
+            if current_plan in ("plus", "pro"):
+                print(
+                    f"[Welcome email] Skipping generic welcome for new {current_plan} member "
+                    f"{user_id[:12]}… — plan-specific upgrade email was already sent."
+                )
+            else:
+                threading.Thread(
+                    target=_send_welcome_email_sync, args=(user_email, user_id), daemon=True
+                ).start()
         else:
             # Always keep email up-to-date (user may change primary email address)
             await users_meta_col.update_one(
