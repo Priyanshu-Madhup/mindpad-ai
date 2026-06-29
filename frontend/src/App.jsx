@@ -2117,7 +2117,7 @@ export default function App() {
               <button
                 onClick={() => setShowCouponManager(prev => !prev)}
                 title="Coupon Manager"
-                className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors rounded-full"
+                className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
               >
                 <Tag className="w-5 h-5" />
               </button>
