@@ -24,6 +24,7 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **Subscription Plans** — Free / Plus (₹49/mo) / Pro (₹99/mo) via Razorpay; plan stored in MongoDB and enforced on every login
 - **Storage Caps** — 50 MB (Free) · 200 MB (Plus) · 500 MB (Pro) — enforced at PDF upload; displayed live in Preferences
 - **Storage Usage Dashboard** — Preferences panel shows real-time Firebase storage consumption (PDFs + Insight Canvas) with segmented progress bar, per-file breakdown, and one-click permanent deletion
+- **Coupon Management** — admin-only panel (accessible via the navbar Tag icon) to create, list, and delete percentage-based discount coupons; coupons are stored in MongoDB with per-coupon usage counts, optional max-use caps, and plan-scoped applicability (All / Plus / Pro)
 - **Welcome & Upgrade Emails** — branded HTML emails via Gmail SMTP on first login and after plan upgrade
 - **Admin Broadcast** — admin can push in-app notifications **or** send branded emails to all registered users
 
@@ -81,7 +82,8 @@ mindpad_ai/
 │   ├── main.py              # Uvicorn entry point
 │   ├── chat.py              # FastAPI app — all core routes
 │   ├── rag.py               # PDF RAG pipeline (upload, chunk, embed, retrieve, delete)
-│   ├── plans.py             # Subscription plans, Razorpay order creation & verification
+│   ├── plans.py             # Subscription plans, Razorpay order creation & verification,
+│   │                        #   MongoDB-backed coupon CRUD (admin), usage tracking
 │   ├── deep_research.py     # Deep Research pipeline (Serper → Firecrawl → Pinecone _dr namespace)
 │   ├── notion.py            # Notion OAuth 2.0 + sync + RAG + summary
 │   ├── storage.py           # Storage usage & deletion API (GET /storage/usage, DELETE /storage/pdf|canvas)
@@ -94,12 +96,13 @@ mindpad_ai/
 │       ├── PaymentPage.jsx      # Razorpay checkout flow
 │       ├── PricingModal.jsx     # Plan comparison modal
 │       ├── PreferencesModal.jsx # Storage usage dashboard + theme/language/AI toggles
+│       ├── CouponManagerModal.jsx # Admin-only coupon management panel
 │       ├── LandingPage.jsx
 │       ├── MindMapModal.jsx
 │       ├── AuthPage.jsx
 │       └── firebase.jsx
 ├── README.md
-└── detailed_readme.md
+└── DETAILED_README.md
 ```
 
 ---
