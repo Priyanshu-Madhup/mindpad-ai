@@ -55,6 +55,7 @@ import {
   SlidersHorizontal,
   Brain,
   Crown,
+  Tag,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -69,6 +70,7 @@ import {
 import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
+import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
 import PaymentPage from './PaymentPage.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
@@ -241,6 +243,7 @@ export default function App() {
 
   // ── Preferences modal ────────────────────────────────────────────────────
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showCouponManager, setShowCouponManager] = useState(false);
   const [showPricing, setShowPricing]         = useState(false);
   const [selectedPlan, setSelectedPlan]       = useState(null);
 
@@ -1820,6 +1823,15 @@ export default function App() {
         }}
       />
 
+      {/* ── Coupon Manager Modal (admin only) ──────────────────────────────────────── */}
+      {isAdmin && (
+        <CouponManagerModal
+          open={showCouponManager}
+          onClose={() => setShowCouponManager(false)}
+          getToken={getToken}
+        />
+      )}
+
       {/* ── Pricing Modal ─────────────────────────────────────────────────────── */}
       <PricingModal
         open={showPricing}
@@ -2099,6 +2111,17 @@ export default function App() {
             >
               <SlidersHorizontal className="w-5 h-5" />
             </button>
+
+            {/* Coupon Manager — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => setShowCouponManager(prev => !prev)}
+                title="Coupon Manager"
+                className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors rounded-full"
+              >
+                <Tag className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Bell / Notifications */}
             <div className="relative">

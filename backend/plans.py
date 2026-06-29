@@ -1,7 +1,7 @@
 """
 plans.py — Mindpad AI subscription plans API.
-Handles plan definitions, coupon validation, Razorpay order creation,
-payment signature verification, and MongoDB plan persistence.
+Handles plan definitions, coupon management (MongoDB-backed), Razorpay order
+creation, payment signature verification, and MongoDB plan persistence.
 """
 
 import os
@@ -12,7 +12,7 @@ import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
 
 import razorpay
 from fastapi import APIRouter, HTTPException, Header
@@ -37,11 +37,16 @@ MAIL_PASS = os.environ.get("MAIL_PASS", "")
 # ── Storage caps per plan (MB) ──────────────────────────────────────────────────
 PLAN_STORAGE_MB = {"free": 50, "plus": 200, "pro": 500}
 
+# ── Admin ───────────────────────────────────────────────────────────────────────
+ADMIN_EMAIL   = "priyanshumadhup@gmail.com"
+ADMIN_USER_ID = "user_3BS0ZN5IlirMSNEj11PQ1iiBcpi"  # Clerk user_id
+
 # ── MongoDB ─────────────────────────────────────────────────────────────────────
 _mongo_uri = os.environ.get("MONGODB_URI", "")
 _mongo     = AsyncIOMotorClient(_mongo_uri)
 _db        = _mongo["mindpad_ai"]
 users_meta = _db["users_meta"]
+coupons_col = _db["coupons"]  # admin-managed coupon codes
 
 # ── Plan definitions ────────────────────────────────────────────────────────────
 PLANS = {
@@ -83,12 +88,8 @@ PLANS = {
     },
 }
 
-# ── Coupon definitions ──────────────────────────────────────────────────────────
-COUPONS: dict[str, dict] = {
-    "MINDPAD20": {"discount_pct": 20, "applies_to": ["all"], "active": True},
-    "PLUS10":    {"discount_pct": 10, "applies_to": ["plus"],  "active": True},
-    "PRO15":     {"discount_pct": 15, "applies_to": ["pro"],   "active": True},
-}
+# NOTE: Coupons are now stored in MongoDB `coupons` collection.
+# Use the admin panel at /plans/coupons to manage them.
 
 # ── JWT auth helper (reuse from chat.py pattern) ────────────────────────────────
 import httpx
@@ -129,6 +130,12 @@ class CouponResponse(BaseModel):
     discount_pct: int = 0
     message: str = ""
 
+class CreateCouponRequest(BaseModel):
+    code: str
+    discount_pct: int            # 1–100
+    applies_to: List[str] = ["all"]  # ["all"] | ["plus"] | ["pro"] | ["plus", "pro"]
+    max_uses: Optional[int] = None   # None = unlimited
+
 class CreateOrderRequest(BaseModel):
     plan_id: str
     coupon_code: Optional[str] = None
@@ -141,19 +148,37 @@ class VerifyPaymentRequest(BaseModel):
     coupon_code: Optional[str] = None
 
 
-# ── Helper: compute discount ────────────────────────────────────────────────────
-def _apply_coupon(plan_id: str, coupon_code: Optional[str]) -> int:
-    """Return discount_pct (0 if no valid coupon)."""
+# ── Helper: compute discount (async — reads from MongoDB, increments use_count) ──
+async def _apply_coupon(plan_id: str, coupon_code: Optional[str]) -> int:
+    """Return discount_pct (0 if no valid coupon). Increments use_count on redemption."""
     if not coupon_code:
         return 0
-    code   = coupon_code.strip().upper()
-    coupon = COUPONS.get(code)
-    if not coupon or not coupon["active"]:
+    code = coupon_code.strip().upper()
+    coupon = await coupons_col.find_one({"code": code, "active": True})
+    if not coupon:
         return 0
-    applies_to = coupon["applies_to"]
+    # Check max_uses cap
+    max_uses = coupon.get("max_uses")
+    if max_uses is not None and coupon.get("use_count", 0) >= max_uses:
+        return 0
+    applies_to = coupon.get("applies_to", ["all"])
     if "all" in applies_to or plan_id in applies_to:
+        # Increment usage counter atomically
+        await coupons_col.update_one({"code": code}, {"$inc": {"use_count": 1}})
         return coupon["discount_pct"]
     return 0
+
+
+async def _is_admin(authorization: Optional[str]) -> str:
+    """Decode JWT, verify admin identity, return user_id. Raises 403 if not admin."""
+    user_id = await _get_current_user(authorization)
+    if user_id == ADMIN_USER_ID:
+        return user_id
+    # Fallback: look up email from users_meta
+    meta = await users_meta.find_one({"user_id": user_id}, {"email": 1})
+    if meta and meta.get("email") == ADMIN_EMAIL:
+        return user_id
+    raise HTTPException(status_code=403, detail="Admin only")
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────────
@@ -197,14 +222,19 @@ async def get_my_plan(authorization: Optional[str] = Header(None)):
 
 @router.post("/validate-coupon", response_model=CouponResponse)
 async def validate_coupon(body: CouponRequest):
-    """Validate a coupon code for a given plan."""
+    """Validate a coupon code for a given plan. Does NOT increment use_count."""
     code   = body.code.strip().upper()
-    coupon = COUPONS.get(code)
+    coupon = await coupons_col.find_one({"code": code, "active": True})
 
-    if not coupon or not coupon["active"]:
+    if not coupon:
         return CouponResponse(valid=False, message="Invalid or expired coupon code.")
 
-    applies_to = coupon["applies_to"]
+    # Check max_uses cap
+    max_uses = coupon.get("max_uses")
+    if max_uses is not None and coupon.get("use_count", 0) >= max_uses:
+        return CouponResponse(valid=False, message="This coupon has reached its usage limit.")
+
+    applies_to = coupon.get("applies_to", ["all"])
     if "all" not in applies_to and body.plan_id not in applies_to:
         return CouponResponse(
             valid=False,
@@ -216,6 +246,65 @@ async def validate_coupon(body: CouponRequest):
         discount_pct=coupon["discount_pct"],
         message=f"{coupon['discount_pct']}% discount applied!",
     )
+
+
+# ── Admin: Coupon CRUD ──────────────────────────────────────────────────────────
+
+@router.get("/coupons")
+async def list_coupons(authorization: Optional[str] = Header(None)):
+    """List all coupons — admin only."""
+    await _is_admin(authorization)
+    cursor = coupons_col.find({}, {"_id": 0}).sort("created_at", -1)
+    docs = await cursor.to_list(length=500)
+    return {"coupons": docs}
+
+
+@router.post("/coupons")
+async def create_coupon(
+    body: CreateCouponRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Create a new coupon code — admin only."""
+    await _is_admin(authorization)
+
+    code = body.code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Coupon code cannot be empty.")
+    if not (1 <= body.discount_pct <= 100):
+        raise HTTPException(status_code=400, detail="Discount must be between 1 and 100.")
+
+    # Prevent duplicate codes
+    existing = await coupons_col.find_one({"code": code})
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Coupon '{code}' already exists.")
+
+    doc = {
+        "code":         code,
+        "discount_pct": body.discount_pct,
+        "applies_to":   body.applies_to if body.applies_to else ["all"],
+        "active":       True,
+        "use_count":    0,
+        "max_uses":     body.max_uses,
+        "created_at":   datetime.now(timezone.utc),
+    }
+    await coupons_col.insert_one(doc)
+    print(f"[Coupons] Created '{code}' ({body.discount_pct}% off, applies_to={body.applies_to})")
+    return {"status": "created", "code": code}
+
+
+@router.delete("/coupons/{code}")
+async def delete_coupon(
+    code: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Delete a coupon by code — admin only."""
+    await _is_admin(authorization)
+    code = code.strip().upper()
+    result = await coupons_col.delete_one({"code": code})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail=f"Coupon '{code}' not found.")
+    print(f"[Coupons] Deleted '{code}'")
+    return {"status": "deleted", "code": code}
 
 
 @router.post("/create-order")
@@ -234,7 +323,7 @@ async def create_order(
     if not plan or plan["price_inr"] == 0:
         raise HTTPException(status_code=400, detail="Invalid or free plan — no payment needed.")
 
-    discount_pct  = _apply_coupon(body.plan_id, body.coupon_code)
+    discount_pct  = await _apply_coupon(body.plan_id, body.coupon_code)  # async — reads DB + increments
     base_price    = plan["price_inr"]
     discount_amt  = round(base_price * discount_pct / 100)
     final_price   = base_price - discount_amt
