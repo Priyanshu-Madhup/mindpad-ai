@@ -73,6 +73,7 @@ import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
 import PaymentPage from './PaymentPage.jsx';
+import GuidedTour from './GuidedTour.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -240,6 +241,10 @@ export default function App() {
   const [syncingPageId, setSyncingPageId] = useState(null); // page_id being synced
   const [notionToast, setNotionToast] = useState(null);     // { type: 'success'|'error', msg }
   const [notionImportTargetId, setNotionImportTargetId] = useState(null); // notebook to import into (null = create new)
+
+  // ── Help popover + tour restart ───────────────────────────────────────
+  const [showHelp, setShowHelp] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
 
   // ── Preferences modal ────────────────────────────────────────────────────
   const [showPreferences, setShowPreferences] = useState(false);
@@ -2328,6 +2333,7 @@ export default function App() {
                 </div>
 
                 <button
+                  data-tour="new-notebook"
                   onClick={() => createNotebook()}
                   className="mb-8 w-full py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
                 >
@@ -2566,7 +2572,61 @@ export default function App() {
                 />
 
                 <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 space-y-1 relative">
-                  <SidebarItem icon={HelpCircle} label="Help" />
+
+                  {/* Help with popover */}
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showHelp && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                          className="absolute bottom-full mb-2 left-0 right-0 z-50 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xl"
+                        >
+                          <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 px-4 pt-4 pb-2">Help</p>
+
+                          {/* Start Tour row */}
+                          <button
+                            onClick={() => {
+                              setShowHelp(false);
+                              setTourActive(false);
+                              // Small tick so state resets before re-triggering
+                              requestAnimationFrame(() => setTourActive(true));
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors"
+                          >
+                            <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                            Start Guided Tour
+                          </button>
+
+                          <div className="mx-4 border-t border-slate-100 dark:border-slate-700" />
+
+                          {/* Keyboard shortcuts hint */}
+                          <div className="px-4 py-3">
+                            <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-500 mb-2">Shortcuts</p>
+                            <div className="space-y-1.5">
+                              {[
+                                ['Enter', 'Send message'],
+                                ['Shift + Enter', 'New line'],
+                              ].map(([key, label]) => (
+                                <div key={key} className="flex items-center justify-between gap-3">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">{label}</span>
+                                  <kbd className="text-[10px] font-mono bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 shrink-0">{key}</kbd>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <SidebarItem
+                      icon={HelpCircle}
+                      label="Help"
+                      active={showHelp}
+                      onClick={() => { setShowHelp(prev => !prev); setShowSettings(false); }}
+                    />
+                  </div>
 
                   {/* Settings with dark mode popover */}
                   <div className="relative">
@@ -2740,12 +2800,14 @@ export default function App() {
                         </motion.div>
                       )}
                     </AnimatePresence>
+                    <div data-tour="settings">
                     <SidebarItem
                       icon={Settings}
                       label="Settings"
                       active={showSettings}
                       onClick={() => setShowSettings(prev => !prev)}
                     />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3238,6 +3300,7 @@ export default function App() {
               )}
               {/* Input box — flex-col: top row has paperclip + textarea, bottom row has lang pill + buttons */}
               <div
+                data-tour="chat-input"
                 className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${isRecording
                     ? 'border-red-400 dark:border-red-500'
                     : 'border-slate-200 dark:border-white/20'
@@ -3246,6 +3309,7 @@ export default function App() {
                 {/* Top: Paperclip (top-aligned) + Textarea */}
                 <div className="flex items-start gap-2 px-2 pt-2 pb-0">
                   <button
+                    data-tour="pdf-upload"
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className={`mt-1 p-2 rounded-xl transition-all shrink-0 ${attachedImage || uploadingPdf
@@ -3332,6 +3396,7 @@ export default function App() {
                     <div className="hidden md:flex items-center gap-2">
                       {/* Web Search toggle pill */}
                       <button
+                        data-tour="web-search"
                         type="button"
                         onClick={() => setIsWebSearch(prev => !prev)}
                         title={isWebSearch ? 'Web Search ON — click to disable' : 'Enable Web Search'}
@@ -3346,6 +3411,7 @@ export default function App() {
 
                       {/* Deep Research toggle pill */}
                       <button
+                        data-tour="deep-research"
                         type="button"
                         onClick={() => setIsDeepResearch(prev => !prev)}
                         title={isDeepResearch ? 'Deep Research ON — click to disable' : 'Enable Deep Research'}
@@ -3485,7 +3551,7 @@ export default function App() {
               className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-50 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
               <div
                 className="w-80 h-full flex flex-col shrink-0">
-                <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+                <div data-tour="ai-studio" className="p-6 border-b border-slate-200 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
                     <div className="flex items-center gap-2">
@@ -3608,6 +3674,7 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+      <GuidedTour forceActive={tourActive} />
     </div>
   );
 }
