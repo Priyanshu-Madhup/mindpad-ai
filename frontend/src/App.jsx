@@ -69,6 +69,7 @@ import {
 } from '@clerk/react';
 import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
+import VideoSuggestionsModal from './VideoSuggestionsModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
@@ -151,9 +152,7 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
         )}
       </AnimatePresence>
       <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-700/60 flex items-center justify-center group-hover:bg-primary/5 dark:group-hover:bg-slate-600/60 transition-colors">
-        {loading
-          ? <Loader2 className="w-6 h-6 text-primary animate-spin" />
-          : <Icon className="w-6 h-6 text-primary dark:text-slate-300" />}
+        <Icon className="w-6 h-6 text-primary dark:text-slate-300" />
       </div>
       <span className="text-[10px] font-bold font-display text-primary dark:text-slate-300 uppercase tracking-tight">{label}</span>
     </button>
@@ -221,6 +220,12 @@ export default function App() {
   // mindMapData: { [notebookId]: treeObject }
   const [mindMapData, setMindMapData] = useState({});
   const [showMindMapModal, setShowMindMapModal] = useState(false);
+
+  // Video suggestions state
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
+  const [videoSuggestionsData, setVideoSuggestionsData] = useState({});
+  // videoSuggestionsData: { [notebookId]: { videos, queries, topic } }
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -644,6 +649,13 @@ export default function App() {
       list.forEach(nb => { if (nb.mind_map_data) savedMaps[nb.id] = nb.mind_map_data; });
       if (Object.keys(savedMaps).length > 0) {
         setMindMapData(prev => ({ ...savedMaps, ...prev }));
+      }
+
+      // Restore persisted Video Suggestions data for all notebooks
+      const savedVideos = {};
+      list.forEach(nb => { if (nb.video_suggestions_data) savedVideos[nb.id] = nb.video_suggestions_data; });
+      if (Object.keys(savedVideos).length > 0) {
+        setVideoSuggestionsData(prev => ({ ...savedVideos, ...prev }));
       }
 
       if (list.length === 0) {
@@ -1392,6 +1404,62 @@ export default function App() {
     }
   };
 
+  // ── Video Suggestions ────────────────────────────────────────────────────────
+  const generateVideoSuggestions = async () => {
+    if (isGeneratingVideos || !activeNotebookId) return;
+
+    // Pass selected PDFs so the backend can read their stored summaries from MongoDB
+    const selectedPdfIds = (notebookPdfs[activeNotebookId] || [])
+      .filter(p => p.selected)
+      .map(p => p.doc_id)
+      .filter(Boolean);
+
+    const notebookId = activeNotebookId;
+    setIsGeneratingVideos(true);
+
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/video-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          notebook_id: notebookId,
+          selected_pdf_ids: selectedPdfIds,
+          max_videos: 12,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setVideoSuggestionsData(prev => ({
+        ...prev,
+        [notebookId]: { videos: data.videos, queries: data.queries_used, topic: data.topic },
+      }));
+      setShowVideoModal(true);
+
+      // Persist to MongoDB
+      const saveToken = await getToken();
+      fetch(`${BACKEND_URL}/notebooks/${notebookId}/video-suggestions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+        body: JSON.stringify({
+          videos: data.videos,
+          queries: data.queries_used,
+          topic: data.topic,
+        }),
+      }).catch(e => console.warn('[VideoSuggestions] Failed to persist:', e));
+    } catch (err) {
+      console.error('[VideoSuggestions]', err);
+      alert(`Video Suggestions failed: ${err.message}`);
+    } finally {
+      setIsGeneratingVideos(false);
+    }
+  };
+
   // Auto-scroll right sidebar to bottom when an insight canvas image becomes ready
   useEffect(() => {
     if (activeNotebookId && insightCanvasImages[activeNotebookId] && studioScrollRef.current) {
@@ -1405,6 +1473,13 @@ export default function App() {
       studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [mindMapData, activeNotebookId]);
+
+  // Auto-scroll right sidebar when video suggestions are ready
+  useEffect(() => {
+    if (activeNotebookId && videoSuggestionsData[activeNotebookId] && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [videoSuggestionsData, activeNotebookId]);
 
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
@@ -1787,6 +1862,20 @@ export default function App() {
           <MindMapModal
             data={mindMapData[activeNotebookId]}
             onClose={() => setShowMindMapModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Video Suggestions Modal ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showVideoModal && videoSuggestionsData[activeNotebookId] && (
+          <VideoSuggestionsModal
+            topic={videoSuggestionsData[activeNotebookId]?.topic || ''}
+            videos={videoSuggestionsData[activeNotebookId]?.videos || []}
+            queries={videoSuggestionsData[activeNotebookId]?.queries || []}
+            loading={isGeneratingVideos}
+            onClose={() => setShowVideoModal(false)}
+            onRefresh={() => { generateVideoSuggestions(); }}
           />
         )}
       </AnimatePresence>
@@ -3576,7 +3665,7 @@ export default function App() {
                         <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
                         <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
                         <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
-                        <StudioTool icon={Film} label="Video Suggestions" onClick={scrollDown} />
+                        <StudioTool icon={Film} label="Video Suggestions" loading={isGeneratingVideos} onClick={() => { generateVideoSuggestions(); scrollDown(); }} />
                         <StudioTool icon={Layers} label="Flashcards" onClick={scrollDown} />
                         <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
                         <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
@@ -3662,6 +3751,38 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingMindMap && (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                          )}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+
+                    {/* ── Video Suggestions result box — per notebook ────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingVideos || videoSuggestionsData[activeNotebookId]) && (
+                        <motion.button
+                          key={`vs-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          disabled={isGeneratingVideos}
+                          onClick={() => { if (!isGeneratingVideos) setShowVideoModal(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                        >
+                          <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                            <Film className="w-5 h-5 text-primary dark:text-slate-300" />
+                            {isGeneratingVideos && (
+                              <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Video Suggestions</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                              {isGeneratingVideos ? 'Finding videos…' : `${videoSuggestionsData[activeNotebookId]?.videos?.length || 0} videos ready`}
+                            </p>
+                          </div>
+                          {!isGeneratingVideos && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
                         </motion.button>
