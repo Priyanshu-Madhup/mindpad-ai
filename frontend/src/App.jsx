@@ -71,6 +71,7 @@ import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
 import VideoSuggestionsModal from './VideoSuggestionsModal.jsx';
 import FlashcardsModal from './FlashcardsModal.jsx';
+import VisualPodcastModal from './VisualPodcastModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
@@ -233,6 +234,14 @@ export default function App() {
   const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
   const [flashcardsData, setFlashcardsData] = useState({});
   // flashcardsData: { [notebookId]: { cards: [{question, answer}], topic } }
+
+  // Visual Podcast state
+  const [showVisualPodcastModal, setShowVisualPodcastModal] = useState(false);
+  const [visualPodcastData, setVisualPodcastData] = useState({});
+  // visualPodcastData: { [notebookId]: firebaseUrl }
+  const [isGeneratingVisualPodcast, setIsGeneratingVisualPodcast] = useState(false);
+  const [visualPodcastResults, setVisualPodcastResults] = useState({});
+  // visualPodcastResults: { [notebookId]: { video_b64, slides, topic } }
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -670,6 +679,13 @@ export default function App() {
       list.forEach(nb => { if (nb.flashcards_data) savedCards[nb.id] = nb.flashcards_data; });
       if (Object.keys(savedCards).length > 0) {
         setFlashcardsData(prev => ({ ...savedCards, ...prev }));
+      }
+
+      // Restore persisted Visual Podcast URLs for all notebooks
+      const savedPodcasts = {};
+      list.forEach(nb => { if (nb.visual_podcast_url) savedPodcasts[nb.id] = nb.visual_podcast_url; });
+      if (Object.keys(savedPodcasts).length > 0) {
+        setVisualPodcastData(prev => ({ ...savedPodcasts, ...prev }));
       }
 
       if (list.length === 0) {
@@ -1552,6 +1568,85 @@ export default function App() {
     }
   }, [flashcardsData, activeNotebookId]);
 
+  // ── Visual Podcast ────────────────────────────────────────────────────────────────────
+  const generateVisualPodcast = async (numSlides = 5, styleNotes = '') => {
+    if (isGeneratingVisualPodcast || !activeNotebookId) return;
+    const notebookId = activeNotebookId;
+    const selectedPdfIds = (notebookPdfs[notebookId] || [])
+      .filter(p => p.selected).map(p => p.doc_id).filter(Boolean);
+    setIsGeneratingVisualPodcast(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/visual-podcast/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          notebook_id: notebookId,
+          selected_pdf_ids: selectedPdfIds,
+          num_slides: numSlides,
+          style_notes: styleNotes,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error ${res.status}`);
+      }
+      const data = await res.json();
+      setVisualPodcastResults(prev => ({ ...prev, [notebookId]: data }));
+      setShowVisualPodcastModal(true); // auto-open to show the result
+
+      // Auto-save to Firebase + MongoDB in background so it survives refresh
+      (async () => {
+        try {
+          const raw = atob(data.video_b64);
+          const arr = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+          const blob = new Blob([arr], { type: 'video/mp4' });
+          const storagePath = `visual-podcasts/${user?.id}/${notebookId}/${Date.now()}.mp4`;
+          const storageRef = ref(storage, storagePath);
+          await uploadBytes(storageRef, blob, { contentType: 'video/mp4' });
+          const firebaseUrl = await getDownloadURL(storageRef);
+          const saveToken = await getToken();
+          await fetch(`${BACKEND_URL}/notebooks/${notebookId}/visual-podcast`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+            body: JSON.stringify({ url: firebaseUrl }),
+          });
+          setVisualPodcastData(prev => ({ ...prev, [notebookId]: firebaseUrl }));
+          console.log('[VisualPodcast] Auto-saved to Firebase:', notebookId);
+        } catch (saveErr) {
+          console.error('[VisualPodcast auto-save]', saveErr);
+        }
+      })();
+    } catch (err) {
+      console.error('[VisualPodcast]', err);
+      alert(`Visual Podcast generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingVisualPodcast(false);
+    }
+  };
+
+  // Auto-scroll right sidebar when a visual podcast result is ready
+  useEffect(() => {
+    if (activeNotebookId && (visualPodcastResults[activeNotebookId] || visualPodcastData[activeNotebookId]) && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [visualPodcastResults, visualPodcastData, activeNotebookId]);
+
+  const deleteVisualPodcast = async (notebookId) => {
+    try {
+      const token = await getToken();
+      await fetch(`${BACKEND_URL}/notebooks/${notebookId}/visual-podcast`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error('[VisualPodcast delete]', err);
+    }
+    setVisualPodcastData(prev => { const n = { ...prev }; delete n[notebookId]; return n; });
+    setVisualPodcastResults(prev => { const n = { ...prev }; delete n[notebookId]; return n; });
+  };
+
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
     const handler = () => setCanvasIsFullscreen(!!document.fullscreenElement);
@@ -1959,6 +2054,20 @@ export default function App() {
           loading={isGeneratingFlashcards}
           onClose={() => setShowFlashcardsModal(false)}
           onRefresh={() => { setShowFlashcardsModal(false); generateFlashcards(); }}
+        />
+      )}
+
+      {/* ── Visual Podcast Modal ─────────────────────────────────────────────── */}
+      {showVisualPodcastModal && (
+        <VisualPodcastModal
+          notebookId={activeNotebookId}
+          getToken={getToken}
+          user={user}
+          existingUrl={visualPodcastData[activeNotebookId] || null}
+          result={visualPodcastResults[activeNotebookId] || null}
+          onClose={() => setShowVisualPodcastModal(false)}
+          onGenerate={(numSlides, styleNotes) => generateVisualPodcast(numSlides, styleNotes)}
+          onSaved={(nbId, url) => setVisualPodcastData(prev => ({ ...prev, [nbId]: url }))}
         />
       )}
 
@@ -3746,7 +3855,7 @@ export default function App() {
                       return (<>
                         <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
                         <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
-                        <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
+                        <StudioTool icon={Video} label="Visual Podcast" done={!!(visualPodcastData[activeNotebookId] || visualPodcastResults[activeNotebookId])} loading={isGeneratingVisualPodcast} onClick={() => { setShowVisualPodcastModal(true); scrollDown(); }} />
                         <StudioTool icon={Film} label="Video Suggestions" loading={isGeneratingVideos} onClick={() => { generateVideoSuggestions(); scrollDown(); }} />
                         <StudioTool icon={Layers} label="Flashcards" loading={isGeneratingFlashcards} onClick={() => { generateFlashcards(); scrollDown(); }} />
                         <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
@@ -3900,6 +4009,50 @@ export default function App() {
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
                         </motion.button>
+                      )}
+                    </AnimatePresence>
+
+                    {/* ── Visual Podcast result box — per notebook ──────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingVisualPodcast || visualPodcastData[activeNotebookId] || visualPodcastResults[activeNotebookId]) && (
+                        <motion.div
+                          key={`vp-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all text-left group"
+                        >
+                          {/* Clickable main area */}
+                          <button
+                            disabled={isGeneratingVisualPodcast}
+                            onClick={() => { if (!isGeneratingVisualPodcast) setShowVisualPodcastModal(true); }}
+                            className="flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
+                          >
+                            <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                              <Video className="w-5 h-5 text-primary dark:text-slate-300" />
+                              {isGeneratingVisualPodcast && (
+                                <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Visual Podcast</p>
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                                {isGeneratingVisualPodcast ? 'Generating podcast…' : 'Tap to play'}
+                              </p>
+                            </div>
+                          </button>
+                          {/* Delete button — hover-reveal */}
+                          {!isGeneratingVisualPodcast && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteVisualPodcast(activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
