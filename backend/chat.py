@@ -74,6 +74,10 @@ app.include_router(plans_router)
 from video_suggestions import router as video_suggestions_router
 app.include_router(video_suggestions_router)
 
+# Mount the Flashcards router (/flashcards endpoint)
+from flashcards import router as flashcards_router
+app.include_router(flashcards_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
@@ -488,6 +492,10 @@ class VideoSuggestionsDataUpdate(BaseModel):
     queries: list
     topic: str = ""
 
+class FlashcardsDataUpdate(BaseModel):
+    cards: list      # [{ "question": "...", "answer": "..." }, ...]
+    topic: str = ""
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
     updated = doc.get("updated_at")
@@ -498,6 +506,7 @@ def fmt_notebook(doc: dict) -> dict:
         "insight_canvas_url": doc.get("insight_canvas_url") or None,
         "mind_map_data": doc.get("mind_map_data") or None,
         "video_suggestions_data": doc.get("video_suggestions_data") or None,
+        "flashcards_data": doc.get("flashcards_data") or None,
     }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -851,7 +860,7 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1, "flashcards_data": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
@@ -1142,6 +1151,31 @@ async def save_video_suggestions_data(
             "video_suggestions_data": {
                 "videos": body.videos,
                 "queries": body.queries,
+                "topic": body.topic,
+            },
+            "updated_at": datetime.now(timezone.utc),
+        }}
+    )
+    return {"status": "ok"}
+
+
+@app.patch("/notebooks/{notebook_id}/flashcards")
+async def save_flashcards_data(
+    notebook_id: str,
+    body: FlashcardsDataUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    """Persist the flashcards result for this notebook."""
+    user_id, _ = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.update_one(
+        {"_id": oid, "user_id": user_id},
+        {"$set": {
+            "flashcards_data": {
+                "cards": body.cards,
                 "topic": body.topic,
             },
             "updated_at": datetime.now(timezone.utc),

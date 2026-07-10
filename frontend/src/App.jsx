@@ -70,6 +70,7 @@ import {
 import LandingPage from './LandingPage.jsx';
 import MindMapModal from './MindMapModal.jsx';
 import VideoSuggestionsModal from './VideoSuggestionsModal.jsx';
+import FlashcardsModal from './FlashcardsModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
@@ -226,6 +227,12 @@ export default function App() {
   const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
   const [videoSuggestionsData, setVideoSuggestionsData] = useState({});
   // videoSuggestionsData: { [notebookId]: { videos, queries, topic } }
+
+  // Flashcards state
+  const [showFlashcardsModal, setShowFlashcardsModal] = useState(false);
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
+  const [flashcardsData, setFlashcardsData] = useState({});
+  // flashcardsData: { [notebookId]: { cards: [{question, answer}], topic } }
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -656,6 +663,13 @@ export default function App() {
       list.forEach(nb => { if (nb.video_suggestions_data) savedVideos[nb.id] = nb.video_suggestions_data; });
       if (Object.keys(savedVideos).length > 0) {
         setVideoSuggestionsData(prev => ({ ...savedVideos, ...prev }));
+      }
+
+      // Restore persisted Flashcards data for all notebooks
+      const savedCards = {};
+      list.forEach(nb => { if (nb.flashcards_data) savedCards[nb.id] = nb.flashcards_data; });
+      if (Object.keys(savedCards).length > 0) {
+        setFlashcardsData(prev => ({ ...savedCards, ...prev }));
       }
 
       if (list.length === 0) {
@@ -1439,7 +1453,6 @@ export default function App() {
         ...prev,
         [notebookId]: { videos: data.videos, queries: data.queries_used, topic: data.topic },
       }));
-      setShowVideoModal(true);
 
       // Persist to MongoDB
       const saveToken = await getToken();
@@ -1457,6 +1470,57 @@ export default function App() {
       alert(`Video Suggestions failed: ${err.message}`);
     } finally {
       setIsGeneratingVideos(false);
+    }
+  };
+
+  // ── Flashcards ─────────────────────────────────────────────────────────────────────
+  const generateFlashcards = async () => {
+    if (isGeneratingFlashcards || !activeNotebookId) return;
+
+    const selectedPdfIds = (notebookPdfs[activeNotebookId] || [])
+      .filter(p => p.selected)
+      .map(p => p.doc_id)
+      .filter(Boolean);
+
+    const notebookId = activeNotebookId;
+    setIsGeneratingFlashcards(true);
+
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/flashcards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          notebook_id: notebookId,
+          selected_pdf_ids: selectedPdfIds,
+          num_cards: 10,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setFlashcardsData(prev => ({
+        ...prev,
+        [notebookId]: { cards: data.cards, topic: data.topic },
+      }));
+
+      // Persist to MongoDB (fire-and-forget)
+      const saveToken = await getToken();
+      fetch(`${BACKEND_URL}/notebooks/${notebookId}/flashcards`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+        body: JSON.stringify({ cards: data.cards, topic: data.topic }),
+      }).catch(e => console.warn('[Flashcards] Failed to persist:', e));
+
+    } catch (err) {
+      console.error('[Flashcards]', err);
+      alert(`Flashcards generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingFlashcards(false);
     }
   };
 
@@ -1480,6 +1544,13 @@ export default function App() {
       studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [videoSuggestionsData, activeNotebookId]);
+
+  // Auto-scroll right sidebar when flashcards are ready
+  useEffect(() => {
+    if (activeNotebookId && flashcardsData[activeNotebookId] && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [flashcardsData, activeNotebookId]);
 
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
@@ -1879,6 +1950,17 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* ── Flashcards Modal ───────────────────────────────────────────────────── */}
+      {showFlashcardsModal && (
+        <FlashcardsModal
+          topic={flashcardsData[activeNotebookId]?.topic || ''}
+          cards={flashcardsData[activeNotebookId]?.cards || []}
+          loading={isGeneratingFlashcards}
+          onClose={() => setShowFlashcardsModal(false)}
+          onRefresh={() => { setShowFlashcardsModal(false); generateFlashcards(); }}
+        />
+      )}
 
       {/* ── Preferences Modal ─────────────────────────────────────────────────── */}
       <PreferencesModal
@@ -3666,7 +3748,7 @@ export default function App() {
                         <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
                         <StudioTool icon={Video} label="Visual Podcast" onClick={scrollDown} />
                         <StudioTool icon={Film} label="Video Suggestions" loading={isGeneratingVideos} onClick={() => { generateVideoSuggestions(); scrollDown(); }} />
-                        <StudioTool icon={Layers} label="Flashcards" onClick={scrollDown} />
+                        <StudioTool icon={Layers} label="Flashcards" loading={isGeneratingFlashcards} onClick={() => { generateFlashcards(); scrollDown(); }} />
                         <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
                         <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
                         <StudioTool icon={Brain} label="MindSpeak" onClick={scrollDown} />
@@ -3783,6 +3865,38 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingVideos && (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                          )}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+
+                    {/* ── Flashcards result box — per notebook ──────────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingFlashcards || flashcardsData[activeNotebookId]) && (
+                        <motion.button
+                          key={`fc-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          disabled={isGeneratingFlashcards}
+                          onClick={() => { if (!isGeneratingFlashcards) setShowFlashcardsModal(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                        >
+                          <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                            <Layers className="w-5 h-5 text-primary dark:text-slate-300" />
+                            {isGeneratingFlashcards && (
+                              <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Flashcards</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                              {isGeneratingFlashcards ? 'Generating cards…' : `${flashcardsData[activeNotebookId]?.cards?.length || 0} cards ready`}
+                            </p>
+                          </div>
+                          {!isGeneratingFlashcards && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
                         </motion.button>

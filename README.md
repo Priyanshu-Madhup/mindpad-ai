@@ -20,6 +20,7 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **AI Image Generation** — Gemini image model, persisted to Firebase Storage
 - **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
 - **Mind Map Generator** — D3-powered interactive mind map from your PDFs
+- **Video Suggestions** — AI Studio feature that reads your PDF summaries from MongoDB, uses GPT-OSS-20B to craft 4 focused YouTube search queries via Serper.dev, and surfaces relevant educational videos in an in-app player (persists per notebook across page reloads)
 - **Multilingual Responses** — 12 Indian and global languages
 - **Subscription Plans** — Free / Plus (₹49/mo) / Pro (₹99/mo) via Razorpay; plan stored in MongoDB and enforced on every login
 - **Storage Caps** — 50 MB (Free) · 200 MB (Plus) · 500 MB (Pro) — enforced at PDF upload; displayed live in Preferences
@@ -87,6 +88,8 @@ mindpad_ai/
 │   ├── deep_research.py     # Deep Research pipeline (Serper → Firecrawl → Pinecone _dr namespace)
 │   ├── notion.py            # Notion OAuth 2.0 + sync + RAG + summary
 │   ├── storage.py           # Storage usage & deletion API (GET /storage/usage, DELETE /storage/pdf|canvas)
+│   ├── video_suggestions.py # Video Suggestions router — fetches PDF summaries from MongoDB,
+│   │                        #   generates YouTube search queries via GPT-OSS-20B + Serper.dev /videos
 │   ├── support_chat.py      # Landing-page support chatbot
 │   ├── features.txt         # Product reference for support bot
 │   └── requirements.txt
@@ -97,6 +100,7 @@ mindpad_ai/
 │       ├── PricingModal.jsx     # Plan comparison modal
 │       ├── PreferencesModal.jsx # Storage usage dashboard + theme/language/AI toggles
 │       ├── CouponManagerModal.jsx # Admin-only coupon management panel
+│       ├── VideoSuggestionsModal.jsx # AI Studio video player — grid, query filters, inline iframe
 │       ├── LandingPage.jsx
 │       ├── MindMapModal.jsx
 │       ├── AuthPage.jsx
