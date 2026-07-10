@@ -110,14 +110,21 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }) => (
   </button>
 );
 
-const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false, onAnimationComplete }) => {
+const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false, onAnimationComplete, externalFlash = false, onExternalFlashDone, suppressClickFlash = false }) => {
   const [flash, setFlash] = React.useState(false);
+  // Trigger flash from outside (e.g. after user confirms config)
+  React.useEffect(() => {
+    if (externalFlash) {
+      setFlash(true);
+      const t = setTimeout(() => { setFlash(false); onExternalFlashDone?.(); }, 900);
+      return () => clearTimeout(t);
+    }
+  }, [externalFlash]);
   const handleClick = () => {
-    setFlash(true);
-    setTimeout(() => {
-      setFlash(false);
-      onAnimationComplete?.();
-    }, 900);
+    if (!suppressClickFlash) {
+      setFlash(true);
+      setTimeout(() => { setFlash(false); onAnimationComplete?.(); }, 900);
+    }
     onClick?.();
   };
   return (
@@ -242,6 +249,7 @@ export default function App() {
   const [isGeneratingVisualPodcast, setIsGeneratingVisualPodcast] = useState(false);
   const [visualPodcastResults, setVisualPodcastResults] = useState({});
   // visualPodcastResults: { [notebookId]: { video_b64, slides, topic } }
+  const [visualPodcastCardFlash, setVisualPodcastCardFlash] = useState(false); // triggers perimeter animation after config
   // notebookPdfs: { [notebookId]: [{ doc_id, name, size, total_tokens, chunk_count, selected }] }
   const [notebookPdfs, setNotebookPdfs] = useState({});
   const [uploadingPdf, setUploadingPdf] = useState(false); // uploading+indexing in progress
@@ -1593,7 +1601,7 @@ export default function App() {
       }
       const data = await res.json();
       setVisualPodcastResults(prev => ({ ...prev, [notebookId]: data }));
-      setShowVisualPodcastModal(true); // auto-open to show the result
+      // Don't auto-open — user opens via the result box in the sidebar
 
       // Auto-save to Firebase + MongoDB in background so it survives refresh
       (async () => {
@@ -2066,7 +2074,7 @@ export default function App() {
           existingUrl={visualPodcastData[activeNotebookId] || null}
           result={visualPodcastResults[activeNotebookId] || null}
           onClose={() => setShowVisualPodcastModal(false)}
-          onGenerate={(numSlides, styleNotes) => generateVisualPodcast(numSlides, styleNotes)}
+          onGenerate={(numSlides, styleNotes) => { generateVisualPodcast(numSlides, styleNotes); setTimeout(() => setVisualPodcastCardFlash(true), 100); setTimeout(() => studioScrollRef.current?.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' }), 1050); }}
           onSaved={(nbId, url) => setVisualPodcastData(prev => ({ ...prev, [nbId]: url }))}
         />
       )}
@@ -3855,7 +3863,7 @@ export default function App() {
                       return (<>
                         <StudioTool icon={Network} label="Mind Map" onClick={() => { generateMindMap(); scrollDown(); }} />
                         <StudioTool icon={Podcast} label="Audio Podcast" onClick={scrollDown} />
-                        <StudioTool icon={Video} label="Visual Podcast" done={!!(visualPodcastData[activeNotebookId] || visualPodcastResults[activeNotebookId])} loading={isGeneratingVisualPodcast} onClick={() => { setShowVisualPodcastModal(true); scrollDown(); }} />
+                        <StudioTool icon={Video} label="Visual Podcast" loading={isGeneratingVisualPodcast} suppressClickFlash externalFlash={visualPodcastCardFlash} onExternalFlashDone={() => setVisualPodcastCardFlash(false)} onClick={() => setShowVisualPodcastModal(true)} />
                         <StudioTool icon={Film} label="Video Suggestions" loading={isGeneratingVideos} onClick={() => { generateVideoSuggestions(); scrollDown(); }} />
                         <StudioTool icon={Layers} label="Flashcards" loading={isGeneratingFlashcards} onClick={() => { generateFlashcards(); scrollDown(); }} />
                         <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />

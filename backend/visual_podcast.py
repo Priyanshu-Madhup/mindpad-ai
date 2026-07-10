@@ -1,4 +1,4 @@
-﻿"""
+"""
 visual_podcast.py
 -----------------
 FastAPI router — Visual Podcast AI Studio feature.
@@ -406,7 +406,7 @@ async def generate_visual_podcast(
             wav_path.write_bytes(wav_bytes)
 
             clips_data.append((img_path, wav_path))
-            meta.append({"slide_num": n, "heading": heading, "body": slide_body})
+            meta.append({"slide_num": n, "heading": heading, "body": slide_body, "narration": slide_body})
 
         # 6. MoviePy → final MP4
         final_path = tmp / "podcast.mp4"
