@@ -82,6 +82,10 @@ app.include_router(flashcards_router)
 from visual_podcast import router as visual_podcast_router
 app.include_router(visual_podcast_router)
 
+# Mount the Audio Podcast router (/audio-podcast endpoint)
+from audio_podcast import router as audio_podcast_router
+app.include_router(audio_podcast_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
@@ -512,6 +516,7 @@ def fmt_notebook(doc: dict) -> dict:
         "video_suggestions_data": doc.get("video_suggestions_data") or None,
         "flashcards_data": doc.get("flashcards_data") or None,
         "visual_podcast_url": doc.get("visual_podcast_url") or None,
+        "audio_podcast_url": doc.get("audio_podcast_url") or None,
     }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -865,7 +870,7 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1, "flashcards_data": 1, "visual_podcast_url": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1, "flashcards_data": 1, "visual_podcast_url": 1, "audio_podcast_url": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
