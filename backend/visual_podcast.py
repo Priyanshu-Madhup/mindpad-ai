@@ -157,6 +157,7 @@ def _render_slide_sync(
     total_slides: int,
     out_path: Path,
 ) -> None:
+    # ── Canvas ────────────────────────────────────────────────────────────────
     if TEMPLATE_PATH.exists():
         img = Image.open(TEMPLATE_PATH).convert("RGBA")
         img = img.resize((SLIDE_W, SLIDE_H), Image.LANCZOS)
@@ -164,51 +165,79 @@ def _render_slide_sync(
         img = Image.new("RGBA", (SLIDE_W, SLIDE_H), (13, 27, 42, 255))
 
     draw = ImageDraw.Draw(img)
-    PAD  = 80
-    CW   = SLIDE_W - 2 * PAD
 
-    # Heading
-    h_font  = _load_font(48, bold=True)
+    # ── Layout constants ───────────────────────────────────────────────────────
+    H_PAD   = 100          # horizontal margin (left & right)
+    CW      = SLIDE_W - 2 * H_PAD   # usable content width
+
+    # ── Zone boundaries (out of 720px tall) ───────────────────────────────────
+    # [0 … 60]       → top breathing room
+    # [60 … 220]     → heading zone  (160 px)
+    # [220 … 240]    → accent separator
+    # [240 … 640]    → body zone     (400 px)
+    # [640 … 680]    → bottom bar (slide number)
+    HEADING_ZONE_Y = 60
+    HEADING_ZONE_H = 160
+    SEP_Y          = HEADING_ZONE_Y + HEADING_ZONE_H + 10   # ~230
+    BODY_ZONE_Y    = SEP_Y + 24
+    BODY_ZONE_BOT  = 635   # above the bottom bar
+
+    # ── Fonts ──────────────────────────────────────────────────────────────────
+    h_font  = _load_font(46, bold=True)
+    b_font  = _load_font(26, bold=False)
+    n_font  = _load_font(18, bold=False)
+
+    # ── Heading — wrap & vertically center in heading zone ────────────────────
     h_lines = _wrap_text(draw, heading, h_font, CW)[:3]
-    H_LH    = 60
-    H_Y0    = 140
+    H_LH    = 56          # heading line-height
+    h_block  = len(h_lines) * H_LH
+    h_y0     = HEADING_ZONE_Y + max(0, (HEADING_ZONE_H - h_block) // 2)
 
     for i, line in enumerate(h_lines):
         try:
             lw = draw.textlength(line, font=h_font)
         except Exception:
-            lw = len(line) * 24
-        x = (SLIDE_W - lw) / 2
-        y = H_Y0 + i * H_LH
+            lw = len(line) * 23
+        x = (SLIDE_W - lw) / 2            # horizontally centered
+        y = h_y0 + i * H_LH
         _put_text(draw, (x, y), line, h_font,
-                  fill=(0, 0, 0),
-                  stroke_w=2, stroke_fill=(255, 255, 255, 200))
+                  fill=(10, 10, 10),
+                  stroke_w=2, stroke_fill=(255, 255, 255, 210))
 
-    # Separator
-    sep_y = H_Y0 + len(h_lines) * H_LH + 12
-    draw.line([(PAD, sep_y), (SLIDE_W - PAD, sep_y)], fill=(0, 0, 0, 60), width=1)
+    # ── Accent separator bar ───────────────────────────────────────────────────
+    # Thin colored bar, left-aligned to H_PAD
+    accent_x1 = H_PAD
+    accent_x2 = H_PAD + 60              # short accent dash
+    draw.line([(accent_x1, SEP_Y), (accent_x2, SEP_Y)],
+              fill=(30, 120, 220, 200), width=4)
+    draw.line([(accent_x2 + 8, SEP_Y), (SLIDE_W - H_PAD, SEP_Y)],
+              fill=(0, 0, 0, 40), width=1)
 
-    # Body
-    b_font  = _load_font(21, bold=False)
-    b_lines = _wrap_text(draw, body, b_font, CW)[:26]
-    B_LH    = 30
-    b_y     = sep_y + 16
+    # ── Body — wrap, cap to available height, vertically center ───────────────
+    B_LH        = 40          # body line-height (generous leading)
+    b_max_lines = max(1, (BODY_ZONE_BOT - BODY_ZONE_Y) // B_LH)
+    b_lines     = _wrap_text(draw, body, b_font, CW)[:b_max_lines]
+
+    b_block = len(b_lines) * B_LH
+    # Vertically center in available zone (with a slight upward bias)
+    b_y0    = BODY_ZONE_Y + max(0, (BODY_ZONE_BOT - BODY_ZONE_Y - b_block) // 2)
 
     for line in b_lines:
-        _put_text(draw, (PAD, b_y), line, b_font,
-                  fill=(0, 0, 0),
-                  stroke_w=1, stroke_fill=(255, 255, 255, 160))
-        b_y += B_LH
+        _put_text(draw, (H_PAD, b_y0), line, b_font,
+                  fill=(15, 15, 15),
+                  stroke_w=1, stroke_fill=(255, 255, 255, 170))
+        b_y0 += B_LH
 
-    # Slide number
-    n_font = _load_font(17, bold=False)
-    n_text = f"{slide_num} / {total_slides}"
+    # ── Slide-number badge (bottom-right) ─────────────────────────────────────
+    n_text = f"{slide_num}  /  {total_slides}"
     try:
         nw = draw.textlength(n_text, font=n_font)
     except Exception:
         nw = len(n_text) * 9
-    _put_text(draw, (SLIDE_W - nw - 28, SLIDE_H - 38), n_text, n_font,
-              fill=(30, 30, 30),
+    n_x = SLIDE_W - nw - H_PAD
+    n_y = BODY_ZONE_BOT + 8
+    _put_text(draw, (n_x, n_y), n_text, n_font,
+              fill=(60, 60, 60),
               stroke_w=1, stroke_fill=(255, 255, 255, 140))
 
     img.convert("RGB").save(out_path, "PNG")
