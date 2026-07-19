@@ -23,5 +23,6 @@ svix>=1.0.0
 resend>=2.0.0
 razorpay>=1.4.0
 Pillow>=10.0.0
-moviepy>=1.0.3
+moviepy>=1.0.3,<2.0
 # Visual Podcast: moviepy bundles its own ffmpeg via imageio-ffmpeg (no system install needed)
+# Pinned <2.0 because moviepy 2.x removed the moviepy.editor namespace.
