@@ -86,6 +86,10 @@ app.include_router(visual_podcast_router)
 from audio_podcast import router as audio_podcast_router
 app.include_router(audio_podcast_router)
 
+# Mount the Quiz router (/quiz/generate, /quiz/evaluate endpoints)
+from quiz import router as quiz_router
+app.include_router(quiz_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
 groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
@@ -504,6 +508,13 @@ class FlashcardsDataUpdate(BaseModel):
     cards: list      # [{ "question": "...", "answer": "..." }, ...]
     topic: str = ""
 
+class QuizDataUpdate(BaseModel):
+    questions: list   # [{ "question": "...", "context": "...", "hint": "..." }]
+    topic: str = ""
+    difficulty: str = "medium"
+    evaluations: list = []  # [{ "score": N, "strengths": "...", "weaknesses": "...", "model_answer": "..." }]
+    current_q: int = 0
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 def fmt_notebook(doc: dict) -> dict:
     updated = doc.get("updated_at")
@@ -517,6 +528,7 @@ def fmt_notebook(doc: dict) -> dict:
         "flashcards_data": doc.get("flashcards_data") or None,
         "visual_podcast_url": doc.get("visual_podcast_url") or None,
         "audio_podcast_url": doc.get("audio_podcast_url") or None,
+        "quiz_data": doc.get("quiz_data") or None,
     }
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -870,7 +882,7 @@ async def list_notebooks(
     user_email = x_user_email or jwt_email or ""
     cursor = notebooks_col.find(
         {"user_id": user_id},
-        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1, "flashcards_data": 1, "visual_podcast_url": 1, "audio_podcast_url": 1}
+        {"_id": 1, "name": 1, "updated_at": 1, "messages": 1, "insight_canvas_url": 1, "mind_map_data": 1, "video_suggestions_data": 1, "flashcards_data": 1, "visual_podcast_url": 1, "audio_podcast_url": 1, "quiz_data": 1}
     ).sort("created_at", 1)  # stable creation-time order — never shuffles
     docs = await cursor.to_list(length=100)
 
@@ -1187,6 +1199,34 @@ async def save_flashcards_data(
             "flashcards_data": {
                 "cards": body.cards,
                 "topic": body.topic,
+            },
+            "updated_at": datetime.now(timezone.utc),
+        }}
+    )
+    return {"status": "ok"}
+
+
+@app.patch("/notebooks/{notebook_id}/quiz")
+async def save_quiz_data(
+    notebook_id: str,
+    body: QuizDataUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    """Persist quiz questions and progressive evaluation answers for this notebook."""
+    user_id, _ = await get_current_user(authorization)
+    try:
+        oid = ObjectId(notebook_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid notebook ID")
+    await notebooks_col.update_one(
+        {"_id": oid, "user_id": user_id},
+        {"$set": {
+            "quiz_data": {
+                "questions": body.questions,
+                "topic": body.topic,
+                "difficulty": body.difficulty,
+                "evaluations": body.evaluations,
+                "current_q": body.current_q,
             },
             "updated_at": datetime.now(timezone.utc),
         }}

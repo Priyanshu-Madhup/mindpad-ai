@@ -73,6 +73,7 @@ import VideoSuggestionsModal from './VideoSuggestionsModal.jsx';
 import FlashcardsModal from './FlashcardsModal.jsx';
 import VisualPodcastModal from './VisualPodcastModal.jsx';
 import AudioPodcastModal from './AudioPodcastModal.jsx';
+import QuizModal from './QuizModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
@@ -251,6 +252,12 @@ export default function App() {
   const [visualPodcastResults, setVisualPodcastResults] = useState({});
   // visualPodcastResults: { [notebookId]: { video_b64, slides, topic } }
   const [visualPodcastCardFlash, setVisualPodcastCardFlash] = useState(false); // triggers perimeter animation after config
+
+  // Quiz state
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [quizData, setQuizData] = useState({}); // { [notebookId]: { questions, topic, difficulty } }
+  const [quizCardFlash, setQuizCardFlash] = useState(false); // perimeter animation after settings confirm
 
   // Audio Podcast state
   const [showAudioPodcastModal, setShowAudioPodcastModal] = useState(false);
@@ -710,6 +717,23 @@ export default function App() {
       list.forEach(nb => { if (nb.audio_podcast_url) savedAudioPodcasts[nb.id] = nb.audio_podcast_url; });
       if (Object.keys(savedAudioPodcasts).length > 0) {
         setAudioPodcastData(prev => ({ ...savedAudioPodcasts, ...prev }));
+      }
+
+      // Restore persisted Quiz data for all notebooks
+      const savedQuiz = {};
+      list.forEach(nb => {
+        if (nb.quiz_data && nb.quiz_data.questions?.length > 0) {
+          savedQuiz[nb.id] = {
+            questions: nb.quiz_data.questions,
+            topic: nb.quiz_data.topic || '',
+            difficulty: nb.quiz_data.difficulty || 'medium',
+            evaluations: nb.quiz_data.evaluations || [],
+            currentQ: nb.quiz_data.current_q || 0,
+          };
+        }
+      });
+      if (Object.keys(savedQuiz).length > 0) {
+        setQuizData(prev => ({ ...savedQuiz, ...prev }));
       }
 
       if (list.length === 0) {
@@ -1564,6 +1588,103 @@ export default function App() {
     }
   };
 
+  // ── Quiz ─────────────────────────────────────────────────────────────────────────
+  const generateQuiz = async (numQuestions = 5, difficulty = 'medium') => {
+    if (isGeneratingQuiz || !activeNotebookId) return;
+
+    const selectedPdfIds = (notebookPdfs[activeNotebookId] || [])
+      .filter(p => p.selected)
+      .map(p => p.doc_id)
+      .filter(Boolean);
+
+    const notebookId = activeNotebookId;
+    setIsGeneratingQuiz(true);
+    // Close the settings modal immediately — loading shown in sidebar card
+    setShowQuizModal(false);
+
+    try {
+      const token = await getToken();
+      const res = await fetch(`${BACKEND_URL}/quiz/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          notebook_id: notebookId,
+          selected_pdf_ids: selectedPdfIds,
+          num_questions: numQuestions,
+          difficulty,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const newQuizEntry = {
+        questions: data.questions,
+        topic: data.topic,
+        difficulty: data.difficulty,
+        evaluations: [],
+        currentQ: 0,
+      };
+      setQuizData(prev => ({ ...prev, [notebookId]: newQuizEntry }));
+
+      // Persist to MongoDB (fire-and-forget)
+      const saveToken = await getToken();
+      fetch(`${BACKEND_URL}/notebooks/${notebookId}/quiz`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
+        body: JSON.stringify({
+          questions: data.questions,
+          topic: data.topic,
+          difficulty: data.difficulty,
+          evaluations: [],
+          current_q: 0,
+        }),
+      }).catch(e => console.warn('[Quiz] Failed to persist:', e));
+
+    } catch (err) {
+      console.error('[Quiz]', err);
+      alert(`Quiz generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
+
+  // Save a quiz evaluation for one question to local state + MongoDB
+  const saveQuizEvaluation = async (notebookId, qIdx, evaluation) => {
+    setQuizData(prev => {
+      const existing = prev[notebookId] || {};
+      const evaluations = [...(existing.evaluations || [])];
+      evaluations[qIdx] = evaluation;
+      const newCurrentQ = Math.max(existing.currentQ || 0, qIdx + 1);
+      const updated = { ...existing, evaluations, currentQ: newCurrentQ };
+
+      // Persist to MongoDB async — use updated values inside closure
+      getToken().then(token => {
+        fetch(`${BACKEND_URL}/notebooks/${notebookId}/quiz`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            questions: updated.questions || [],
+            topic: updated.topic || '',
+            difficulty: updated.difficulty || 'medium',
+            evaluations,
+            current_q: newCurrentQ,
+          }),
+        }).catch(e => console.warn('[Quiz] Eval persist failed:', e));
+      });
+
+      return { ...prev, [notebookId]: updated };
+    });
+  };
+  useEffect(() => {
+    if (activeNotebookId && quizData[activeNotebookId] && studioScrollRef.current) {
+      studioScrollRef.current.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [quizData, activeNotebookId]);
+
   // Auto-scroll right sidebar to bottom when an insight canvas image becomes ready
   useEffect(() => {
     if (activeNotebookId && insightCanvasImages[activeNotebookId] && studioScrollRef.current) {
@@ -2149,6 +2270,39 @@ export default function App() {
           onRefresh={() => { setShowFlashcardsModal(false); generateFlashcards(); }}
         />
       )}
+
+      {/* ── Quiz Modal ─────────────────────────────────────────────────────────── */}
+      <QuizModal
+        open={showQuizModal}
+        onClose={() => setShowQuizModal(false)}
+        onConfirm={(numQ, diff) => {
+          // generateQuiz closes the modal itself and triggers perimeter flash
+          generateQuiz(numQ, diff);
+          setTimeout(() => setQuizCardFlash(true), 100);
+          setTimeout(() => studioScrollRef.current?.scrollTo({ top: studioScrollRef.current.scrollHeight, behavior: 'smooth' }), 1050);
+        }}
+        questions={quizData[activeNotebookId]?.questions || []}
+        topic={quizData[activeNotebookId]?.topic || ''}
+        difficulty={quizData[activeNotebookId]?.difficulty || 'medium'}
+        savedEvaluations={quizData[activeNotebookId]?.evaluations || []}
+        savedCurrentQ={quizData[activeNotebookId]?.currentQ || 0}
+        loading={isGeneratingQuiz}
+        getToken={getToken}
+        onEvaluationSave={(qIdx, evaluation) => saveQuizEvaluation(activeNotebookId, qIdx, evaluation)}
+        onDelete={async () => {
+          const notebookId = activeNotebookId;
+          setShowQuizModal(false);
+          setQuizData(prev => { const next = { ...prev }; delete next[notebookId]; return next; });
+          try {
+            const token = await getToken();
+            await fetch(`${BACKEND_URL}/notebooks/${notebookId}/quiz`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ questions: [], topic: '', difficulty: 'medium', evaluations: [], current_q: 0 }),
+            });
+          } catch (e) { console.warn('[Quiz] Delete failed:', e); }
+        }}
+      />
 
       {/* ── Visual Podcast Modal ─────────────────────────────────────────────── */}
       {showVisualPodcastModal && (
@@ -3964,7 +4118,7 @@ export default function App() {
                         <StudioTool icon={Video} label="Visual Podcast" loading={isGeneratingVisualPodcast} suppressClickFlash externalFlash={visualPodcastCardFlash} onExternalFlashDone={() => setVisualPodcastCardFlash(false)} onClick={() => setShowVisualPodcastModal(true)} />
                         <StudioTool icon={Film} label="Video Suggestions" loading={isGeneratingVideos} onClick={() => { generateVideoSuggestions(); scrollDown(); }} />
                         <StudioTool icon={Layers} label="Flashcards" loading={isGeneratingFlashcards} onClick={() => { generateFlashcards(); scrollDown(); }} />
-                        <StudioTool icon={QuizIcon} label="Quiz Mode" onClick={scrollDown} />
+                        <StudioTool icon={QuizIcon} label="Quiz Mode" loading={isGeneratingQuiz} suppressClickFlash externalFlash={quizCardFlash} onExternalFlashDone={() => setQuizCardFlash(false)} onClick={() => setShowQuizModal(true)} />
                         <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
                         <StudioTool icon={Brain} label="MindSpeak" onClick={scrollDown} />
                       </>);
@@ -4112,6 +4266,38 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingFlashcards && (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
+                          )}
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+
+                    {/* ── Quiz result box — per notebook ────────────────── */}
+                    <AnimatePresence>
+                      {(isGeneratingQuiz || quizData[activeNotebookId]) && (
+                        <motion.button
+                          key={`qz-${activeNotebookId}`}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          disabled={isGeneratingQuiz}
+                          onClick={() => { if (!isGeneratingQuiz) setShowQuizModal(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                        >
+                          <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
+                            <QuizIcon className="w-5 h-5 text-primary dark:text-slate-300" />
+                            {isGeneratingQuiz && (
+                              <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Quiz Mode</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
+                              {isGeneratingQuiz ? 'Generating questions…' : `${quizData[activeNotebookId]?.questions?.length || 0} questions ready`}
+                            </p>
+                          </div>
+                          {!isGeneratingQuiz && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
                         </motion.button>
