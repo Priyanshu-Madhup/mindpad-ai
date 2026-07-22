@@ -21,6 +21,8 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
 - **Mind Map Generator** — D3-powered interactive mind map from your PDFs
 - **Video Suggestions** — AI Studio feature that reads your PDF summaries from MongoDB, uses GPT-OSS-20B to craft 4 focused YouTube search queries via Serper.dev, and surfaces relevant educational videos in an in-app player (persists per notebook across page reloads)
+- **Flashcards** — AI-generated Q&A flip cards from your PDFs; persists per notebook
+- **Quiz Mode** — AI Studio feature that generates configurable multiple-difficulty quizzes (1–10 questions, Easy/Medium/Hard) from PDF summaries + Pinecone chunks. Users type **or speak** (Whisper) answers; each is evaluated by the LLM for score/10, strengths, and areas to improve. Full session — questions, answers, evaluations, and progress — is persisted to MongoDB so reopening the modal resumes exactly where the user left off. Results panel shows per-question breakdown with delete option.
 - **Multilingual Responses** — 12 Indian and global languages
 - **Subscription Plans** — Free / Plus (₹49/mo) / Pro (₹99/mo) via Razorpay; plan stored in MongoDB and enforced on every login
 - **Storage Caps** — 50 MB (Free) · 200 MB (Plus) · 500 MB (Pro) — enforced at PDF upload; displayed live in Preferences
@@ -90,6 +92,10 @@ mindpad_ai/
 │   ├── storage.py           # Storage usage & deletion API (GET /storage/usage, DELETE /storage/pdf|canvas)
 │   ├── video_suggestions.py # Video Suggestions router — fetches PDF summaries from MongoDB,
 │   │                        #   generates YouTube search queries via GPT-OSS-20B + Serper.dev /videos
+│   ├── flashcards.py        # Flashcards router — PDF summary + Pinecone → LLM → Q&A cards
+│   ├── quiz.py              # Quiz Mode router — generates difficulty-aware questions from PDF
+│   │                        #   summaries + Pinecone chunks; evaluates typed/spoken answers
+│   │                        #   via LLM (score/10, strengths, weaknesses, model answer)
 │   ├── support_chat.py      # Landing-page support chatbot
 │   ├── features.txt         # Product reference for support bot
 │   └── requirements.txt
@@ -101,6 +107,9 @@ mindpad_ai/
 │       ├── PreferencesModal.jsx # Storage usage dashboard + theme/language/AI toggles
 │       ├── CouponManagerModal.jsx # Admin-only coupon management panel
 │       ├── VideoSuggestionsModal.jsx # AI Studio video player — grid, query filters, inline iframe
+│       ├── FlashcardsModal.jsx  # AI Studio flashcard flip-card viewer
+│       ├── QuizModal.jsx        # AI Studio quiz — settings, Q&A with voice input, evaluation,
+│       │                        #   prev/next navigation, results breakdown, delete
 │       ├── LandingPage.jsx
 │       ├── MindMapModal.jsx
 │       ├── AuthPage.jsx
