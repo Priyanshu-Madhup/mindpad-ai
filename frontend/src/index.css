@@ -17,6 +17,9 @@
   --color-surface-container-low: #f3f4f5;
   --color-surface-container-lowest: #ffffff;
   --color-outline-variant: #c4c6cc;
+
+  /* Custom xs breakpoint (480px) — between default sm:640px */
+  --breakpoint-xs: 480px;
 }
 
 @layer utilities {

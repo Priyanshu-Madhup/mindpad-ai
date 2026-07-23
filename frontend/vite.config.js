@@ -14,5 +14,6 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     open: true,
+    host: true,   // bind to 0.0.0.0 → accessible via your LAN IP on mobile
   },
 });

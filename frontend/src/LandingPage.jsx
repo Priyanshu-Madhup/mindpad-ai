@@ -486,24 +486,21 @@ const MarqueeFeatures = () => {
             return (
               <div
                 key={i}
-                className="mp-marquee-card flex-shrink-0 w-[332px] mx-3 rounded-2xl p-6 border border-slate-200"
+                className="mp-marquee-card flex-shrink-0 w-[260px] sm:w-[332px] mx-2 sm:mx-3 rounded-2xl p-4 sm:p-6 border border-slate-200"
                 style={{
                   background: '#fff',
-                  // backdropFilter forces an isolated GPU compositor layer per card.
-                  // Painting boxShadow/borderColor becomes a per-layer operation
-                  // instead of invalidating the whole page (identical to MindNote AI).
                   backdropFilter: 'blur(0px)',
                   WebkitBackdropFilter: 'blur(0px)',
                 }}
               >
                 <div
-                  className="mp-card-icon w-10 h-10 rounded-xl flex items-center justify-center mb-4 border border-slate-100"
+                  className="mp-card-icon w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center mb-3 sm:mb-4 border border-slate-100"
                   style={{ background: '#f8fafc' }}
                 >
-                  <Icon className="w-5 h-5 text-slate-700" />
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
                 </div>
-                <h3 className="mp-card-title text-slate-900 font-bold text-base mb-2">{f.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{f.description}</p>
+                <h3 className="mp-card-title text-slate-900 font-bold text-sm sm:text-base mb-1.5 sm:mb-2">{f.title}</h3>
+                <p className="text-slate-500 text-xs sm:text-sm leading-relaxed">{f.description}</p>
               </div>
             );
           })}
@@ -709,9 +706,9 @@ KEY FEATURES:
 
       <main>
         {/* Hero Section */}
-        <section className="relative pt-0 pb-16 sm:pt-5 sm:pb-32 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-screen-2xl mx-auto px-4 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 items-center">
-            <div className="lg:col-span-5 space-y-8">
+        <section className="relative pt-0 pb-12 sm:pt-5 sm:pb-32 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-12 items-center">
+            <div className="lg:col-span-5 space-y-5 sm:space-y-8 pt-8 sm:pt-0">
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -724,7 +721,7 @@ KEY FEATURES:
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black font-display tracking-tighter leading-[1.05] text-slate-900"
+                className="text-[2.4rem] leading-[1.08] sm:text-5xl md:text-6xl lg:text-7xl font-black font-display tracking-tighter sm:leading-[1.05] text-slate-900"
               >
                 Your Intellectual Workspace
               </motion.h1>
@@ -732,7 +729,7 @@ KEY FEATURES:
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="text-base sm:text-xl text-slate-500 font-medium leading-relaxed max-w-xl"
+                className="text-[0.95rem] sm:text-xl text-slate-500 font-medium leading-relaxed max-w-xl"
               >
                 A modern research journal for the digital age. Curate, synthesize, and expand your knowledge with an AI companion designed for scholarly focus.
               </motion.p>
@@ -740,28 +737,50 @@ KEY FEATURES:
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="flex flex-col sm:flex-row gap-4 pt-4"
+                className="flex flex-col xs:flex-row gap-3 sm:gap-4 pt-2 sm:pt-4"
               >
                 <button 
                   onClick={onGetStarted}
-                  className="bg-primary text-white px-8 py-4 rounded-xl text-lg font-bold shadow-xl shadow-primary/20 hover:translate-y-[-2px] transition-all"
+                  className="bg-primary text-white px-6 py-3.5 sm:px-8 sm:py-4 rounded-xl text-base sm:text-lg font-bold shadow-xl shadow-primary/20 hover:translate-y-[-2px] transition-all active:scale-95"
                 >
                   Get Started
                 </button>
-                <button className="border border-slate-200 text-slate-900 px-8 py-4 rounded-xl text-lg font-bold hover:bg-slate-50 transition-all">
+                <button className="border border-slate-200 text-slate-900 px-6 py-3.5 sm:px-8 sm:py-4 rounded-xl text-base sm:text-lg font-bold hover:bg-slate-50 transition-all">
                   View Studio Demo
                 </button>
               </motion.div>
             </div>
 
+            {/* On mobile: show the interactive KnowledgeGraph. On lg+: show Spline 3D */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.4 }}
-              className="lg:col-span-7 relative h-[480px] sm:h-[600px] lg:h-[720px] overflow-hidden"
+              className="lg:col-span-7 relative"
             >
-              <div className="absolute -right-64 top-1/2 -translate-y-[68%] w-[147%] h-[147%]">
-                <Spline scene="https://prod.spline.design/VbrCGKyoiSdZRD7p/scene.splinecode" />
+              {/* Mobile knowledge graph — hidden on large screens */}
+              <div className="lg:hidden w-full max-w-xs mx-auto">
+                <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden" style={{ aspectRatio: '1 / 1' }}>
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      backgroundImage: 'linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)',
+                      backgroundSize: '36px 36px',
+                      opacity: 0.5,
+                    }}
+                  />
+                  <div className="absolute inset-0 p-3">
+                    <KnowledgeGraph />
+                  </div>
+                </div>
+                <p className="text-center text-[10px] font-bold tracking-widest uppercase text-slate-400 mt-3">Interactive — tap and drag nodes</p>
+              </div>
+
+              {/* Desktop Spline 3D — hidden on mobile (too heavy) */}
+              <div className="hidden lg:block relative h-[720px] overflow-hidden">
+                <div className="absolute -right-64 top-1/2 -translate-y-[68%] w-[147%] h-[147%]">
+                  <Spline scene="https://prod.spline.design/VbrCGKyoiSdZRD7p/scene.splinecode" />
+                </div>
               </div>
             </motion.div>
           </div>
@@ -874,14 +893,14 @@ KEY FEATURES:
       </footer>
 
       {/* Floating AI Support Chat */}
-      <div className="fixed bottom-6 right-4 sm:right-6 z-[100] flex flex-col items-end gap-4">
+      <div className="fixed bottom-5 right-4 sm:right-6 z-[100] flex flex-col items-end gap-3 sm:gap-4">
         {/* Chat Window */}
         {chatOpen && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="w-[calc(100vw-2rem)] max-w-[360px] h-[75vh] max-h-[500px] min-h-[320px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+            className="w-[calc(100vw-2rem)] max-w-[360px] h-[70vh] max-h-[500px] min-h-[300px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
           >
             {/* Chat Header */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-primary">

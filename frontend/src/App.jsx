@@ -2590,7 +2590,7 @@ export default function App() {
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800">
         <div className="flex justify-between items-center px-4 md:px-8 py-4 w-full">
           <div className="flex items-center gap-3 md:gap-10">
-            {/* Mobile hamburger */}
+          {/* Mobile hamburger */}
             <button
               className="md:hidden p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
               onClick={() => setSidebarOpen(prev => !prev)}
@@ -2614,7 +2614,8 @@ export default function App() {
                 alt="Mindpad AI logo"
                 className="h-7 w-auto object-contain"
               />
-              <span className="text-lg font-black text-slate-900 dark:text-slate-100 font-display uppercase tracking-widest">
+              {/* Hide brand text on very small screens to save horizontal space */}
+              <span className="hidden xs:inline text-lg font-black text-slate-900 dark:text-slate-100 font-display uppercase tracking-widest">
                 Mindpad AI
               </span>
             </span>
@@ -2683,7 +2684,7 @@ export default function App() {
                 })()}
               </AnimatePresence>
             </div>
-            {/* Crown / Upgrade button */}
+            {/* Crown / Upgrade button — hidden on mobile to save space */}
             <button
               onClick={() => {
                 setSidebarOpen(false);
@@ -2691,16 +2692,16 @@ export default function App() {
                 setShowPricing(true);
               }}
               title="Upgrade plan"
-              className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors rounded-full"
+              className="hidden sm:flex p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors rounded-full"
             >
               <Crown className="w-5 h-5" />
             </button>
 
-            {/* Preferences */}
+            {/* Preferences — hidden on mobile (accessible via sidebar) */}
             <button
               onClick={() => setShowPreferences(prev => !prev)}
               title="Preferences"
-              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
+              className="hidden sm:flex p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors rounded-full"
             >
               <SlidersHorizontal className="w-5 h-5" />
             </button>
@@ -3477,14 +3478,14 @@ export default function App() {
                   <div className="w-full space-y-8">
                     {/* Greeting */}
                     <div>
-                      <h1 className="text-4xl font-bold font-display text-slate-800 dark:text-white">
+                      <h1 className="text-2xl sm:text-4xl font-bold font-display text-slate-800 dark:text-white leading-tight">
                         {(() => { const h = new Date().getHours(); const greeting = h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; const name = user?.firstName; return name ? `${greeting}, ${name}` : greeting; })()}
                       </h1>
-                      <p className="mt-2 text-base text-slate-500 dark:text-slate-400">What would you like to do?</p>
+                      <p className="mt-1.5 sm:mt-2 text-sm sm:text-base text-slate-500 dark:text-slate-400">What would you like to do?</p>
                     </div>
 
-                    {/* Feature grid */}
-                    <div className="grid grid-cols-4 gap-3">
+                    {/* Feature grid — 2 cols on mobile, 4 on desktop */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
                         { icon: <Sparkles className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'AI Chat', desc: 'Ask Midy AI anything about your notebooks', action: () => document.querySelector('textarea')?.focus() },
                         { icon: <FileText className="w-5 h-5 text-slate-900 dark:text-white" />, title: 'Upload PDF', desc: 'Chat with your research documents via RAG', action: () => pdfInputRef.current?.click() },
@@ -3498,18 +3499,18 @@ export default function App() {
                         <button
                           key={i}
                           onClick={card.action}
-                          className="h-36 overflow-hidden p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 text-left group"
+                          className="h-auto min-h-[7rem] sm:h-36 overflow-hidden p-3 sm:p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 text-left group"
                         >
                           <motion.div
                             initial={{ x: i % 4 < 2 ? -20 : 20, opacity: 0 }}
                             animate={{ x: 0, opacity: 1 }}
                             transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: i * 0.05 }}
                           >
-                            <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3 group-hover:bg-primary/10 dark:group-hover:bg-primary/10 transition-colors">
+                            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-2 sm:mb-3 group-hover:bg-primary/10 dark:group-hover:bg-primary/10 transition-colors">
                               {card.icon}
                             </div>
-                            <h3 className="font-semibold text-sm text-slate-800 dark:text-white mb-1 whitespace-nowrap overflow-hidden text-ellipsis">{card.title}</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{card.desc}</p>
+                            <h3 className="font-semibold text-xs sm:text-sm text-slate-800 dark:text-white mb-1">{card.title}</h3>
+                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{card.desc}</p>
                           </motion.div>
                         </button>
                       ))}
