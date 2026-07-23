@@ -204,6 +204,7 @@ export default function App() {
   const [isDeepResearching, setIsDeepResearching] = useState(false); // true while scraping pipeline runs
   const [isWebSearch, setIsWebSearch] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
+  const [responseStyle, setResponseStyle] = useState(() => localStorage.getItem('mindpad_response_style') || '');
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState(null); // index of message being synthesized
   const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);     // index of message whose text was copied
@@ -1148,6 +1149,7 @@ export default function App() {
           web_search: isWebSearch,
           deep_research: isDeepResearch,
           response_language: selectedLang.label,
+          response_style: responseStyle,
           // RAG: send the doc_ids the user has checked
           selected_pdf_ids: (notebookPdfs[activeNotebookId] || [])
             .filter(p => p.selected)
@@ -2350,6 +2352,11 @@ export default function App() {
         user={user}
         getToken={getToken}
         userPlan={userPlan}
+        responseStyle={responseStyle}
+        onSaveResponseStyle={(val) => {
+          setResponseStyle(val);
+          localStorage.setItem('mindpad_response_style', val);
+        }}
         onPdfDeleted={(docId) => {
           setNotebookPdfs(prev => {
             const next = {};
@@ -2361,6 +2368,20 @@ export default function App() {
         }}
         onCanvasDeleted={(notebookId) => {
           setInsightCanvasImages(prev => {
+            const next = { ...prev };
+            delete next[notebookId];
+            return next;
+          });
+        }}
+        onAudioPodcastDeleted={(notebookId) => {
+          setAudioPodcastData(prev => {
+            const next = { ...prev };
+            delete next[notebookId];
+            return next;
+          });
+        }}
+        onVisualPodcastDeleted={(notebookId) => {
+          setVisualPodcastData(prev => {
             const next = { ...prev };
             delete next[notebookId];
             return next;

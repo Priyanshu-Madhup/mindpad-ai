@@ -469,6 +469,8 @@ class ChatRequest(BaseModel):
     web_search: bool = False
     # Deep Research: Serper → Firecrawl scraping → Pinecone RAG (answers from vector DB, not raw snippets)
     deep_research: bool = False
+    # User-defined answer style instruction (max 500 chars, set in Preferences)
+    response_style: str = ""
 
 class NotebookCreate(BaseModel):
     name: str = "Untitled Notebook"
@@ -1604,6 +1606,13 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             full_messages.append({
                 "role": "system",
                 "content": f"IMPORTANT: You must respond entirely in {request.response_language}. Do not use English unless quoting technical terms."
+            })
+
+        # User-defined response style — injected as a system instruction when set
+        if request.response_style and request.response_style.strip():
+            full_messages.append({
+                "role": "system",
+                "content": f"ANSWER STYLE INSTRUCTION (follow this for your response):\n{request.response_style.strip()[:500]}"
             })
 
         # Research mode: append a length reminder to the user turn so the model cannot ignore it
