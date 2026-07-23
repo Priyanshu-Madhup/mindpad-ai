@@ -66,6 +66,35 @@ TEMPLATE_PATH = Path(__file__).parent / "assets" / "ppt_mindpad.png"
 SLIDE_W, SLIDE_H = 1280, 720
 MAX_SLIDES = 8
 
+# ── Bundled fonts (downloaded on first run — works on Railway/Linux) ───────────
+FONTS_DIR = Path(__file__).parent / "assets" / "fonts"
+
+# Direct TTF download links (DejaVu 2.37, free & MIT-compatible)
+_FONT_URLS: dict = {
+    "DejaVuSans-Bold.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans-Bold.ttf",
+    "DejaVuSans.ttf":      "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf",
+}
+
+def _ensure_fonts() -> None:
+    """Download DejaVu fonts into assets/fonts/ if not present.
+
+    Uses stdlib urllib so no extra deps are required.  Safe to call at
+    import time — skips any font that already exists.
+    """
+    import urllib.request
+    FONTS_DIR.mkdir(parents=True, exist_ok=True)
+    for name, url in _FONT_URLS.items():
+        dest = FONTS_DIR / name
+        if not dest.exists():
+            try:
+                print(f"[VisualPodcast] Downloading font: {name} …")
+                urllib.request.urlretrieve(url, dest)
+                print(f"[VisualPodcast] Font ready: {dest}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[VisualPodcast] Font download failed ({name}): {exc}")
+
+_ensure_fonts()
+
 # ── Clients ───────────────────────────────────────────────────────────────────
 _groq   = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", ""))
 _gemini = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
@@ -108,7 +137,10 @@ def _strip_html(html: str) -> str:
     return s.get_text()
 
 # ── Font helpers ──────────────────────────────────────────────────────────────
+# Bundled fonts (assets/fonts/) are checked first — guaranteed on Railway.
+# System fonts are fallbacks for local dev environments.
 _BOLD_FONTS = [
+    str(FONTS_DIR / "DejaVuSans-Bold.ttf"),            # bundled — highest priority
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
@@ -116,6 +148,7 @@ _BOLD_FONTS = [
     "C:/Windows/Fonts/calibrib.ttf",
 ]
 _REG_FONTS = [
+    str(FONTS_DIR / "DejaVuSans.ttf"),                 # bundled — highest priority
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
