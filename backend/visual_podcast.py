@@ -6,13 +6,24 @@ FastAPI router — Visual Podcast AI Studio feature.
 Pipeline per request:
   1. Auth — Clerk JWT via get_current_user().
   2. Fetch up to 5 PDF summaries from MongoDB pdf_docs.
-  3. LLM (GPT-OSS-20B) — one small call → n topic outline.
-  4. For each slide (sequential):
-     a. LLM (GPT-OSS-20B)  → { heading, body, narration } JSON (one call per slide).
-     b. Pillow              → overlay text on PNG template → temp PNG.
-     c. Gemini TTS          → 24 kHz mono PCM → WAV bytes.
-  5. MoviePy — concatenate all (image + audio) pairs into final MP4.
-  6. Return base64-encoded MP4 + per-slide metadata as JSON.
+  3. For each slide (sequential):
+     a. LLM (GPT-OSS-20B)  → body paragraph (one call per slide).
+     b. LLM (GPT-OSS-20B)  → heading derived from body.
+     c. Pillow              → overlay text on PNG template → temp PNG.
+     d. Gemini TTS          → 24 kHz mono PCM → WAV bytes.
+  4. MoviePy — concatenate all (image + audio) pairs into final MP4.
+  5. Upload MP4 to Firebase Storage via REST API → get download URL.
+  6. Stream SSE events throughout:
+       event: progress  — after each slide { slide, total, heading }
+       event: done      — { url, slides, topic } with Firebase download URL
+       event: error     — { detail } on failure
+
+This SSE approach keeps the Railway HTTP connection alive during the long
+generation (7–10 min), avoiding the 60-second request timeout.
+
+Required env vars (backend):
+  FIREBASE_API_KEY          — same as VITE_FIREBASE_API_KEY on frontend
+  FIREBASE_STORAGE_BUCKET   — e.g. my-project.appspot.com
 
 Template : backend/assets/ppt_mindpad.png  (user-supplied, 1280×720 recommended)
            Falls back to a plain dark-navy canvas if the file is absent.
@@ -28,13 +39,15 @@ import base64
 import asyncio
 import shutil
 import tempfile
+import urllib.parse
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from groq import AsyncGroq
 from google import genai as google_genai
@@ -384,70 +397,149 @@ async def _gen_heading(body: str, slide_num: int, total: int) -> str:
     return heading or f"Slide {slide_num}"
 
 
-# ── Main generation route ──────────────────────────────────────────────────────
+# ── Firebase Storage upload helper ────────────────────────────────────────────
+async def _upload_to_firebase(mp4_bytes: bytes, user_id: str, notebook_id: str) -> str:
+    """
+    Upload mp4_bytes to Firebase Storage via the REST API using the public
+    API key (same one the frontend uses).  Returns the download URL.
+
+    Requires env vars:
+      FIREBASE_API_KEY          — Firebase web API key
+      FIREBASE_STORAGE_BUCKET   — e.g. "my-project.appspot.com"
+    """
+    api_key = os.environ.get("FIREBASE_API_KEY", "")
+    bucket  = os.environ.get("FIREBASE_STORAGE_BUCKET", "")
+    if not api_key or not bucket:
+        raise RuntimeError(
+            "FIREBASE_API_KEY and FIREBASE_STORAGE_BUCKET must be set for backend upload."
+        )
+
+    object_name = f"visual-podcasts/{user_id}/{notebook_id}/{int(datetime.now(timezone.utc).timestamp() * 1000)}.mp4"
+    encoded     = urllib.parse.quote(object_name, safe="")
+    upload_url  = (
+        f"https://firebasestorage.googleapis.com/v0/b/{bucket}/o"
+        f"?uploadType=media&name={encoded}&key={api_key}"
+    )
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(
+            upload_url,
+            content=mp4_bytes,
+            headers={"Content-Type": "video/mp4"},
+        )
+        r.raise_for_status()
+        data  = r.json()
+        token = data.get("downloadTokens", "")
+
+    download_url = (
+        f"https://firebasestorage.googleapis.com/v0/b/{bucket}/o"
+        f"/{encoded}?alt=media&token={token}"
+    )
+    print(f"[VisualPodcast] Uploaded to Firebase: {object_name}")
+    return download_url
+
+
+# ── Main generation route (SSE streaming) ──────────────────────────────────────
 @router.post("/visual-podcast/generate")
 async def generate_visual_podcast(
     body: VisualPodcastRequest,
     authorization: Optional[str] = Header(None),
 ):
-    user_id, _ = await _auth(authorization)
+    """
+    Returns a text/event-stream response.  Each event is a JSON object:
+      { "type": "progress", "slide": N, "total": M, "heading": "..." }
+      { "type": "done",     "url": "https://firebasestorage...", "slides": [...], "topic": "..." }
+      { "type": "error",    "detail": "..." }
 
+    Streaming keeps the Railway HTTP connection alive during the long
+    generation, preventing the 60-second proxy timeout.
+    """
+    user_id, _ = await _auth(authorization)
     num = max(1, min(body.num_slides, MAX_SLIDES))
 
-    # 1. Fetch PDF summaries
-    ctx, names = await _fetch_summaries(
-        user_id, body.notebook_id, body.selected_pdf_ids or []
-    )
-    if not ctx.strip():
-        raise HTTPException(
-            status_code=422,
-            detail="No document content found. Please select indexed PDFs and try again.",
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # 1. Fetch PDF summaries
+        ctx, names = await _fetch_summaries(
+            user_id, body.notebook_id, body.selected_pdf_ids or []
         )
+        if not ctx.strip():
+            yield (
+                f"data: {json.dumps({'type': 'error', 'detail': 'No document content found. Please select indexed PDFs and try again.'})}"
+                "\n\n"
+            )
+            return
 
-    topic = names[0] if names else "Research"
-    print(f"[VisualPodcast] {len(ctx)} chars from {names}, {num} slides")
+        topic = names[0] if names else "Research"
+        print(f"[VisualPodcast] {len(ctx)} chars from {names}, {num} slides")
 
-    tmp_dir = tempfile.mkdtemp(prefix="vp_")
-    try:
-        tmp                                 = Path(tmp_dir)
-        clips_data: List[Tuple[Path, Path]] = []
-        meta:       List[dict]              = []
+        tmp_dir = tempfile.mkdtemp(prefix="vp_")
+        try:
+            tmp:        Path                    = Path(tmp_dir)
+            clips_data: List[Tuple[Path, Path]] = []
+            meta:       List[dict]              = []
 
-        for i in range(num):
-            n = i + 1
+            for i in range(num):
+                n = i + 1
 
-            # 2. One call → body paragraph for this slide
-            slide_body = await _gen_body(ctx, n, num, body.style_notes)
-            print(f"[VisualPodcast] Slide {n} body ({len(slide_body)} chars)")
+                # 2. Body paragraph
+                slide_body = await _gen_body(ctx, n, num, body.style_notes)
+                print(f"[VisualPodcast] Slide {n} body ({len(slide_body)} chars)")
 
-            # 3. One call → heading derived from the body
-            heading = await _gen_heading(slide_body, n, num)
+                # 3. Heading
+                heading = await _gen_heading(slide_body, n, num)
 
-            # 4. Render PNG
-            img_path = tmp / f"slide_{n:02d}.png"
-            await asyncio.to_thread(
-                _render_slide_sync, heading, slide_body, n, num, img_path
+                # 4. Render PNG
+                img_path = tmp / f"slide_{n:02d}.png"
+                await asyncio.to_thread(
+                    _render_slide_sync, heading, slide_body, n, num, img_path
+                )
+
+                # 5. TTS → WAV
+                wav_bytes = await asyncio.to_thread(_tts_sync, slide_body)
+                wav_path  = tmp / f"audio_{n:02d}.wav"
+                wav_path.write_bytes(wav_bytes)
+
+                clips_data.append((img_path, wav_path))
+                meta.append({"slide_num": n, "heading": heading, "body": slide_body, "narration": slide_body})
+
+                # ── Yield progress event — keeps the connection alive ──────────
+                yield (
+                    f"data: {json.dumps({'type': 'progress', 'slide': n, 'total': num, 'heading': heading})}"
+                    "\n\n"
+                )
+
+            # 6. MoviePy → MP4
+            final_path = tmp / "podcast.mp4"
+            await asyncio.to_thread(_make_video_sync, clips_data, final_path)
+            mp4_bytes = final_path.read_bytes()
+            print(f"[VisualPodcast] MP4 built — {len(mp4_bytes)//1024} KB, {num} slides")
+
+            # 7. Upload to Firebase, get download URL
+            firebase_url = await _upload_to_firebase(mp4_bytes, user_id, body.notebook_id)
+
+            # ── Final done event ──────────────────────────────────────────────
+            yield (
+                f"data: {json.dumps({'type': 'done', 'url': firebase_url, 'slides': meta, 'topic': topic})}"
+                "\n\n"
             )
 
-            # 5. TTS from body → WAV
-            wav_bytes = await asyncio.to_thread(_tts_sync, slide_body)
-            wav_path  = tmp / f"audio_{n:02d}.wav"
-            wav_path.write_bytes(wav_bytes)
+        except Exception as exc:
+            print(f"[VisualPodcast] Error: {exc}")
+            yield (
+                f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}"
+                "\n\n"
+            )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            clips_data.append((img_path, wav_path))
-            meta.append({"slide_num": n, "heading": heading, "body": slide_body, "narration": slide_body})
-
-        # 6. MoviePy → final MP4
-        final_path = tmp / "podcast.mp4"
-        await asyncio.to_thread(_make_video_sync, clips_data, final_path)
-
-        video_b64 = base64.b64encode(final_path.read_bytes()).decode()
-        print(f"[VisualPodcast] Done — {len(video_b64)//1024} KB b64, {num} slides")
-
-        return JSONResponse({"video_b64": video_b64, "slides": meta, "topic": topic})
-
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx/Railway proxy buffering
+        },
+    )
 
 
 # ── Save Firebase URL route ────────────────────────────────────────────────────

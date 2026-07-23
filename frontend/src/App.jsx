@@ -253,6 +253,8 @@ export default function App() {
   const [visualPodcastResults, setVisualPodcastResults] = useState({});
   // visualPodcastResults: { [notebookId]: { video_b64, slides, topic } }
   const [visualPodcastCardFlash, setVisualPodcastCardFlash] = useState(false); // triggers perimeter animation after config
+  const [visualPodcastProgress, setVisualPodcastProgress] = useState({});
+  // visualPodcastProgress: { [notebookId]: { slide: N, total: M, heading: '...' } }
 
   // Quiz state
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -1722,6 +1724,7 @@ export default function App() {
     const selectedPdfIds = (notebookPdfs[notebookId] || [])
       .filter(p => p.selected).map(p => p.doc_id).filter(Boolean);
     setIsGeneratingVisualPodcast(true);
+    setVisualPodcastProgress(prev => ({ ...prev, [notebookId]: { slide: 0, total: numSlides, heading: 'Starting…' } }));
     try {
       const token = await getToken();
       const res = await fetch(`${BACKEND_URL}/visual-podcast/generate`, {
@@ -1738,29 +1741,52 @@ export default function App() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Server error ${res.status}`);
       }
-      const data = await res.json();
-      setVisualPodcastResults(prev => ({ ...prev, [notebookId]: data }));
-      // Don't auto-open — user opens via the result box in the sidebar
 
-      // Auto-save to Firebase + MongoDB in background so it survives refresh
+      // ── Read SSE stream ──────────────────────────────────────────────────────
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let doneData = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete last line
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let parsed;
+          try { parsed = JSON.parse(line.slice(6)); } catch { continue; }
+          if (parsed.type === 'progress') {
+            setVisualPodcastProgress(prev => ({
+              ...prev,
+              [notebookId]: { slide: parsed.slide, total: parsed.total, heading: parsed.heading },
+            }));
+          } else if (parsed.type === 'done') {
+            doneData = parsed; // { url, slides, topic }
+          } else if (parsed.type === 'error') {
+            throw new Error(parsed.detail);
+          }
+        }
+      }
+
+      if (!doneData) throw new Error('No response received from server.');
+
+      // Backend already uploaded to Firebase — store URL directly
+      setVisualPodcastData(prev => ({ ...prev, [notebookId]: doneData.url }));
+      setVisualPodcastResults(prev => ({ ...prev, [notebookId]: { url: doneData.url, slides: doneData.slides, topic: doneData.topic } }));
+
+      // Persist Firebase URL to MongoDB notebook
       (async () => {
         try {
-          const raw = atob(data.video_b64);
-          const arr = new Uint8Array(raw.length);
-          for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-          const blob = new Blob([arr], { type: 'video/mp4' });
-          const storagePath = `visual-podcasts/${user?.id}/${notebookId}/${Date.now()}.mp4`;
-          const storageRef = ref(storage, storagePath);
-          await uploadBytes(storageRef, blob, { contentType: 'video/mp4' });
-          const firebaseUrl = await getDownloadURL(storageRef);
           const saveToken = await getToken();
           await fetch(`${BACKEND_URL}/notebooks/${notebookId}/visual-podcast`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
-            body: JSON.stringify({ url: firebaseUrl }),
+            body: JSON.stringify({ url: doneData.url }),
           });
-          setVisualPodcastData(prev => ({ ...prev, [notebookId]: firebaseUrl }));
-          console.log('[VisualPodcast] Auto-saved to Firebase:', notebookId);
+          console.log('[VisualPodcast] Saved Firebase URL to MongoDB:', notebookId);
         } catch (saveErr) {
           console.error('[VisualPodcast auto-save]', saveErr);
         }
@@ -1770,6 +1796,7 @@ export default function App() {
       alert(`Visual Podcast generation failed: ${err.message}`);
     } finally {
       setIsGeneratingVisualPodcast(false);
+      setVisualPodcastProgress(prev => { const n = { ...prev }; delete n[notebookId]; return n; });
     }
   };
 
@@ -4395,7 +4422,11 @@ export default function App() {
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Visual Podcast</p>
                               <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                                {isGeneratingVisualPodcast ? 'Generating podcast…' : 'Tap to play'}
+                              {isGeneratingVisualPodcast ? (
+                                visualPodcastProgress[activeNotebookId]?.slide > 0
+                                  ? `Slide ${visualPodcastProgress[activeNotebookId].slide} / ${visualPodcastProgress[activeNotebookId].total} — ${visualPodcastProgress[activeNotebookId].heading}`
+                                  : 'Starting…'
+                              ) : 'Tap to play'}
                               </p>
                             </div>
                           </button>

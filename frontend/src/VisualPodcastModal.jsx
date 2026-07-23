@@ -1,29 +1,24 @@
-﻿/**
+/**
  * VisualPodcastModal
  *
  * Config screen  — collect numSlides / styleNotes, call onGenerate, close.
- * Result screen  — play video, save to Firebase, download.
- * Generation lives in App.jsx (same pattern as Mind Map / Flashcards).
+ * Result screen  — play video (Firebase URL), download.
+ * Generation lives in App.jsx; backend uploads to Firebase and returns URL.
  *
  * Props:
- *   result       { video_b64, slides, topic } | null
- *   existingUrl  string | null
- *   getToken     function
- *   user         object
+ *   result       { url, slides, topic } | null   — fresh generation result
+ *   existingUrl  string | null                   — previously saved Firebase URL
  *   notebookId   string
  *   onClose      function
  *   onGenerate   function(numSlides, styleNotes)
- *   onSaved      function(notebookId, url)
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  X, Podcast, Minus, Plus, Loader2, CheckCircle2,
-  Download, RefreshCw, BookmarkPlus, ChevronDown, ChevronUp,
+  X, Podcast, Minus, Plus,
+  Download, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { storage } from './firebase.jsx';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const SECS_PER_SLIDE = 22;
@@ -31,86 +26,33 @@ const SECS_PER_SLIDE = 22;
 export default function VisualPodcastModal({
   result      = null,
   existingUrl = null,
-  getToken,
-  user,
   notebookId,
   onClose,
   onGenerate,
-  onSaved,
 }) {
-  const [step, setStep]         = useState(result ? 'done' : existingUrl ? 'existing' : 'config');
-  const [numSlides, setNumSlides] = useState(5);
+  const [step, setStep]           = useState(result ? 'done' : existingUrl ? 'existing' : 'config');
+  const [numSlides, setNumSlides]   = useState(5);
   const [styleNotes, setStyleNotes] = useState('');
-  const [videoUrl, setVideoUrl] = useState(existingUrl || null);
-  const blobUrlRef              = useRef(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [savedUrl, setSavedUrl] = useState(existingUrl || null);
-  const [expanded, setExpanded] = useState(null);
+  const [videoUrl, setVideoUrl]     = useState(result?.url || existingUrl || null);
+  const [expanded, setExpanded]     = useState(null);
 
-  // Decode fresh result into a Blob URL
+  // When a fresh result arrives, use its Firebase URL directly
   useEffect(() => {
-    if (!result?.video_b64) return;
-    const raw = atob(result.video_b64);
-    const arr = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-    const blob = new Blob([arr], { type: 'video/mp4' });
-    const url  = URL.createObjectURL(blob);
-    blobUrlRef.current = url;
-    setVideoUrl(url);
+    if (!result?.url) return;
+    setVideoUrl(result.url);
     setStep('done');
   }, [result]);
 
-  // Revoke blob URL on unmount
-  useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
-
-  // When parent auto-save completes, existingUrl updates — reflect that in savedUrl
-  useEffect(() => { if (existingUrl) setSavedUrl(existingUrl); }, [existingUrl]);
+  // When parent sets existingUrl (e.g. on load), reflect it
+  useEffect(() => { if (existingUrl && !videoUrl) setVideoUrl(existingUrl); }, [existingUrl]);
 
   // Close modal and hand generation off to App.jsx
   const handleGenerate = () => { onGenerate?.(numSlides, styleNotes); onClose(); };
 
-  // Save to Firebase + MongoDB
-  const save = async () => {
-    if (!result?.video_b64) return;
-    setIsSaving(true);
-    try {
-      const raw = atob(result.video_b64);
-      const arr = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-      const blob = new Blob([arr], { type: 'video/mp4' });
-      const storageRef = ref(storage, `visual-podcasts/${user?.id}/${notebookId}/${Date.now()}.mp4`);
-      await uploadBytes(storageRef, blob, { contentType: 'video/mp4' });
-      const firebaseUrl = await getDownloadURL(storageRef);
-      const token = await getToken();
-      await fetch(`${BACKEND_URL}/notebooks/${notebookId}/visual-podcast`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ url: firebaseUrl }),
-      });
-      setSavedUrl(firebaseUrl);
-      onSaved?.(notebookId, firebaseUrl);
-    } catch (err) {
-      alert(`Save failed: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Download
+  // Download — open Firebase URL in new tab
   const download = () => {
-    if (result?.video_b64) {
-      const raw = atob(result.video_b64);
-      const arr = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([arr], { type: 'video/mp4' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `visual-podcast-${(result.topic || 'mindpad').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.mp4`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 3000);
-    } else if (existingUrl) {
-      window.open(existingUrl, '_blank');
-    }
+    const url = videoUrl || existingUrl;
+    if (url) window.open(url, '_blank');
   };
 
   const isReady = step === 'done' || step === 'existing';
@@ -210,21 +152,9 @@ export default function VisualPodcastModal({
 
                 {/* Actions */}
                 <div className="flex items-center gap-3 flex-wrap">
-                  {step === 'done' && !savedUrl && (
-                    <button onClick={save} disabled={isSaving}
-                      className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-all shadow-md shadow-primary/20">
-                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookmarkPlus className="w-4 h-4" />}
-                      {isSaving ? 'Saving…' : 'Save to Notebook'}
-                    </button>
-                  )}
-                  {savedUrl && (
-                    <div className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-xl text-sm font-semibold border border-emerald-200 dark:border-emerald-700/40">
-                      <CheckCircle2 className="w-4 h-4" /> Saved to Notebook
-                    </div>
-                  )}
                   <button onClick={download}
-                    className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <Download className="w-4 h-4" /> Download
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <Download className="w-4 h-4" /> Open / Download
                   </button>
                   <button onClick={() => setStep('config')} title="Regenerate"
                     className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
