@@ -3,7 +3,7 @@ import {
   X, SlidersHorizontal, HardDrive, FileText,
   Image as ImageIcon, Loader2, RefreshCw,
   Trash2, ChevronRight, AlertTriangle,
-  Video, Mic, Save, Sparkles,
+  Video, Mic, Save, Sparkles, Microscope, Globe, BrainCog,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { storage } from './firebase.jsx';
@@ -57,49 +57,47 @@ function StorageSection({ expanded, onToggle, barColor, icon: Icon, label, metaL
 }
 
 // ── Reusable file row ────────────────────────────────────────────────────────
-function FileRow({ id, icon: Icon, name, metaText, confirmingId, onConfirm, onCancel, onDelete, deletingId }) {
-  if (confirmingId === id) {
-    return (
-      <div className="flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5">
-        <AlertTriangle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        <span className="text-xs text-slate-600 dark:text-slate-300 flex-1 truncate">Permanently delete?</span>
-        <button
-          onClick={onCancel}
-          className="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 px-2 py-0.5 rounded transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onDelete}
-          disabled={!!deletingId}
-          className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-black dark:bg-slate-200 dark:hover:bg-white dark:text-slate-900 text-white px-2 py-0.5 rounded disabled:opacity-50 transition-colors"
-        >
-          {deletingId === id && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
-          Delete
-        </button>
-      </div>
-    );
-  }
+// ── Selectable file row (checkbox-based) ────────────────────────────────────
+function FileRow({ itemKey, icon: Icon, name, metaText, isSelected, onToggle }) {
   return (
-    <div className="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors">
+    <div
+      onClick={onToggle}
+      className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors select-none ${
+        isSelected
+          ? 'bg-slate-100 dark:bg-slate-700/70'
+          : 'hover:bg-slate-100 dark:hover:bg-slate-700/60'
+      }`}
+    >
+      {/* Checkbox */}
+      <span
+        className={`shrink-0 w-3.5 h-3.5 rounded border transition-colors ${
+          isSelected
+            ? 'bg-slate-800 dark:bg-slate-100 border-slate-800 dark:border-slate-100'
+            : 'border-slate-300 dark:border-slate-600'
+        } flex items-center justify-center`}
+      >
+        {isSelected && (
+          <svg className="w-2 h-2 text-white dark:text-slate-900" fill="none" viewBox="0 0 10 10">
+            <path d="M1.5 5l2.5 2.5L8.5 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
       <Icon className="w-3 h-3 text-slate-400 shrink-0" />
       <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1" title={name}>{name}</span>
       <span className="text-[11px] text-slate-400 tabular-nums shrink-0">{metaText}</span>
-      <button
-        onClick={onConfirm}
-        className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
-        title="Delete"
-      >
-        <Trash2 className="w-3 h-3" />
-      </button>
     </div>
   );
 }
+
 
 export default function PreferencesModal({
   open, onClose,
   user, getToken,
   responseStyle = '', onSaveResponseStyle,
+  isResearchMode, setIsResearchMode,
+  isDeepResearch, setIsDeepResearch,
+  isWebSearch, setIsWebSearch,
+  isMultimediaRetrieval, setIsMultimediaRetrieval,
   onPdfDeleted, onCanvasDeleted,
   onAudioPodcastDeleted, onVisualPodcastDeleted,
   userPlan = 'free',
@@ -123,8 +121,17 @@ export default function PreferencesModal({
   const [expandedAudio,  setExpandedAudio]  = useState(false);
   const [expandedVisual, setExpandedVisual] = useState(false);
 
-  const [confirmingDelete, setConfirmingDelete] = useState(null); // { type, id, name, url? }
-  const [deletingId, setDeletingId]             = useState(null);
+  const [selectedForDelete, setSelectedForDelete] = useState(new Map()); // Map<key, {type,id,url,name}>
+  const [bulkConfirming, setBulkConfirming]       = useState(false);
+  const [bulkDeleting,   setBulkDeleting]         = useState(false);
+
+  const toggleItem = (key, meta) => {
+    setSelectedForDelete(prev => {
+      const next = new Map(prev);
+      if (next.has(key)) next.delete(key); else next.set(key, meta);
+      return next;
+    });
+  };
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchStorageUsage = useCallback(async () => {
@@ -206,43 +213,42 @@ export default function PreferencesModal({
       setExpandedCanvas(false);
       setExpandedAudio(false);
       setExpandedVisual(false);
-      setConfirmingDelete(null);
+      setSelectedForDelete(new Map());
+      setBulkConfirming(false);
     }
   }, [open, fetchStorageUsage]);
 
-  // ── Delete ────────────────────────────────────────────────────────────────
-  const doDelete = async ({ type, id, url }) => {
-    setDeletingId(id);
+  // ── Bulk Delete ───────────────────────────────────────────────────────────
+  const doBulkDelete = async () => {
+    setBulkDeleting(true);
     try {
       const token = await getToken();
-
-      if (type === 'pdf') {
-        try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
-        await fetch(`${BACKEND_URL}/storage/pdf/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-        onPdfDeleted?.(id);
-
-      } else if (type === 'canvas') {
-        try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
-        await fetch(`${BACKEND_URL}/storage/canvas/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-        onCanvasDeleted?.(id);
-
-      } else if (type === 'audio') {
-        try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
-        await fetch(`${BACKEND_URL}/storage/audio-podcast/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-        onAudioPodcastDeleted?.(id);
-
-      } else if (type === 'visual') {
-        try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
-        await fetch(`${BACKEND_URL}/storage/visual-podcast/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-        onVisualPodcastDeleted?.(id);
-      }
-
+      await Promise.all([...selectedForDelete.values()].map(async ({ type, id, url }) => {
+        try {
+          if (type === 'pdf') {
+            try { await deleteObject(ref(storage, url)); } catch { /* gone */ }
+            await fetch(`${BACKEND_URL}/storage/pdf/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            onPdfDeleted?.(id);
+          } else if (type === 'canvas') {
+            try { await deleteObject(ref(storage, url)); } catch { /* gone */ }
+            await fetch(`${BACKEND_URL}/storage/canvas/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            onCanvasDeleted?.(id);
+          } else if (type === 'audio') {
+            try { await deleteObject(ref(storage, url)); } catch { /* gone */ }
+            await fetch(`${BACKEND_URL}/storage/audio-podcast/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            onAudioPodcastDeleted?.(id);
+          } else if (type === 'visual') {
+            try { await deleteObject(ref(storage, url)); } catch { /* gone */ }
+            await fetch(`${BACKEND_URL}/storage/visual-podcast/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            onVisualPodcastDeleted?.(id);
+          }
+        } catch (e) { console.error('[Storage] Delete failed:', type, id, e); }
+      }));
+      setSelectedForDelete(new Map());
+      setBulkConfirming(false);
       await fetchStorageUsage();
-    } catch (e) {
-      console.error(`[Storage] Delete failed (type=${type}):`, e);
     } finally {
-      setDeletingId(null);
-      setConfirmingDelete(null);
+      setBulkDeleting(false);
     }
   };
 
@@ -302,33 +308,71 @@ export default function PreferencesModal({
             {/* Body */}
             <div className="flex-1 flex flex-col overflow-y-auto p-5 gap-4">
 
-              {/* ── Answer Style ──────────────────────────────────────── */}
-              <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Answer Style</span>
-                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{localStyle.length}/500</span>
+              {/* ── AI Settings ──────────────────────────────────────── */}
+              <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <BrainCog className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">AI Settings</span>
                 </div>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                  Tell Midy AI how to write its answers — tone, length, format, detail level, etc.
-                </p>
-                <textarea
-                  value={localStyle}
-                  onChange={e => setLocalStyle(e.target.value.slice(0, 500))}
-                  rows={3}
-                  placeholder={`e.g. "Always explain in simple language with short paragraphs. Use bullet points for lists. Avoid jargon."`}
-                  className="w-full resize-none text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-shadow"
-                />
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveStyle}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-black dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 transition-colors"
+
+                {/* Toggle row component (inline) */}
+                {[
+                  {
+                    label: 'Research Mode',
+                    desc: 'Gives longer, more detailed and thorough answers',
+                    icon: Microscope,
+                    value: isResearchMode,
+                    set: setIsResearchMode,
+                  },
+                  {
+                    label: 'Deep Research',
+                    desc: 'Searches the web deeply and builds answers from live sources',
+                    icon: Globe,
+                    value: isDeepResearch,
+                    set: setIsDeepResearch,
+                  },
+                  {
+                    label: 'Web Search',
+                    desc: 'Looks up the latest information online before answering',
+                    icon: Globe,
+                    value: isWebSearch,
+                    set: setIsWebSearch,
+                  },
+                  {
+                    label: 'Multimedia Retrieval',
+                    desc: 'Reads and understands images inside your PDFs',
+                    icon: ImageIcon,
+                    value: isMultimediaRetrieval,
+                    set: setIsMultimediaRetrieval,
+                  },
+                ].map(({ label, desc, icon: Icon, value, set }, idx, arr) => (
+                  <div
+                    key={label}
+                    className={`flex items-center justify-between py-2.5 ${
+                      idx < arr.length - 1 ? 'border-b border-slate-100 dark:border-slate-700' : ''
+                    }`}
                   >
-                    {styleSaved
-                      ? <><span className="text-green-400 dark:text-green-600">✓</span> Saved</>
-                      : <><Save className="w-3 h-3" /> Save</>}
-                  </button>
-                </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-700 dark:text-slate-300 leading-none mb-0.5">{label}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{desc}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => set(p => !p)}
+                      className={`relative ml-4 w-9 h-5 rounded-full transition-colors duration-250 focus:outline-none shrink-0 ${
+                        value ? 'bg-slate-800 dark:bg-slate-200' : 'bg-slate-200 dark:bg-slate-600'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white dark:bg-slate-900 rounded-full shadow transition-transform duration-250 ${
+                          value ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
               </div>
 
               {/* ── Storage ───────────────────────────────────────────── */}
@@ -455,17 +499,17 @@ export default function PreferencesModal({
                       metaCount={`${storageData.pdfFiles.length} file${storageData.pdfFiles.length !== 1 ? 's' : ''}`}
                     >
                       {storageData.pdfFiles.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No documents stored.</p>}
-                      {storageData.pdfFiles.map(pdf => (
-                        <FileRow
-                          key={pdf.doc_id} id={pdf.doc_id} icon={FileText} name={pdf.name}
-                          metaText={formatBytes(pdf.size)}
-                          confirmingId={confirmingDelete?.id}
-                          onConfirm={() => setConfirmingDelete({ type: 'pdf', id: pdf.doc_id, name: pdf.name, url: pdf.firebase_pdf_url })}
-                          onCancel={() => setConfirmingDelete(null)}
-                          onDelete={() => doDelete({ type: 'pdf', id: pdf.doc_id, url: pdf.firebase_pdf_url })}
-                          deletingId={deletingId}
-                        />
-                      ))}
+                      {storageData.pdfFiles.map(pdf => {
+                        const key = `pdf-${pdf.doc_id}`;
+                        return (
+                          <FileRow
+                            key={key} itemKey={key} icon={FileText} name={pdf.name}
+                            metaText={formatBytes(pdf.size)}
+                            isSelected={selectedForDelete.has(key)}
+                            onToggle={() => toggleItem(key, { type: 'pdf', id: pdf.doc_id, url: pdf.firebase_pdf_url, name: pdf.name })}
+                          />
+                        );
+                      })}
                     </StorageSection>
 
                     {/* ── Insight Canvas ── */}
@@ -476,17 +520,17 @@ export default function PreferencesModal({
                       metaCount={`${storageData.canvasFiles.length} image${storageData.canvasFiles.length !== 1 ? 's' : ''}`}
                     >
                       {storageData.canvasFiles.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No canvas images stored.</p>}
-                      {storageData.canvasFiles.map(canvas => (
-                        <FileRow
-                          key={canvas.notebook_id} id={canvas.notebook_id} icon={ImageIcon} name={canvas.name}
-                          metaText={formatBytes(canvas.size)}
-                          confirmingId={confirmingDelete?.id}
-                          onConfirm={() => setConfirmingDelete({ type: 'canvas', id: canvas.notebook_id, name: canvas.name, url: canvas.url })}
-                          onCancel={() => setConfirmingDelete(null)}
-                          onDelete={() => doDelete({ type: 'canvas', id: canvas.notebook_id, url: canvas.url })}
-                          deletingId={deletingId}
-                        />
-                      ))}
+                      {storageData.canvasFiles.map(canvas => {
+                        const key = `canvas-${canvas.notebook_id}`;
+                        return (
+                          <FileRow
+                            key={key} itemKey={key} icon={ImageIcon} name={canvas.name}
+                            metaText={formatBytes(canvas.size)}
+                            isSelected={selectedForDelete.has(key)}
+                            onToggle={() => toggleItem(key, { type: 'canvas', id: canvas.notebook_id, url: canvas.url, name: canvas.name })}
+                          />
+                        );
+                      })}
                     </StorageSection>
 
                     {/* ── Audio Podcasts ── */}
@@ -497,17 +541,17 @@ export default function PreferencesModal({
                       metaCount={`${storageData.audioFiles.length} file${storageData.audioFiles.length !== 1 ? 's' : ''}`}
                     >
                       {storageData.audioFiles.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No audio podcasts stored.</p>}
-                      {storageData.audioFiles.map(ap => (
-                        <FileRow
-                          key={ap.notebook_id} id={ap.notebook_id} icon={Mic} name={ap.name}
-                          metaText={formatBytes(ap.size)}
-                          confirmingId={confirmingDelete?.id}
-                          onConfirm={() => setConfirmingDelete({ type: 'audio', id: ap.notebook_id, name: ap.name, url: ap.url })}
-                          onCancel={() => setConfirmingDelete(null)}
-                          onDelete={() => doDelete({ type: 'audio', id: ap.notebook_id, url: ap.url })}
-                          deletingId={deletingId}
-                        />
-                      ))}
+                      {storageData.audioFiles.map(ap => {
+                        const key = `audio-${ap.notebook_id}`;
+                        return (
+                          <FileRow
+                            key={key} itemKey={key} icon={Mic} name={ap.name}
+                            metaText={formatBytes(ap.size)}
+                            isSelected={selectedForDelete.has(key)}
+                            onToggle={() => toggleItem(key, { type: 'audio', id: ap.notebook_id, url: ap.url, name: ap.name })}
+                          />
+                        );
+                      })}
                     </StorageSection>
 
                     {/* ── Visual Podcasts ── */}
@@ -518,18 +562,73 @@ export default function PreferencesModal({
                       metaCount={`${storageData.visualFiles.length} file${storageData.visualFiles.length !== 1 ? 's' : ''}`}
                     >
                       {storageData.visualFiles.length === 0 && <p className="text-xs text-slate-400 px-2 py-1.5">No visual podcasts stored.</p>}
-                      {storageData.visualFiles.map(vp => (
-                        <FileRow
-                          key={vp.notebook_id} id={vp.notebook_id} icon={Video} name={vp.name}
-                          metaText={formatBytes(vp.size)}
-                          confirmingId={confirmingDelete?.id}
-                          onConfirm={() => setConfirmingDelete({ type: 'visual', id: vp.notebook_id, name: vp.name, url: vp.url })}
-                          onCancel={() => setConfirmingDelete(null)}
-                          onDelete={() => doDelete({ type: 'visual', id: vp.notebook_id, url: vp.url })}
-                          deletingId={deletingId}
-                        />
-                      ))}
+                      {storageData.visualFiles.map(vp => {
+                        const key = `visual-${vp.notebook_id}`;
+                        return (
+                          <FileRow
+                            key={key} itemKey={key} icon={Video} name={vp.name}
+                            metaText={formatBytes(vp.size)}
+                            isSelected={selectedForDelete.has(key)}
+                            onToggle={() => toggleItem(key, { type: 'visual', id: vp.notebook_id, url: vp.url, name: vp.name })}
+                          />
+                        );
+                      })}
                     </StorageSection>
+
+                    {/* ── Bulk delete bar ── */}
+                    <AnimatePresence>
+                      {selectedForDelete.size > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ duration: 0.18 }}
+                          className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700 mt-1"
+                        >
+                          {bulkConfirming ? (
+                            <>
+                              <AlertTriangle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span className="text-xs text-slate-600 dark:text-slate-300 flex-1">
+                                Delete {selectedForDelete.size} item{selectedForDelete.size !== 1 ? 's' : ''}?
+                              </span>
+                              <button
+                                onClick={() => setBulkConfirming(false)}
+                                className="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 px-2 py-0.5 rounded transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={doBulkDelete}
+                                disabled={bulkDeleting}
+                                className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-black dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white px-2.5 py-1 rounded-lg disabled:opacity-50 transition-colors"
+                              >
+                                {bulkDeleting && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                                Confirm delete
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-xs text-slate-500 flex-1">
+                                {selectedForDelete.size} selected
+                              </span>
+                              <button
+                                onClick={() => setSelectedForDelete(new Map())}
+                                className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-0.5 rounded transition-colors"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                onClick={() => setBulkConfirming(true)}
+                                className="flex items-center gap-1.5 text-[11px] bg-slate-800 hover:bg-black dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Delete {selectedForDelete.size} selected
+                              </button>
+                            </>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     {/* Near-limit warning */}
                     {usedPct > 80 && (
@@ -544,6 +643,35 @@ export default function PreferencesModal({
                     </AnimatePresence>
                   </div>
                 )}
+              </div>
+
+              {/* ── Answer Style ──────────────────────────────────────── */}
+              <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Answer Style</span>
+                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{localStyle.length}/500</span>
+                </div>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Tell Midy AI how to write its answers — tone, length, format, detail level, etc.
+                </p>
+                <textarea
+                  value={localStyle}
+                  onChange={e => setLocalStyle(e.target.value.slice(0, 500))}
+                  rows={3}
+                  placeholder={`e.g. "Always explain in simple language with short paragraphs. Use bullet points for lists. Avoid jargon."`}
+                  className="w-full resize-none text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-500 transition-shadow"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveStyle}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-black dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 transition-colors"
+                  >
+                    {styleSaved
+                      ? <><span className="text-green-400 dark:text-green-600">✓</span> Saved</>
+                      : <><Save className="w-3 h-3" /> Save</>}
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>
