@@ -558,7 +558,7 @@ async def generate_visual_podcast(
 
             # 1b. One LLM call decides the theme that every slide must share
             yield (
-                f"data: {json.dumps({'type': 'progress', 'slide': 0, 'total': num, 'heading': 'Designing theme…'})}"
+                f"data: {json.dumps({'type': 'progress', 'slide': 0, 'total': num, 'heading': 'Designing the look of your video…'})}"
                 "\n\n"
             )
             theme = await _decide_theme(ctx, topic, body.style_notes)
@@ -592,10 +592,18 @@ async def generate_visual_podcast(
                     "img": img_path, "wav": wav_path, "enhanced": enhanced,
                 }
 
-            def progress_event(done: int, heading: str) -> str:
+            def progress_event(done: int, message: str) -> str:
+                # `heading` carries a user-facing status line (no slide counts / internals)
                 return (
-                    f"data: {json.dumps({'type': 'progress', 'slide': done, 'total': num, 'heading': heading})}"
+                    f"data: {json.dumps({'type': 'progress', 'slide': done, 'total': num, 'heading': message})}"
                     "\n\n"
+                )
+
+            def stage_message(done: int) -> str:
+                return (
+                    "Creating your scenes and visuals…"
+                    if done / num < 0.5
+                    else "Adding narration and final touches…"
                 )
 
             results: List[dict] = []
@@ -605,7 +613,7 @@ async def generate_visual_podcast(
             first = await build_slide(1, None)
             results.append(first)
             anchor_bytes: Optional[bytes] = first["enhanced"]
-            yield progress_event(len(results), first["heading"])
+            yield progress_event(len(results), stage_message(len(results)))
 
             # Slides 2..N run concurrently (capped by MAX_PARALLEL_SLIDES); progress
             # is reported as each one finishes, whatever its position.
@@ -614,7 +622,8 @@ async def generate_visual_podcast(
                 for fut in asyncio.as_completed(tasks):
                     res = await fut
                     results.append(res)
-                    yield progress_event(len(results), res["heading"])
+                    if len(results) < num:
+                        yield progress_event(len(results), stage_message(len(results)))
             finally:
                 for t in tasks:
                     if not t.done():
@@ -626,10 +635,12 @@ async def generate_visual_podcast(
                 meta.append({"slide_num": r["n"], "heading": r["heading"], "body": r["body"], "narration": r["body"]})
 
             # 6. MoviePy → MP4
+            yield progress_event(num, "Putting your video together…")
             final_path = tmp / "podcast.mp4"
             await asyncio.to_thread(_make_video_sync, clips_data, final_path)
             mp4_bytes = final_path.read_bytes()
             print(f"[VisualPodcast] MP4 built — {len(mp4_bytes)//1024} KB, {num} slides")
+            yield progress_event(num, "Saving your video…")
 
             # 7. Upload to Firebase, get download URL
             firebase_url = await _upload_to_firebase(mp4_bytes, user_id, body.notebook_id)

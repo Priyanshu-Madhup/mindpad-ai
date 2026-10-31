@@ -251,14 +251,15 @@
   to { --studio-pill-angle: 360deg; }
 }
 
-/* ── Fluid progress fill (Visual Podcast card) ────────────────────────────── */
-@keyframes fluid-drift-a { from { transform: translateX(0); }    to { transform: translateX(-50%); } }
-@keyframes fluid-drift-b { from { transform: translateX(-50%); } to { transform: translateX(0); } }
-@keyframes fluid-bob     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
-.fluid-wave   { position: absolute; left: 0; width: 200%; height: 18px; }
-.fluid-wave-a { animation: fluid-drift-a 5.5s linear infinite; }
-.fluid-wave-b { animation: fluid-drift-b 8.5s linear infinite; }
-.fluid-surface { animation: fluid-bob 3.2s ease-in-out infinite; }
+/* ── Fluid progress fill (Visual Podcast card) — flows left → right ───────── */
+@keyframes fluid-flow-up   { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
+@keyframes fluid-flow-down { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+@keyframes fluid-sway      { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+@keyframes fluid-shimmer   { from { transform: translateX(-120%); } to { transform: translateX(330%); } }
+.fluid-flow-up   { animation: fluid-flow-up 3.4s linear infinite; }
+.fluid-flow-down { animation: fluid-flow-down 5.2s linear infinite; }
+.fluid-sway    { animation: fluid-sway 2.8s ease-in-out infinite; }
+.fluid-shimmer { animation: fluid-shimmer 3.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .fluid-wave-a, .fluid-wave-b, .fluid-surface { animation: none; }
+  .fluid-flow-up, .fluid-flow-down, .fluid-sway, .fluid-shimmer { animation: none; }
 }

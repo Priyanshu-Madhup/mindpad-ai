@@ -72,7 +72,11 @@ async def generate_image_bytes(
     payload: dict = {"model": IMAGE_MODEL, "prompt": prompt, "n": 1}
     if references:
         payload["input_references"] = [
-            "data:image/png;base64," + base64.b64encode(r).decode() for r in references
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64," + base64.b64encode(r).decode()},
+            }
+            for r in references
         ]
     async with httpx.AsyncClient(timeout=300) as http:
         resp = await http.post(

@@ -170,24 +170,42 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
   );
 };
 
-// Greyish fluid that rises to `pct` (0-100) behind a card's content, with two wobbling wave layers.
-const FLUID_WAVE_PATH = 'M0,9 Q150,0 300,9 T600,9 T900,9 T1200,9 V18 H0 Z';
+// Greyish fluid that flows left → right to `pct` (0-100) behind a card's content.
+// The leading (right) edge is a rippling liquid front built from two drifting wave
+// layers; a soft shimmer keeps travelling through the body so it always looks alive.
+// One tile = 600 units tall (= one card height). Irregular lobes, same x at both ends so
+// two stacked tiles loop seamlessly when the strip slides by exactly one tile.
+const fluidTile = (o) =>
+  `C28,${o + 70} 3,${o + 125} 15,${o + 190} S27,${o + 265} 11,${o + 330} ` +
+  `S2,${o + 400} 17,${o + 465} S26,${o + 545} 14,${o + 600} `;
+const FLUID_EDGE_PATH = `M0,0 H14 ${fluidTile(0)}${fluidTile(600)}H0 Z`;
+const FluidEdge = ({ color, left, dir, duration }) => (
+  <div className="absolute top-0 h-full overflow-hidden" style={{ width: 30, left }}>
+    <svg
+      className={`absolute left-0 top-0 w-full ${color} ${dir === 'up' ? 'fluid-flow-up' : 'fluid-flow-down'}`}
+      style={{ height: '200%', animationDuration: duration }}
+      viewBox="0 0 30 1200"
+      preserveAspectRatio="none"
+    >
+      <path d={FLUID_EDGE_PATH} fill="currentColor" />
+    </svg>
+  </div>
+);
 const FluidFill = ({ pct }) => (
   <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[inherit]" aria-hidden="true">
     <div
-      className="absolute inset-x-0 bottom-0"
-      style={{ height: `${pct}%`, transition: 'height 1.6s cubic-bezier(0.22, 1, 0.36, 1)' }}
+      className="absolute inset-y-0 left-0"
+      style={{ width: `${pct}%`, transition: 'width 2.2s cubic-bezier(0.22, 1, 0.36, 1)' }}
     >
-      <div className="fluid-surface absolute inset-x-0 top-0">
-        <div className="absolute inset-x-0" style={{ top: -14, height: 18, overflow: 'hidden' }}>
-          <svg className="fluid-wave fluid-wave-b text-slate-400/25 dark:text-slate-400/20" style={{ top: 2 }} viewBox="0 0 1200 18" preserveAspectRatio="none">
-            <path d={FLUID_WAVE_PATH} fill="currentColor" />
-          </svg>
-          <svg className="fluid-wave fluid-wave-a text-slate-400/40 dark:text-slate-400/30" viewBox="0 0 1200 18" preserveAspectRatio="none">
-            <path d={FLUID_WAVE_PATH} fill="currentColor" />
-          </svg>
+      <div className="fluid-sway absolute inset-0">
+        {/* back swell: sits behind and a little ahead of the front, drifts the other way */}
+        <FluidEdge color="text-slate-200/80 dark:text-slate-600/50" left="calc(100% - 4px)" dir="down" duration="6.5s" />
+        {/* body: solid, so no translucent overlap seams */}
+        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }}>
+          <div className="fluid-shimmer absolute inset-y-0 w-2/5 bg-gradient-to-r from-transparent via-white/60 dark:via-white/10 to-transparent" />
         </div>
-        <div className="absolute inset-x-0 top-0 bg-slate-400/40 dark:bg-slate-400/30" style={{ height: 400 }} />
+        {/* front edge, same colour as the body so it blends into it */}
+        <FluidEdge color="text-slate-200 dark:text-slate-700" left="calc(100% - 15px)" dir="up" duration="4.2s" />
       </div>
     </div>
   </div>
@@ -1747,7 +1765,7 @@ export default function App() {
     const selectedPdfIds = (notebookPdfs[notebookId] || [])
       .filter(p => p.selected).map(p => p.doc_id).filter(Boolean);
     setIsGeneratingVisualPodcast(true);
-    setVisualPodcastProgress(prev => ({ ...prev, [notebookId]: { slide: 0, total: numSlides, heading: 'Starting…' } }));
+    setVisualPodcastProgress(prev => ({ ...prev, [notebookId]: { slide: 0, total: numSlides, heading: 'Getting started…' } }));
     try {
       const token = await getToken();
       const res = await fetch(`${BACKEND_URL}/visual-podcast/generate`, {
@@ -4441,7 +4459,7 @@ export default function App() {
                           <button
                             disabled={isGeneratingVisualPodcast}
                             onClick={() => { if (!isGeneratingVisualPodcast) setShowVisualPodcastModal(true); }}
-                            className="flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
+                            className="relative z-10 flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
                           >
                             <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                               <Video className="w-5 h-5 text-primary dark:text-slate-300" />
@@ -4450,16 +4468,11 @@ export default function App() {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Visual Podcast</p>
-                              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                              {isGeneratingVisualPodcast ? (
-                                (() => {
-                                  const vp = visualPodcastProgress[activeNotebookId];
-                                  if (!vp || vp.slide <= 0) return vp?.heading || 'Starting…';
-                                  if (vp.slide >= vp.total) return 'Combining slides into video…';
-                                  return `${vp.slide} / ${vp.total} slides ready — ${vp.heading}`;
-                                })()
-                              ) : 'Tap to play'}
+                              <p className={`text-[11px] font-bold uppercase tracking-widest ${isGeneratingVisualPodcast ? 'text-slate-800 dark:text-slate-50' : 'text-slate-600 dark:text-slate-300'}`}>Visual Podcast</p>
+                              <p className={`text-[10px] mt-0.5 leading-tight ${isGeneratingVisualPodcast ? 'font-medium text-slate-700 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}`}>
+                              {isGeneratingVisualPodcast
+                                ? (visualPodcastProgress[activeNotebookId]?.heading || 'Getting started…')
+                                : 'Tap to play'}
                               </p>
                             </div>
                           </button>
