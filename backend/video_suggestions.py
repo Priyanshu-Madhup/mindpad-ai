@@ -21,7 +21,7 @@ from typing import List, Optional, Tuple
 import httpx
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from groq import AsyncGroq
+from llm import llm_complete
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
@@ -30,7 +30,6 @@ load_dotenv()
 router = APIRouter()
 
 # ── Clients ─────────────────────────────────────────────────────────────────────
-_groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", ""))
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
 
 # ── MongoDB ──────────────────────────────────────────────────────────────────────
@@ -126,8 +125,7 @@ async def _generate_keyword_queries(doc_context: str) -> List[str]:
     )
 
     try:
-        completion = await _groq_client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+        completion = await llm_complete(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_prompt},

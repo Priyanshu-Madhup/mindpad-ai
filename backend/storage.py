@@ -7,6 +7,23 @@ GET  /storage/usage
   suggestions, audio podcasts, visual podcasts) for the authenticated user so the
   frontend can display and manage all notebook-level stored data.
 
+GET  /storage/summary
+  Instant read of the tracked usage variable (users_meta.storage_used_bytes +
+  per-category breakdown). Both are null until first computed.
+
+POST /storage/sync
+  One-time backfill: the frontend resolves Firebase file sizes for items that
+  have no stored size yet and posts them here; the total is then recomputed.
+
+Tracking model
+  Every Firebase-hosted item stores its byte size in MongoDB when it is saved
+  (pdf_docs.size, notebooks.insight_canvas_size / audio_podcast_size /
+  visual_podcast_size). After any upload, deletion or notebook removal,
+  refresh_storage_used() recomputes the total from those stored sizes (MongoDB
+  only, no Firebase calls) and writes it to users_meta. If any item has no size
+  yet the variable is set to null and the frontend falls back to the one-time
+  Firebase lookup + /storage/sync.
+
 DELETE /storage/pdf/{doc_id}
   Removes all pdf_docs MongoDB rows for a given doc_id (covers dedup copies
   across multiple notebooks). Pinecone vectors are intentionally kept for
@@ -38,10 +55,11 @@ DELETE /storage/visual-podcast/{notebook_id}
 """
 
 import os
-from typing import Optional
+from typing import List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
@@ -53,6 +71,117 @@ _mongo = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 _db = _mongo["mindpad_ai"]
 _notebooks_col = _db["notebooks"]
 _pdf_docs_col  = _db["pdf_docs"]
+_users_meta_col = _db["users_meta"]
+
+# (notebook url field, notebook size field, breakdown key)
+_NB_FILE_FIELDS = (
+    ("insight_canvas_url", "insight_canvas_size", "canvas"),
+    ("audio_podcast_url",  "audio_podcast_size",  "audio"),
+    ("visual_podcast_url", "visual_podcast_size", "visual"),
+)
+
+
+def _is_size(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+
+
+async def compute_breakdown(user_id: str) -> Optional[dict]:
+    """
+    Sum stored byte sizes per category from MongoDB only.
+    Returns None if any counted item has no stored size (caller must backfill).
+    """
+    out = {"pdf": 0, "canvas": 0, "audio": 0, "visual": 0}
+    seen: set[str] = set()
+    async for doc in _pdf_docs_col.find(
+        {"user_id": user_id, "firebase_pdf_url": {"$nin": ["", None]}},
+        {"doc_id": 1, "size": 1},
+    ):
+        doc_id = doc.get("doc_id")
+        if not doc_id or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        if not _is_size(doc.get("size")):
+            return None
+        out["pdf"] += int(doc["size"])
+
+    proj = {k: 1 for f in _NB_FILE_FIELDS for k in f[:2]}
+    async for nb in _notebooks_col.find({"user_id": user_id}, proj):
+        for url_f, size_f, key in _NB_FILE_FIELDS:
+            if nb.get(url_f):
+                if not _is_size(nb.get(size_f)):
+                    return None
+                out[key] += int(nb[size_f])
+    return out
+
+
+async def refresh_storage_used(user_id: str) -> Optional[dict]:
+    """Recompute and persist the tracked usage variable. Never raises."""
+    try:
+        bd = await compute_breakdown(user_id)
+        await _users_meta_col.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "storage_used_bytes": sum(bd.values()) if bd else None,
+                "storage_breakdown":  bd,
+            }},
+        )
+        return bd
+    except Exception as exc:
+        print(f"[Storage] refresh_storage_used failed (non-fatal): {exc}")
+        return None
+
+
+def _summary_payload(bd: Optional[dict]) -> dict:
+    return {"used_bytes": sum(bd.values()) if bd else None, "breakdown": bd}
+
+
+@router.get("/storage/summary")
+async def get_storage_summary(authorization: Optional[str] = Header(None)):
+    """Fast read of the tracked variable. Returns nulls if it has never been computed."""
+    from chat import get_current_user
+    user_id, _ = await get_current_user(authorization)
+    meta = await _users_meta_col.find_one(
+        {"user_id": user_id}, {"storage_used_bytes": 1, "storage_breakdown": 1}
+    ) or {}
+    bd = meta.get("storage_breakdown")
+    if meta.get("storage_used_bytes") is None or not isinstance(bd, dict):
+        return _summary_payload(None)
+    return _summary_payload(bd)
+
+
+class _SyncItem(BaseModel):
+    type: str          # pdf | canvas | audio | visual
+    id: str            # doc_id for pdf, notebook_id otherwise
+    size: int
+
+
+class _SyncBody(BaseModel):
+    items: List[_SyncItem]
+
+
+@router.post("/storage/sync")
+async def sync_storage_sizes(body: _SyncBody, authorization: Optional[str] = Header(None)):
+    """One-time backfill of sizes resolved client-side from Firebase metadata."""
+    from chat import get_current_user
+    user_id, _ = await get_current_user(authorization)
+
+    size_field = {"canvas": "insight_canvas_size", "audio": "audio_podcast_size", "visual": "visual_podcast_size"}
+    for it in body.items:
+        size = max(int(it.size), 0)
+        if it.type == "pdf":
+            await _pdf_docs_col.update_many(
+                {"user_id": user_id, "doc_id": it.id}, {"$set": {"size": size}}
+            )
+        elif it.type in size_field:
+            try:
+                oid = ObjectId(it.id)
+            except Exception:
+                continue
+            await _notebooks_col.update_one(
+                {"_id": oid, "user_id": user_id}, {"$set": {size_field[it.type]: size}}
+            )
+    bd = await refresh_storage_used(user_id)
+    return _summary_payload(bd)
 
 
 @router.get("/storage/usage")
@@ -74,14 +203,17 @@ async def get_storage_usage(authorization: Optional[str] = Header(None)):
     pdfs: list[dict] = []
     async for doc in _pdf_docs_col.find(
         {"user_id": user_id},
-        {"doc_id": 1, "name": 1, "firebase_pdf_url": 1},
+        {"doc_id": 1, "name": 1, "firebase_pdf_url": 1, "size": 1},
     ):
         doc_id = doc.get("doc_id", "")
         url    = doc.get("firebase_pdf_url", "")
         if not doc_id or not url or doc_id in seen:
             continue
         seen.add(doc_id)
-        pdfs.append({"doc_id": doc_id, "name": doc.get("name", ""), "firebase_pdf_url": url})
+        pdfs.append({
+            "doc_id": doc_id, "name": doc.get("name", ""), "firebase_pdf_url": url,
+            "size": doc["size"] if _is_size(doc.get("size")) else None,
+        })
 
     # ── Per-notebook AI Studio data ───────────────────────────────────────────
     canvas_urls: list[dict] = []
@@ -102,6 +234,9 @@ async def get_storage_usage(authorization: Optional[str] = Header(None)):
             "video_suggestions_data": 1,
             "audio_podcast_url": 1,
             "visual_podcast_url": 1,
+            "insight_canvas_size": 1,
+            "audio_podcast_size": 1,
+            "visual_podcast_size": 1,
             "name": 1,
         },
     ):
@@ -114,6 +249,7 @@ async def get_storage_usage(authorization: Optional[str] = Header(None)):
                 "url":         nb["insight_canvas_url"],
                 "name":        nb_name,
                 "notebook_id": nb_id,
+                "size":        nb['insight_canvas_size'] if _is_size(nb.get('insight_canvas_size')) else None,
             })
 
         # Mind Map (pure MongoDB JSON — no Firebase file)
@@ -166,6 +302,7 @@ async def get_storage_usage(authorization: Optional[str] = Header(None)):
                 "url":         nb["audio_podcast_url"],
                 "name":        nb_name,
                 "notebook_id": nb_id,
+                "size":        nb['audio_podcast_size'] if _is_size(nb.get('audio_podcast_size')) else None,
             })
 
         # Visual Podcast (Firebase-hosted video file)
@@ -174,9 +311,14 @@ async def get_storage_usage(authorization: Optional[str] = Header(None)):
                 "url":         nb["visual_podcast_url"],
                 "name":        nb_name,
                 "notebook_id": nb_id,
+                "size":        nb['visual_podcast_size'] if _is_size(nb.get('visual_podcast_size')) else None,
             })
 
+    # Self-heal the tracked variable from MongoDB data only
+    summary = _summary_payload(await refresh_storage_used(user_id))
+
     return {
+        **summary,
         "pdfs":              pdfs,
         "canvas_urls":       canvas_urls,
         "mind_maps":         mind_maps,
@@ -219,6 +361,7 @@ async def delete_pdf_storage(
 
     firebase_pdf_url = doc.get("firebase_pdf_url", "")
     await _pdf_docs_col.delete_many({"doc_id": doc_id, "user_id": user_id})
+    await refresh_storage_used(user_id)
     print(f"[Storage] Deleted all pdf_docs rows for doc_id={doc_id} (Pinecone vectors kept)")
     return {"firebase_pdf_url": firebase_pdf_url}
 
@@ -244,10 +387,11 @@ async def delete_canvas_storage(
 
     result = await _notebooks_col.update_one(
         {"_id": oid, "user_id": user_id},
-        {"$unset": {"insight_canvas_url": ""}},
+        {"$unset": {"insight_canvas_url": "", "insight_canvas_size": ""}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    await refresh_storage_used(user_id)
 
     print(f"[Storage] Cleared insight_canvas_url for notebook={notebook_id}")
     return {"status": "ok"}
@@ -394,10 +538,11 @@ async def delete_audio_podcast_storage(
 
     result = await _notebooks_col.update_one(
         {"_id": oid, "user_id": user_id},
-        {"$unset": {"audio_podcast_url": ""}},
+        {"$unset": {"audio_podcast_url": "", "audio_podcast_size": ""}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    await refresh_storage_used(user_id)
 
     print(f"[Storage] Cleared audio_podcast_url for notebook={notebook_id}")
     return {"status": "ok"}
@@ -424,10 +569,11 @@ async def delete_visual_podcast_storage(
 
     result = await _notebooks_col.update_one(
         {"_id": oid, "user_id": user_id},
-        {"$unset": {"visual_podcast_url": ""}},
+        {"$unset": {"visual_podcast_url": "", "visual_podcast_size": ""}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    await refresh_storage_used(user_id)
 
     print(f"[Storage] Cleared visual_podcast_url for notebook={notebook_id}")
     return {"status": "ok"}

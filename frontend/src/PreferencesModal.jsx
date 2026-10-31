@@ -134,11 +134,32 @@ export default function PreferencesModal({
   };
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  const fetchStorageUsage = useCallback(async () => {
-    if (!user?.id || !getToken) return;
-    setLoadingStorage(true);
-    setStorageData(null);
+  // Usage is a tracked variable on the backend (users_meta.storage_used_bytes),
+  // kept up to date on every upload / delete. The bar is drawn straight from it.
+  // Firebase is only queried as a one-time backup when the variable is still null
+  // (some stored file has no recorded size yet); the sizes are then posted back
+  // so the variable is populated for good.
+  const [loadingFiles, setLoadingFiles] = useState(false);
 
+  const buildStorageData = (bd, files = null) => {
+    const pdfBytes = bd.pdf || 0, canvasBytes = bd.canvas || 0;
+    const audioBytes = bd.audio || 0, visualBytes = bd.visual || 0;
+    return {
+      pdfBytes, canvasBytes, audioBytes, visualBytes,
+      totalBytes: pdfBytes + canvasBytes + audioBytes + visualBytes,
+      pdfFiles: files?.pdfFiles ?? [],
+      canvasFiles: files?.canvasFiles ?? [],
+      audioFiles: files?.audioFiles ?? [],
+      visualFiles: files?.visualFiles ?? [],
+      filesLoaded: !!files,
+    };
+  };
+
+  // Per-file list. Sizes come from MongoDB; Firebase getMetadata() is used only
+  // for items with no stored size (legacy files), and the result is synced back.
+  const loadFiles = useCallback(async () => {
+    if (!user?.id || !getToken) return;
+    setLoadingFiles(true);
     try {
       const token = await getToken();
       const res = await fetch(`${BACKEND_URL}/storage/usage`, {
@@ -147,60 +168,68 @@ export default function PreferencesModal({
       if (!res.ok) throw new Error(`Backend ${res.status}`);
       const data = await res.json();
 
-      // PDFs
-      let pdfBytes = 0;
-      const pdfFiles = [];
-      for (const pdf of (data.pdfs || [])) {
+      const missing = [];
+      const withSize = (type, idOf, urlOf) => async (item) => {
+        if (typeof item.size === 'number') return item;
         let size = 0;
-        try { const m = await getMetadata(ref(storage, pdf.firebase_pdf_url)); size = m.size || 0; } catch { /* orphaned */ }
-        pdfFiles.push({ ...pdf, size });
-        pdfBytes += size;
+        try { const m = await getMetadata(ref(storage, urlOf(item))); size = m.size || 0; } catch { /* orphaned */ }
+        missing.push({ type, id: idOf(item), size });
+        return { ...item, size };
+      };
+      const [pdfFiles, canvasFiles, audioFiles, visualFiles] = await Promise.all([
+        Promise.all((data.pdfs || []).map(withSize('pdf', i => i.doc_id, i => i.firebase_pdf_url))),
+        Promise.all((data.canvas_urls || []).map(withSize('canvas', i => i.notebook_id, i => i.url))),
+        Promise.all((data.audio_podcasts || []).map(withSize('audio', i => i.notebook_id, i => i.url))),
+        Promise.all((data.visual_podcasts || []).map(withSize('visual', i => i.notebook_id, i => i.url))),
+      ]);
+
+      if (missing.length) {
+        fetch(`${BACKEND_URL}/storage/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ items: missing }),
+        }).catch(e => console.warn('[Storage sync]', e));
       }
 
-      // Insight Canvas
-      let canvasBytes = 0;
-      const canvasFiles = [];
-      for (const canvas of (data.canvas_urls || [])) {
-        let size = 0;
-        try { const m = await getMetadata(ref(storage, canvas.url)); size = m.size || 0; } catch { /* orphaned */ }
-        canvasFiles.push({ ...canvas, size });
-        canvasBytes += size;
-      }
-
-      // Audio Podcasts
-      let audioBytes = 0;
-      const audioFiles = [];
-      for (const ap of (data.audio_podcasts || [])) {
-        let size = 0;
-        try { const m = await getMetadata(ref(storage, ap.url)); size = m.size || 0; } catch { /* orphaned */ }
-        audioFiles.push({ ...ap, size });
-        audioBytes += size;
-      }
-
-      // Visual Podcasts
-      let visualBytes = 0;
-      const visualFiles = [];
-      for (const vp of (data.visual_podcasts || [])) {
-        let size = 0;
-        try { const m = await getMetadata(ref(storage, vp.url)); size = m.size || 0; } catch { /* orphaned */ }
-        visualFiles.push({ ...vp, size });
-        visualBytes += size;
-      }
-
-      setStorageData({
-        pdfFiles, pdfBytes,
-        canvasFiles, canvasBytes,
-        audioFiles, audioBytes,
-        visualFiles, visualBytes,
-        totalBytes: pdfBytes + canvasBytes + audioBytes + visualBytes,
-      });
+      const sum = (arr) => arr.reduce((t, f) => t + (f.size || 0), 0);
+      setStorageData(buildStorageData(
+        { pdf: sum(pdfFiles), canvas: sum(canvasFiles), audio: sum(audioFiles), visual: sum(visualFiles) },
+        { pdfFiles, canvasFiles, audioFiles, visualFiles },
+      ));
     } catch (e) {
       console.error('[Storage usage]', e);
       setStorageData({ error: true });
     } finally {
-      setLoadingStorage(false);
+      setLoadingFiles(false);
     }
   }, [user?.id, getToken]);
+
+  const fetchStorageUsage = useCallback(async (forceFiles = false) => {
+    if (!user?.id || !getToken) return;
+    setLoadingStorage(true);
+    if (forceFiles) setStorageData(null);
+    try {
+      if (!forceFiles) {
+        const token = await getToken();
+        const res = await fetch(`${BACKEND_URL}/storage/summary`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const sum = await res.json();
+          if (sum.breakdown) {           // tracked variable is set → no further calls
+            setStorageData(buildStorageData(sum.breakdown));
+            return;
+          }
+        }
+      }
+      await loadFiles();                  // variable unknown (or manual refresh) → backup path
+    } catch (e) {
+      console.error('[Storage summary]', e);
+      await loadFiles();
+    } finally {
+      setLoadingStorage(false);
+    }
+  }, [user?.id, getToken, loadFiles]);
 
   useEffect(() => {
     if (open) {
@@ -246,7 +275,7 @@ export default function PreferencesModal({
       }));
       setSelectedForDelete(new Map());
       setBulkConfirming(false);
-      await fetchStorageUsage();
+      await loadFiles();
     } finally {
       setBulkDeleting(false);
     }
@@ -387,7 +416,7 @@ export default function PreferencesModal({
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 ml-1.5" />
                     : (
                       <button
-                        onClick={fetchStorageUsage}
+                        onClick={() => fetchStorageUsage(true)}
                         title="Refresh"
                         className="p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors ml-1.5"
                       >
@@ -433,7 +462,10 @@ export default function PreferencesModal({
                       <div className="flex items-center gap-2">
                         {/* Arrow toggle — left of bar */}
                         <button
-                          onClick={() => setShowSections(p => !p)}
+                          onClick={() => {
+                            if (!showSections && !storageData.filesLoaded && !loadingFiles) loadFiles();
+                            setShowSections(p => !p);
+                          }}
                           title={showSections ? 'Hide file list' : 'Show file list'}
                           className="shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                         >
@@ -482,8 +514,13 @@ export default function PreferencesModal({
                     </div>
 
                     {/* ── Collapsible file sections ── */}
+                    {showSections && !storageData.filesLoaded && (
+                      <div className="flex items-center gap-2 px-2 py-2 text-xs text-slate-400">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading files…
+                      </div>
+                    )}
                     <AnimatePresence>
-                      {showSections && (
+                      {showSections && storageData.filesLoaded && (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}

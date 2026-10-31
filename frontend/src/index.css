@@ -210,3 +210,55 @@
 /* Settings popover */
 .black .dark\:bg-slate-800 { background-color: #111111 !important; }
 .black .dark\:bg-slate-800.rounded-xl { background-color: #0f0f0f !important; }
+
+/* ── AI Studio pill: moving perimeter line on hover ───────────────────────── */
+@property --studio-pill-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.studio-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(203 213 225);
+}
+.dark .studio-pill { border-color: rgb(51 65 85); }
+.studio-pill::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--studio-pill-angle), transparent 0 65%, var(--color-primary) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.dark .studio-pill::before {
+  background: conic-gradient(from var(--studio-pill-angle), transparent 0 65%, #e2e8f0 100%);
+}
+.studio-pill:hover::before {
+  opacity: 1;
+  animation: studio-pill-spin 1.6s linear infinite;
+}
+@keyframes studio-pill-spin {
+  to { --studio-pill-angle: 360deg; }
+}
+
+/* ── Fluid progress fill (Visual Podcast card) ────────────────────────────── */
+@keyframes fluid-drift-a { from { transform: translateX(0); }    to { transform: translateX(-50%); } }
+@keyframes fluid-drift-b { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes fluid-bob     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.fluid-wave   { position: absolute; left: 0; width: 200%; height: 18px; }
+.fluid-wave-a { animation: fluid-drift-a 5.5s linear infinite; }
+.fluid-wave-b { animation: fluid-drift-b 8.5s linear infinite; }
+.fluid-surface { animation: fluid-bob 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .fluid-wave-a, .fluid-wave-b, .fluid-surface { animation: none; }
+}
