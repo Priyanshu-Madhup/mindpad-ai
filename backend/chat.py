@@ -1,18 +1,16 @@
 import os
 import asyncio
 import base64 as b64_lib
-import uuid
 import smtplib
 import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from groq import Groq
 from llm import llm_complete, generate_image_bytes, synthesize_wav
@@ -31,16 +29,21 @@ from rag import router as rag_router, retrieve_rag_context, cleanup_notebook_pdf
 # Deep Research module — Serper + Firecrawl + Pinecone RAG pipeline
 from deep_research import router as deep_research_router, run_deep_research
 
-# ── Generated images storage ────────────────────────────────────────────────
-IMAGES_DIR = Path(__file__).parent / "generated_images"
-IMAGES_DIR.mkdir(exist_ok=True)
-
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
 # CORS — restrict to your frontend origin in production via ALLOWED_ORIGINS env var
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
-_origins = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*").strip()
+if _raw_origins == "*":
+    _origins = ["*"]
+else:
+    # A browser's Origin header never has a trailing slash or quotes, so a value like
+    # "https://app.vercel.app/" in the env var would make every preflight fail with 400.
+    _origins = [o.strip().strip("\"'").rstrip("/") for o in _raw_origins.split(",") if o.strip()]
+    _frontend = os.environ.get("FRONTEND_URL", "").strip().strip("\"'").rstrip("/")
+    if _frontend and _frontend not in _origins:
+        _origins.append(_frontend)
+print(f"[CORS] allowed origins: {_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +90,10 @@ app.include_router(audio_podcast_router)
 # Mount the Quiz router (/quiz/generate, /quiz/evaluate endpoints)
 from quiz import router as quiz_router
 app.include_router(quiz_router)
+
+# Mount the MindSpeak router (/mindspeak/turn live voice conversation + saved history)
+from mindspeak import router as mindspeak_router
+app.include_router(mindspeak_router)
 
 # Mount the landing-page support chatbot (/support-chat, /support-chat/warm)
 from support_chat import router as support_chat_router
@@ -291,70 +298,12 @@ SYSTEM_PROMPT = """You are Midy AI, a scholarly research assistant inside Mindpa
 Tone: precise and thoughtful. Be concise when possible, thorough when needed.
 FORMAT: Respond in clean HTML only — no Markdown. Use <h2>, <h3>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <code>, <pre>, <blockquote>, <hr>. No <html>/<head>/<body> tags, no inline styles or classes."""
 
-# ── Image generation intent detection ────────────────────────────────────────────
-IMAGE_INTENT_KEYWORDS = [
-    "generate an image", "generate a image", "generate image",
-    "create an image", "create a image", "create image",
-    "make an image", "make a image", "make image",
-    "draw an image", "draw a image", "draw an", "draw a ",
-    "draw the ", "draw me ",
-    "generate a picture", "generate a photo", "generate an illustration",
-    "create a picture", "create a photo", "create an illustration",
-    "make a picture", "make a photo", "make a drawing", "make an illustration",
-    "show me an image", "show me a picture", "show me a photo",
-    "visualize this", "illustrate this",
-    "explain with an image", "explain with image",
-    "with a diagram", "with a picture",
-    "generate a drawing", "create a drawing",
-    "paint a ", "paint an ",
-    "sketch a ", "sketch an ",
-]
-
-import re as _re
-_IMAGE_VERB_RE = _re.compile(
-    r"\b(generate|create|make|draw|paint|sketch|produce|render)\s+"
-    r"(a |an |me |the )?"
-    r"(image|picture|photo|photograph|illustration|drawing|artwork|visual|diagram)\b",
-    _re.IGNORECASE,
-)
-
-def is_image_request(text: str) -> bool:
-    lower = text.lower()
-    if any(kw in lower for kw in IMAGE_INTENT_KEYWORDS):
-        return True
-    return bool(_IMAGE_VERB_RE.search(text))
-
-async def generate_image(prompt: str) -> tuple:
-    """Call the OpenRouter image generation model. Returns (filename, base64_data_url)."""
+# ── Image generation (used by Insight Canvas only) ────────────────────────────
+async def generate_image(prompt: str) -> str:
+    """Call the OpenRouter image generation model. Returns a base64 data URL."""
     print(f"[Image] Sending request with prompt: {prompt[:80]}...")
     img_bytes, mime_type = await generate_image_bytes(prompt)
-
-    img_b64 = b64_lib.b64encode(img_bytes).decode()
-    ext = "png" if "png" in mime_type else "jpg"
-
-    # Save to disk (best-effort — may not persist in production)
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    filepath = IMAGES_DIR / filename
-    try:
-        await asyncio.to_thread(filepath.write_bytes, img_bytes)
-        print(f"[Image saved] {filepath} ({len(img_bytes)} bytes)")
-    except Exception as e:
-        print(f"[Image save skipped] {e}")
-
-    data_url = f"data:{mime_type};base64,{img_b64}"
-    return filename, data_url
-
-
-# ── Image file endpoint ────────────────────────────────────────────────
-@app.get("/images/{filename}")
-async def serve_image(filename: str):
-    """Serve a previously generated image by filename."""
-    # Sanitize filename to prevent path traversal
-    safe_name = Path(filename).name
-    filepath = IMAGES_DIR / safe_name
-    if not filepath.exists() or not filepath.is_file():
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(str(filepath), media_type="image/jpeg")
+    return f"data:{mime_type};base64,{b64_lib.b64encode(img_bytes).decode()}"
 
 
 # ── JWT / Clerk Auth ───────────────────────────────────────────────────────────
@@ -463,11 +412,6 @@ class NotebookUpdate(BaseModel):
 
 class SpeechRequest(BaseModel):
     text: str
-
-class SaveImageRequest(BaseModel):
-    messages: List[dict]
-    firebase_url: str
-    prompt: str = ""
 
 class NotificationCreate(BaseModel):
     title: str
@@ -1235,38 +1179,6 @@ async def get_history(notebook_id: str, authorization: Optional[str] = Header(No
     return {"messages": []}
 
 
-@app.post("/notebooks/{notebook_id}/save-image")
-async def save_image_url(
-    notebook_id: str,
-    body: SaveImageRequest,
-    authorization: Optional[str] = Header(None),
-):
-    """
-    Called by the frontend after uploading the generated image to Firebase Storage.
-    Persists the full conversation including the Firebase image URL into MongoDB.
-    """
-    user_id, _ = await get_current_user(authorization)
-    try:
-        oid = ObjectId(notebook_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid notebook ID")
-
-    # Build the messages record: previous turns + assistant image entry
-    record = [{"role": m["role"], "content": m["content"]} for m in body.messages]
-    record.append({"role": "assistant", "content": f"__FBIMG__{body.firebase_url}"})
-
-    try:
-        await notebooks_col.update_one(
-            {"_id": oid, "user_id": user_id},
-            {"$set": {"messages": record, "updated_at": datetime.now(timezone.utc)}},
-        )
-        print(f"[Firebase] Saved image URL to notebook {notebook_id}: {body.firebase_url[:60]}...")
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"[Firebase save error] {e}")
-        raise HTTPException(status_code=500, detail="Failed to save image URL")
-
-
 # ─── Speech-to-Text (Whisper) ─────────────────────────────────────────────────
 
 @app.post("/transcribe")
@@ -1351,7 +1263,7 @@ async def fetch_web_results(query: str, num_results: int = 5) -> str:
 
 @app.post("/chat")
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
-    """Stream AI response (or return generated image) and persist history to the notebook."""
+    """Stream AI response and persist history to the notebook."""
     user_id, _ = await get_current_user(authorization)
     messages = request.messages
     notebook_id = request.notebook_id
@@ -1360,20 +1272,6 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         oid = ObjectId(notebook_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid notebook ID")
-
-    # ── Image generation intent? ─────────────────────────────────────
-    last_user_text = next((m.content for m in reversed(messages) if m.role == "user"), "")
-    if is_image_request(last_user_text) and not request.image_base64:
-        try:
-            filename, data_url = await generate_image(last_user_text)
-            # Return base64 data URL to frontend — frontend will upload to Firebase
-            # and then call /notebooks/{id}/save-image to persist the Firebase URL
-            return JSONResponse({"type": "image", "url": data_url, "prompt": last_user_text})
-        except Exception as e:
-            print(f"[Image gen failed, falling back to text] {e}")
-            image_gen_failed = True
-    else:
-        image_gen_failed = False
 
     async def save_to_db(all_messages: list):
         """Runs as an independent task — survives client disconnect."""
@@ -1631,10 +1529,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         save_messages.append(assistant_msg)
         await save_to_db(save_messages)
 
-    headers_out = {}
-    if image_gen_failed:
-        headers_out["X-Image-Fallback"] = "1"
-    return StreamingResponse(stream_response(), media_type="text/plain", headers=headers_out)
+    return StreamingResponse(stream_response(), media_type="text/plain")
 
 
 # ─── Insight Canvas ──────────────────────────────────────────────────────────
@@ -1729,7 +1624,7 @@ OUTPUT: Only the image generation prompt text, nothing else. Start directly with
         + image_prompt
     )
     try:
-        _, data_url = await generate_image(landscape_image_prompt)
+        data_url = await generate_image(landscape_image_prompt)
     except Exception as e:
         print(f"[InsightCanvas] Image generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Infographic generation failed: {str(e)}")
