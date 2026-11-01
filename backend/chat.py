@@ -91,6 +91,10 @@ app.include_router(audio_podcast_router)
 from quiz import router as quiz_router
 app.include_router(quiz_router)
 
+# Mount the Mind Map router (/mind-map generate + /notebooks/{id}/mind-map save)
+from mindmap import router as mindmap_router
+app.include_router(mindmap_router)
+
 # Mount the MindSpeak router (/mindspeak/turn live voice conversation + saved history)
 from mindspeak import router as mindspeak_router
 app.include_router(mindspeak_router)
@@ -420,13 +424,6 @@ class NotificationCreate(BaseModel):
 class InsightCanvasRequest(BaseModel):
     notebook_id: str
     selected_pdf_ids: List[str]
-
-class MindMapRequest(BaseModel):
-    notebook_id: str
-    selected_pdf_ids: List[str]
-
-class MindMapDataUpdate(BaseModel):
-    tree: dict
 
 class VideoSuggestionsDataUpdate(BaseModel):
     videos: list
@@ -931,134 +928,6 @@ async def save_insight_canvas_url(
         update["$unset"] = {"insight_canvas_size": ""}   # unknown → storage tracker backfills once
     await notebooks_col.update_one({"_id": oid, "user_id": user_id}, update)
     await refresh_storage_used(user_id)
-    return {"status": "ok"}
-
-
-@app.post("/mind-map")
-async def generate_mind_map(
-    body: MindMapRequest,
-    authorization: Optional[str] = Header(None),
-):
-    """
-    Generate an interactive mind map JSON tree from selected PDFs.
-    1. Retrieves top-5 RAG chunks with a comprehensive topic-extraction query.
-    2. Feeds context to Qwen to produce a hierarchical JSON tree.
-    Returns the tree JSON for the frontend to render with D3.
-    """
-    import json as _json
-    user_id, _ = await get_current_user(authorization)
-
-    if not body.selected_pdf_ids:
-        raise HTTPException(status_code=400, detail="No PDFs selected. Please select at least one PDF.")
-
-    MINDMAP_QUERY = (
-        "Extract all key topics, concepts, subtopics, categories, hierarchical relationships, "
-        "themes, theories, methodologies, and major findings present in the document. "
-        "Identify the central theme and all major and minor branches of knowledge."
-    )
-    rag_context, _ = await retrieve_rag_context(
-        query=MINDMAP_QUERY,
-        user_id=user_id,
-        doc_ids=body.selected_pdf_ids,
-        top_k=5,
-    )
-
-    if not rag_context:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not retrieve content from the selected PDFs. Ensure at least one PDF is indexed.",
-        )
-
-    print(f"[MindMap] Retrieved {len(rag_context)} chars of context for user {user_id[:8]}…")
-
-    SYSTEM_PROMPT = (
-        "You are an expert knowledge organizer. "
-        "You always respond with ONLY valid JSON and nothing else — no markdown, no fences, no explanation."
-    )
-    USER_PROMPT = f"""Analyze the research content and build a comprehensive mind map as a JSON tree.
-
-REQUIREMENTS:
-- Root node: the central topic or document title (2–5 words)
-- 4–7 main branches (depth 1): major themes or categories
-- 2–5 sub-nodes per branch (depth 2): specific concepts or subtopics
-- Optional 2–3 leaf nodes per sub-node (depth 3): key details or terms
-- Keep ALL labels concise: 2–6 words maximum
-- Total nodes: 30–60 for a rich, informative map
-
-OUTPUT FORMAT — ONLY valid JSON, no markdown fences, no explanation:
-{{
-  "label": "Central Topic",
-  "children": [
-    {{
-      "label": "Main Branch",
-      "children": [
-        {{
-          "label": "Sub-topic",
-          "children": [
-            {{"label": "Detail A"}},
-            {{"label": "Detail B"}}
-          ]
-        }}
-      ]
-    }}
-  ]
-}}
-
-RESEARCH CONTENT:
-{rag_context}"""
-
-    try:
-        completion = await llm_complete(
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": USER_PROMPT},
-            ],
-            temperature=0.3,
-            max_tokens=4096,
-        )
-        import json as _json
-        import re as _re
-        original = (completion.choices[0].message.content or "").strip()
-        # Strip <think>…</think> reasoning blocks (GPT-OSS / reasoning models)
-        raw = _re.sub(r'<think>.*?</think>', '', original, flags=_re.DOTALL).strip()
-        # Strip any accidental markdown fences
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        # Find the outermost JSON object; if nothing outside <think>, search inside it too
-        start = raw.find('{')
-        end = raw.rfind('}')
-        if start == -1 or end == -1:
-            # Model may have embedded JSON inside its <think> block — search original
-            start = original.find('{')
-            end = original.rfind('}')
-            if start == -1 or end == -1:
-                raise ValueError("No JSON object found in model response")
-            raw = original[start:end + 1]
-        else:
-            raw = raw[start:end + 1]
-        tree_data = _json.loads(raw)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Mind map generation failed: {str(e)}")
-
-    return {"tree": tree_data}
-
-
-@app.patch("/notebooks/{notebook_id}/mind-map")
-async def save_mind_map_data(
-    notebook_id: str,
-    body: MindMapDataUpdate,
-    authorization: Optional[str] = Header(None),
-):
-    """Persist the mind map tree JSON for this notebook."""
-    user_id, _ = await get_current_user(authorization)
-    try:
-        oid = ObjectId(notebook_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid notebook ID")
-    await notebooks_col.update_one(
-        {"_id": oid, "user_id": user_id},
-        {"$set": {"mind_map_data": body.tree, "updated_at": datetime.now(timezone.utc)}}
-    )
     return {"status": "ok"}
 
 
