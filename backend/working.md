@@ -38,7 +38,7 @@ Creates the `app`, sets up CORS, mounts all other routers, opens the MongoDB con
 | `get_clerk_user_email(user_id)` | Looks up a user's primary email through the Clerk Backend API. |
 
 ### Request models (Pydantic)
-`Message`, `ChatRequest`, `NotebookCreate`, `NotebookUpdate`, `SpeechRequest`, `NotificationCreate`, `InsightCanvasRequest`, `MindMapRequest`, `MindMapDataUpdate`, `VideoSuggestionsDataUpdate`, `FlashcardsDataUpdate`, `QuizDataUpdate`, `BroadcastEmailRequest`, `InsightCanvasUrlUpdate` — validate request bodies for the endpoints below.
+`Message`, `ChatRequest`, `NotebookCreate`, `NotebookUpdate`, `SpeechRequest`, `NotificationCreate`, `InsightCanvasRequest`, `VideoSuggestionsDataUpdate`, `FlashcardsDataUpdate`, `QuizDataUpdate`, `BroadcastEmailRequest`, `InsightCanvasUrlUpdate` — validate request bodies for the endpoints below.
 
 ### General
 | Function | What it does |
@@ -67,7 +67,6 @@ Creates the `app`, sets up CORS, mounts all other routers, opens the MongoDB con
 | `delete_notebook(id)` `[DELETE /notebooks/{id}]` | Deletes a notebook, cleans up its PDFs / vectors (`cleanup_notebook_pdfs`) and refreshes storage usage. |
 | `get_history(id)` `[GET /history/{id}]` | Returns the notebook's saved chat messages. |
 | `save_insight_canvas_url(id, body)` `[PATCH .../insight-canvas]` | Saves the Insight Canvas Firebase URL and file size. |
-| `save_mind_map_data(id, body)` `[PATCH .../mind-map]` | Saves the mind-map tree JSON. |
 | `save_video_suggestions_data(id, body)` `[PATCH .../video-suggestions]` | Saves videos, queries and topic. |
 | `save_flashcards_data(id, body)` `[PATCH .../flashcards]` | Saves the flashcard deck. |
 | `save_quiz_data(id, body)` `[PATCH .../quiz]` | Saves quiz questions, evaluations and progress. |
@@ -75,7 +74,6 @@ Creates the `app`, sets up CORS, mounts all other routers, opens the MongoDB con
 ### AI features
 | Function | What it does |
 |---|---|
-| `generate_mind_map(body)` `[POST /mind-map]` | Retrieves RAG chunks from the selected PDFs, asks the LLM for a nested `{label, children}` JSON tree, strips `<think>` blocks and parses it. |
 | `transcribe_audio(audio)` `[POST /transcribe]` | Sends uploaded audio to Groq Whisper (`whisper-large-v3-turbo`) in a worker thread (inner `_transcribe`). |
 | `fetch_web_results(query, num_results)` | Calls Serper.dev and formats the featured snippet, knowledge-graph text and top organic results as a context block. |
 | `chat(request)` `[POST /chat]` | The main chat endpoint. Gathers context (PDF RAG, web search, deep research), picks the normal or Research-Mode system prompt and language, builds multimodal input if an image is attached, and streams the answer as SSE. Inner `stream_response()` produces the stream; inner `save_to_db()` persists the conversation as an independent task so it survives client disconnects. |
@@ -277,6 +275,22 @@ Hands-free voice chat with Midy. One spoken turn is streamed back as Server-Sent
 | `delete_mindspeak(notebook_id)` `[DELETE /notebooks/{id}/mindspeak]` | Clears it. |
 
 Frontend counterpart: `frontend/src/MindSpeakModal.jsx` (transparent overlay on the app's own background, orb that rises from the collapsed sidebars and chat bar, voice-activity detection, gapless playback, Stop button).
+
+---
+
+## mindmap.py — Mind Map
+
+Builds the interactive mind map tree from the selected PDFs and saves it on the notebook. Pipeline: RAG retrieval → Qwen → JSON tree. Rendered by `frontend/src/MindMapModal.jsx` (d3-hierarchy). Clearing a map lives in `storage.py` (`DELETE /storage/mind-map/{notebook_id}`).
+
+| Function | What it does |
+|---|---|
+| `_auth(authorization)` | Resolves the `user_id` through `chat.get_current_user()`. |
+| `_build_user_prompt(rag_context)` | The instruction prompt: root plus 4–7 branches, 2–5 sub-nodes each, optional leaves, 30–60 nodes, short labels, strict JSON shape. |
+| `_parse_tree(original)` | Extracts the JSON tree from the model reply: strips `<think>` blocks and markdown fences, takes the outermost `{...}` (searching inside `<think>` as a last resort), and loads it. |
+| `generate_mind_map(body)` `[POST /mind-map]` | 400 if no PDFs are selected; retrieves the top-5 chunks with a broad topic-extraction query (`MINDMAP_QUERY`); 422 if nothing is retrieved; asks Qwen (temperature 0.3, 4,096 tokens) and returns `{ tree }`. |
+| `save_mind_map_data(id, body)` `[PATCH /notebooks/{id}/mind-map]` | Stores the tree as `mind_map_data` on the notebook. |
+
+Request models: `MindMapRequest`, `MindMapDataUpdate`.
 
 ---
 
