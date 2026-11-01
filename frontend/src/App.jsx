@@ -74,6 +74,7 @@ import FlashcardsModal from './FlashcardsModal.jsx';
 import VisualPodcastModal from './VisualPodcastModal.jsx';
 import AudioPodcastModal from './AudioPodcastModal.jsx';
 import QuizModal from './QuizModal.jsx';
+import MindSpeakModal from './MindSpeakModal.jsx';
 import PreferencesModal from './PreferencesModal.jsx';
 import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
@@ -288,6 +289,105 @@ export default function App() {
 
   // Visual Podcast state
   const [showVisualPodcastModal, setShowVisualPodcastModal] = useState(false);
+  const [showMindSpeak, setShowMindSpeak] = useState(false);
+  const [mindSpeakOrigin, setMindSpeakOrigin] = useState(null); // viewport point the UI collapses into
+  const [msCollapsed, setMsCollapsed] = useState(false);          // sidebars + chat bar drawn into the orb
+  const msRestoreTimer = useRef(null);
+  const msPiecesTimer = useRef(null);
+  const msRects = useRef({});                    // natural centre of each collapsible element
+  const [msPieces, setMsPieces] = useState(null); // the three blobs the orb splits into on close
+  // Seconds each blob spends flying to its place before that element grows out of it.
+  const MS_FLIGHT = { input: 1.0, left: 1.3, right: 1.38 };
+
+  const openMindSpeak = () => {
+    const box = document.querySelector('[data-tour="chat-input"]')?.getBoundingClientRect();
+    setMindSpeakOrigin(box
+      ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+      : { x: window.innerWidth / 2, y: window.innerHeight - 80 });
+    setRightDrawerOpen(false);
+    setSidebarOpen(false);
+    clearTimeout(msRestoreTimer.current);
+    clearTimeout(msPiecesTimer.current);
+    setMsPieces(null);
+    setShowMindSpeak(true);
+    setMsCollapsed(true);
+  };
+
+  // Closing: the orb splits into three blobs. Each floats along its own curve to where the left
+  // panel, the AI Studio panel and the chat bar belong; there it becomes a dot, stretches into a
+  // horizontal line, and then grows vertically into the full element (see the effect below).
+  const closeMindSpeak = () => {
+    const r = document.querySelector('[data-ms-orb]')?.getBoundingClientRect();
+    const targets = ['left', 'right', 'input']
+      .filter((kind) => msRects.current[kind])
+      .map((kind) => ({ kind, ...msRects.current[kind] }));
+    if (r && targets.length) {
+      setMsPieces({ cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, targets });
+    }
+    clearTimeout(msPiecesTimer.current);
+    msPiecesTimer.current = setTimeout(() => setMsPieces(null), 1900);
+    setShowMindSpeak(false);
+    setMsCollapsed(false);
+  };
+
+  // MindSpeak choreography. Opening: the panels spiral inward (scale + rotate about the orb
+  // origin, accelerating, staggered) and the chat bar follows, then the orb is born there.
+  // Closing: each element is revealed by a Web Animation timed to its blob's arrival.
+  useEffect(() => {
+    if (!msCollapsed) return undefined;
+    const wraps = [...document.querySelectorAll('[data-ms-wrap]')];
+    const fades = [...document.querySelectorAll('[data-ms-fade]')];
+    const { x, y } = mindSpeakOrigin || { x: window.innerWidth / 2, y: window.innerHeight - 80 };
+    const spin = { left: '-7deg', right: '7deg', input: '0deg' };
+    const inDelay = { left: 0, right: 0.06, input: 0.22 };
+    wraps.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const kind = el.dataset.msWrap;
+      msRects.current[kind] = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      el.style.transformOrigin = `${x - r.left}px ${y - r.top}px`;
+      el.style.pointerEvents = 'none';
+      el.style.transition =
+        `scale 1.0s cubic-bezier(0.7, 0, 0.84, 0) ${inDelay[kind] ?? 0}s, ` +
+        `rotate 1.0s cubic-bezier(0.5, 0, 0.75, 0) ${inDelay[kind] ?? 0}s, ` +
+        `filter 0.55s ease ${(inDelay[kind] ?? 0) + 0.45}s`;   // dissolve only near the end so the shapes visibly shrink first
+    });
+    fades.forEach((el) => { el.style.transition = 'filter 1.2s ease, opacity 1.2s ease'; });
+    const raf = requestAnimationFrame(() => {
+      wraps.forEach((el) => {
+        el.style.scale = '0.02';
+        el.style.rotate = spin[el.dataset.msWrap] || '0deg';
+        el.style.filter = 'blur(10px) opacity(0)';
+      });
+      fades.forEach((el) => { el.style.filter = 'blur(6px)'; el.style.opacity = '0.07'; el.style.pointerEvents = 'none'; });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      const anims = wraps.map((el) => {
+        const kind = el.dataset.msWrap;
+        const delay = (MS_FLIGHT[kind] ?? 1) * 1000 - 120;   // start just as its blob lands
+        el.style.transition = 'none';
+        el.style.transformOrigin = '50% 50%';                // grow from its own centre now
+        el.style.scale = ''; el.style.rotate = ''; el.style.filter = '';
+        return el.animate([
+          { scale: '0.02 0.02', filter: 'blur(6px) opacity(0)', offset: 0 },
+          { scale: '0.04 0.04', filter: 'blur(0px) opacity(1)', offset: 0.1, easing: 'ease-out' },   // a dot
+          { scale: '1 0.04', offset: 0.5, easing: 'cubic-bezier(0.25, 1.12, 0.4, 1)' },              // widens into a horizontal line
+          { scale: '1 1', offset: 1 },                                                                // then grows vertically
+        ], { duration: 1050, delay, fill: 'both', easing: 'cubic-bezier(0.3, 0.9, 0.3, 1)' });
+      });
+      fades.forEach((el) => {
+        el.style.transition = 'filter 1.1s ease 0.9s, opacity 1.1s ease 0.9s';
+        el.style.filter = '';
+        el.style.opacity = '';
+      });
+      setTimeout(() => {   // everything has landed: drop the animations and inline styles
+        anims.forEach((a) => a.cancel());
+        wraps.concat(fades).forEach((el) => {
+          el.style.transition = ''; el.style.transformOrigin = ''; el.style.pointerEvents = '';
+        });
+      }, 1300 + 1050 + 1100);
+    };
+  }, [msCollapsed]); // eslint-disable-line react-hooks/exhaustive-deps
   const [visualPodcastData, setVisualPodcastData] = useState({});
   // visualPodcastData: { [notebookId]: firebaseUrl }
   const [isGeneratingVisualPodcast, setIsGeneratingVisualPodcast] = useState(false);
@@ -2374,6 +2474,56 @@ export default function App() {
         }}
       />
 
+      {/* ── MindSpeak: the three blobs the orb splits into when it closes ─────────── */}
+      {msPieces && msPieces.targets.map((t) => {
+        const W = msPieces.w;
+        const size = W * 0.3;
+        const dx = t.x - msPieces.cx;
+        const dy = t.y - msPieces.cy;
+        // where each blob drifts first, as the orb splits apart
+        const split = { left: { x: -0.2 * W, y: 0.02 * W }, right: { x: 0.2 * W, y: 0.02 * W }, input: { x: 0, y: 0.19 * W } }[t.kind];
+        const start = { left: { x: -0.07 * W, y: 0 }, right: { x: 0.07 * W, y: 0 }, input: { x: 0, y: 0.07 * W } }[t.kind];
+        const dur = MS_FLIGHT[t.kind] ?? 1.2;
+        return (
+          <motion.div
+            key={`ms-piece-${t.kind}`}
+            className="fixed z-[70] rounded-full pointer-events-none"
+            style={{
+              left: msPieces.cx - size / 2, top: msPieces.cy - size / 2, width: size, height: size,
+              background: 'radial-gradient(circle at 35% 30%, #ffffff 0%, #dcdcdc 28%, #7a7a7a 62%, #262626 88%, #050505 100%)',
+            }}
+            initial={{ x: start.x, y: start.y, scale: 1, opacity: 0 }}
+            animate={{
+              x: [start.x, split.x, dx],
+              y: [start.y, split.y, dy],
+              scale: [1, 1.06, 0.14],
+              opacity: [1, 1, 1, 0],
+            }}
+            transition={{
+              x: { duration: dur, times: [0, 0.28, 1], ease: ['easeOut', 'easeInOut'] },
+              y: { duration: dur, times: [0, 0.28, 1], ease: ['easeOut', t.kind === 'input' ? 'easeInOut' : 'circOut'] },
+              scale: { duration: dur, times: [0, 0.28, 1], ease: ['easeOut', 'easeIn'] },
+              opacity: { duration: dur, times: [0, 0.28, 0.9, 1] },
+            }}
+          />
+        );
+      })}
+
+      {/* ── MindSpeak (live voice conversation) ─────────────────────────────── */}
+      <AnimatePresence>
+        {showMindSpeak && activeNotebookId && (
+          <MindSpeakModal
+            key={activeNotebookId}
+            notebookId={activeNotebookId}
+            getToken={getToken}
+            pdfIds={(notebookPdfs[activeNotebookId] || []).filter(p => p.selected).map(p => p.doc_id).filter(Boolean)}
+            language={selectedLang.label}
+            origin={mindSpeakOrigin}
+            onClose={closeMindSpeak}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Visual Podcast Modal ─────────────────────────────────────────────── */}
       {showVisualPodcastModal && (
         <VisualPodcastModal
@@ -2950,6 +3100,7 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -256, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              data-ms-wrap="left"
               className="fixed md:absolute inset-y-0 left-0 z-50 md:z-50 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
               <div
                 className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
@@ -3455,6 +3606,7 @@ export default function App() {
           className="flex-1 flex flex-col bg-white dark:bg-slate-950 relative min-w-0 overflow-hidden" style={{ willChange: 'margin-left, margin-right' }}>
           <div
             ref={chatScrollRef}
+            data-ms-fade
             className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10 pb-4">
             <div className="w-full max-w-full space-y-8 overflow-x-hidden">
               {/* Welcome / Analysing state — empty chat + no history loading */}
@@ -3932,6 +4084,7 @@ export default function App() {
               {/* Input box — flex-col: top row has paperclip + textarea, bottom row has lang pill + buttons */}
               <div
                 data-tour="chat-input"
+                data-ms-wrap="input"
                 className={`glass-input rounded-2xl flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.08)] border transition-all duration-300 ${isRecording
                     ? 'border-red-400 dark:border-red-500'
                     : 'border-slate-200 dark:border-white/20'
@@ -4179,6 +4332,7 @@ export default function App() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 320, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              data-ms-wrap="right"
               className="fixed lg:absolute inset-y-0 right-0 z-50 lg:z-50 flex shrink-0 flex-col w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 overflow-hidden">
               <div
                 className="w-80 h-full flex flex-col shrink-0">
@@ -4210,7 +4364,7 @@ export default function App() {
                         <StudioTool icon={Layers} label="Flashcards" loading={isGeneratingFlashcards} onClick={() => { generateFlashcards(); scrollDown(); }} />
                         <StudioTool icon={QuizIcon} label="Quiz Mode" loading={isGeneratingQuiz} suppressClickFlash externalFlash={quizCardFlash} onExternalFlashDone={() => setQuizCardFlash(false)} onClick={() => setShowQuizModal(true)} />
                         <StudioTool icon={LayoutDashboard} label="Insight Canvas" onClick={() => { generateInsightCanvas(); scrollDown(); }} />
-                        <StudioTool icon={Brain} label="MindSpeak" onClick={scrollDown} />
+                        <StudioTool icon={Brain} label="MindSpeak" onClick={() => { if (activeNotebookId) openMindSpeak(); }} />
                       </>);
                     })()}
                   </div>

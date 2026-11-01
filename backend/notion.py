@@ -147,18 +147,6 @@ async def _do_refresh(refresh_token: str) -> dict:
         return resp.json()
 
 
-async def _get_access_token(user_id: str) -> str:
-    """Return a valid access_token for user, auto-refreshing if the stored one
-    has been rejected. Raises 404 if the user has not connected Notion."""
-    conn = await notion_connections_col.find_one({"user_id": user_id})
-    if not conn:
-        raise HTTPException(
-            status_code=404,
-            detail="Notion not connected. Please connect your Notion workspace first.",
-        )
-    return conn["access_token"]
-
-
 async def _refresh_and_store(user_id: str, refresh_token: str) -> str:
     """Refresh the token and persist the new pair; return the new access_token."""
     try:
@@ -187,111 +175,6 @@ def _rich_text(arr: list) -> str:
 
 def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _inline(text: str) -> str:
-    """Apply **bold**, *italic*, `code` inline markdown → HTML."""
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"\*(.+?)\*",     r"<em>\1</em>",         text)
-    text = re.sub(r"`(.+?)`",       r"<code>\1</code>",      text)
-    return text
-
-
-def _blocks_to_html(blocks: list) -> str:
-    """Convert a flat list of Notion block objects into clean HTML."""
-    parts: List[str] = []
-    in_ul = False
-    in_ol = False
-
-    def _close_lists():
-        nonlocal in_ul, in_ol
-        if in_ul:
-            parts.append("</ul>")
-            in_ul = False
-        if in_ol:
-            parts.append("</ol>")
-            in_ol = False
-
-    for block in blocks:
-        btype = block.get("type", "")
-        data  = block.get(btype, {})
-        text  = _escape(_rich_text(data.get("rich_text", [])))
-
-        if btype == "heading_1":
-            _close_lists()
-            parts.append(f"<h2>{_inline(text)}</h2>")
-
-        elif btype == "heading_2":
-            _close_lists()
-            parts.append(f"<h3>{_inline(text)}</h3>")
-
-        elif btype == "heading_3":
-            _close_lists()
-            parts.append(f"<h3><em>{_inline(text)}</em></h3>")
-
-        elif btype == "paragraph":
-            _close_lists()
-            if text:
-                parts.append(f"<p>{_inline(text)}</p>")
-
-        elif btype == "bulleted_list_item":
-            if in_ol:
-                parts.append("</ol>")
-                in_ol = False
-            if not in_ul:
-                parts.append("<ul>")
-                in_ul = True
-            parts.append(f"<li>{_inline(text)}</li>")
-
-        elif btype == "numbered_list_item":
-            if in_ul:
-                parts.append("</ul>")
-                in_ul = False
-            if not in_ol:
-                parts.append("<ol>")
-                in_ol = True
-            parts.append(f"<li>{_inline(text)}</li>")
-
-        elif btype == "to_do":
-            _close_lists()
-            checked = "☑" if data.get("checked") else "☐"
-            parts.append(f"<p>{checked} {_inline(text)}</p>")
-
-        elif btype == "quote":
-            _close_lists()
-            parts.append(f"<blockquote>{_inline(text)}</blockquote>")
-
-        elif btype == "callout":
-            _close_lists()
-            emoji = ""
-            icon = data.get("icon", {})
-            if icon and icon.get("type") == "emoji":
-                emoji = icon.get("emoji", "") + " "
-            parts.append(f"<blockquote><strong>{emoji}{_inline(text)}</strong></blockquote>")
-
-        elif btype == "code":
-            _close_lists()
-            lang = data.get("language", "")
-            code_text = _escape(_rich_text(data.get("rich_text", [])))
-            parts.append(f'<pre><code class="language-{lang}">{code_text}</code></pre>')
-
-        elif btype == "divider":
-            _close_lists()
-            parts.append("<hr>")
-
-        elif btype == "image":
-            _close_lists()
-            img_data = data.get("external", {}) or data.get("file", {})
-            url = img_data.get("url", "")
-            caption = _escape(_rich_text(data.get("caption", [])))
-            if url:
-                alt = caption or "Notion image"
-                parts.append(f'<p><em>[Image: {_escape(alt)}]</em></p>')
-
-        # table_of_contents, unsupported → skip
-
-    _close_lists()
-    return "\n".join(parts)
 
 
 def _blocks_to_plain_text(blocks: list) -> str:

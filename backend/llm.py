@@ -117,7 +117,7 @@ def _split_for_tts(text: str) -> List[str]:
     return chunks
 
 
-async def synthesize_wav(text: str, voice: str = "") -> bytes:
+async def synthesize_wav(text: str, voice: str = "", speed: Optional[float] = None, model: str = "") -> bytes:
     """Text-to-speech via OpenRouter Kokoro. Returns WAV container bytes."""
     clean = re.sub(r"<[^>]+>", " ", text)
     clean = re.sub(r"\s+", " ", clean).strip()
@@ -131,10 +131,11 @@ async def synthesize_wav(text: str, voice: str = "") -> bytes:
                 f"{OPENROUTER_BASE_URL}/audio/speech",
                 headers=_HEADERS,
                 json={
-                    "model": TTS_MODEL,
+                    "model": model or TTS_MODEL,
                     "input": chunk,
                     "voice": voice or TTS_VOICE,
                     "response_format": "pcm",
+                    **({"speed": speed} if speed else {}),
                 },
             )
             if resp.status_code >= 400:
