@@ -30,7 +30,8 @@ from datetime import datetime, timezone
 import tiktoken
 from bson import ObjectId
 from fastapi import APIRouter, UploadFile, File, Header, HTTPException
-from groq import AsyncGroq
+from llm import llm_complete
+from storage import refresh_storage_used
 from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -40,8 +41,6 @@ load_dotenv()
 router = APIRouter(tags=["RAG"])
 
 # ── Clients ────────────────────────────────────────────────────────────────────
-_groq = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
-
 _pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "mindpad-ai")
 EMBEDDING_MODEL = "multilingual-e5-large"   # 1024-dim, Pinecone-native
@@ -157,10 +156,9 @@ async def decide_chunk_count(total_tokens: int, pdf_name: str) -> int:
         f"Reply with ONLY a single integer inside <answer> tags. Example: <answer>12</answer>"
     )
 
-    resp = await _groq.chat.completions.create(
-        model="openai/gpt-oss-20b",
+    resp = await llm_complete(
         messages=[{"role": "user", "content": prompt}],
-        max_completion_tokens=256,
+        max_tokens=256,
         temperature=0.2,
     )
     raw = resp.choices[0].message.content.strip()
@@ -274,10 +272,9 @@ async def generate_pdf_summary(doc_id: str, user_id: str, filename: str) -> tupl
             f"DOCUMENT EXCERPTS:\n{context}"
         )
 
-        resp = await _groq.chat.completions.create(
-            model="openai/gpt-oss-20b",
+        resp = await llm_complete(
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=2400,  # ~2k ctx + 500 prompt + 2400 out ≈ 4900 ≤ 8000 TPM
+            max_tokens=2400,
             temperature=0.3,
         )
         raw = resp.choices[0].message.content.strip()
@@ -706,7 +703,7 @@ async def extract_and_index_images(
 ) -> int:
     """
     Extract images from a PDF using PyMuPDF, describe each image with
-    Llama 4 Scout (Groq vision), embed the descriptions, and upsert them
+    Qwen (OpenRouter vision), embed the descriptions, and upsert them
     into the same Pinecone namespace/doc_id as the text chunks.
 
     Returns the number of image description vectors added.
@@ -748,12 +745,11 @@ async def extract_and_index_images(
                 if width < 50 or height < 50:
                     continue
 
-                # Build base64 data URL for the Groq vision call
+                # Build base64 data URL for the vision call
                 b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
                 mime = "image/jpeg" if image_ext in ("jpg", "jpeg") else f"image/{image_ext}"
 
-                resp = await _groq.chat.completions.create(
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
+                resp = await llm_complete(
                     messages=[{
                         "role": "user",
                         "content": [
@@ -773,7 +769,7 @@ async def extract_and_index_images(
                             },
                         ],
                     }],
-                    max_completion_tokens=512,
+                    max_tokens=512,
                     temperature=0.2,
                 )
 
@@ -807,8 +803,8 @@ async def extract_and_index_images(
                 })
                 img_global_idx += 1
 
-                # 2-second pause between vision calls to stay within Groq 30 RPM rate limit
-                await asyncio.sleep(2)
+                # brief pause between vision calls to be gentle on rate limits
+                await asyncio.sleep(1)
 
             except Exception as exc:
                 print(f"[RAG] Image description failed for xref={xref}: {exc}")
@@ -893,6 +889,7 @@ async def save_pdf_firebase_url(
         {"$set": {"firebase_pdf_url": body.firebase_pdf_url}},
     )
     print(f"[RAG] Firebase PDF URL saved for doc_id={doc_id}: {body.firebase_pdf_url[:60]}...")
+    await refresh_storage_used(user_id)
     return {"status": "ok"}
 
 
@@ -944,6 +941,14 @@ async def delete_pdf(
     # Remove only this notebook's metadata row from MongoDB
     await pdf_docs_col.delete_one(query)
 
+    # The frontend deletes the shared Firebase file, so sibling rows (same doc_id,
+    # other notebooks) must stop pointing at it and stop counting toward usage.
+    if firebase_pdf_url:
+        await pdf_docs_col.update_many(
+            {"doc_id": doc_id, "user_id": user_id}, {"$set": {"firebase_pdf_url": ""}}
+        )
+    await refresh_storage_used(user_id)
+
     return {
         "status":           "deleted",
         "doc_id":           doc_id,
@@ -981,12 +986,14 @@ async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
 
     firebase_urls: list = []
     anchor_ids: list = []  # _id's of rows to keep as dedup anchors
+    removed_file_doc_ids: set = set()
 
     for doc in notebook_pdfs:
         doc_id = doc["doc_id"]
         fb_url = doc.get("firebase_pdf_url", "")
         if fb_url:
             firebase_urls.append(fb_url)
+            removed_file_doc_ids.add(doc_id)
 
         # Check if any OTHER notebook for this user still references this doc_id
         other_refs = await pdf_docs_col.count_documents({
@@ -1015,6 +1022,14 @@ async def cleanup_notebook_pdfs(notebook_id: str, user_id: str) -> list:
         print(
             f"[RAG cleanup] Converted {len(anchor_ids)} doc(s) to dedup anchors "
             f"(Pinecone vectors permanently preserved)"
+        )
+
+    # 2b. The frontend deletes every collected Firebase file, so rows in other
+    #     notebooks sharing those doc_ids no longer have a file to count.
+    if removed_file_doc_ids:
+        await pdf_docs_col.update_many(
+            {"user_id": user_id, "doc_id": {"$in": list(removed_file_doc_ids)}},
+            {"$set": {"firebase_pdf_url": ""}},
         )
 
     # 3. Delete all remaining rows for this notebook (anchor rows were already

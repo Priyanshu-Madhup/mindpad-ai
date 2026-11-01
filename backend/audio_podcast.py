@@ -9,9 +9,9 @@ Pipeline per request:
                      "summarise the whole document in a very very detailed manner"
   3. MongoDB       — HTML summaries from pdf_docs (plain-text, capped per doc).
   4. Merge         — chunks (most specific) + summaries → rich context block.
-  5. Pass 1 LLM    — openai/gpt-oss-120b (research-mode) → long-form lecture script.
-  6. Pass 2 LLM    — openai/gpt-oss-20b → humanise into warm, spoken-word narration.
-  7. Gemini TTS    — gemini-3.1-flash-tts-preview → 16-bit PCM 24 kHz → WAV.
+  5. Pass 1 LLM    — Qwen (OpenRouter) → long-form lecture script.
+  6. Pass 2 LLM    — Qwen (OpenRouter) → humanise into warm, spoken-word narration.
+  7. Kokoro TTS    — hexgrad/kokoro-82m (OpenRouter) → 16-bit PCM 24 kHz → WAV.
   8. Return        — { audio_b64, script, topic, word_count } as JSON.
 
 Save/delete:
@@ -19,21 +19,17 @@ Save/delete:
   DELETE /notebooks/{notebook_id}/audio-podcast  — remove URL from MongoDB
 """
 
-import io
 import os
 import re
-import wave
 import base64
-import asyncio
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from groq import AsyncGroq
-from google import genai as google_genai
-from google.genai import types as google_genai_types
+from llm import llm_complete, synthesize_wav
+from storage import refresh_storage_used
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -41,10 +37,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 router = APIRouter()
-
-# ── Clients ───────────────────────────────────────────────────────────────────
-_groq   = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", ""))
-_gemini = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 _mongo     = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
 _db        = _mongo["mindpad_ai"]
@@ -58,6 +50,7 @@ class AudioPodcastRequest(BaseModel):
 
 class SaveAudioPodcastUrl(BaseModel):
     url: str
+    size: Optional[int] = None   # bytes of the uploaded file (storage tracking)
 
 # ── Auth proxy ────────────────────────────────────────────────────────────────
 async def _auth(authorization: Optional[str]) -> Tuple[str, str]:
@@ -135,7 +128,7 @@ async def _retrieve_chunks(user_id: str, doc_ids: List[str]) -> str:
 # ── LLM Pass 1: research-mode lecture script ──────────────────────────────────
 async def _generate_lecture_script(context: str, topic: str) -> str:
     """
-    Use the research-mode model (gpt-oss-120b) to produce a thorough,
+    Use the Qwen model to produce a thorough,
     structured lecture script from the merged document context.
     Output: long-form plain text, ~3 000-5 000 words.
     """
@@ -156,8 +149,7 @@ async def _generate_lecture_script(context: str, topic: str) -> str:
         "Write a rich, detailed lecture script that a listener could follow without ever seeing the original document."
     )
 
-    completion = await _groq.chat.completions.create(
-        model="openai/gpt-oss-120b",
+    completion = await llm_complete(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
@@ -193,8 +185,7 @@ async def _humanise_script(lecture_script: str) -> str:
         f"{lecture_script[:6000]}"
     )
 
-    completion = await _groq.chat.completions.create(
-        model="openai/gpt-oss-20b",
+    completion = await llm_complete(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
@@ -207,38 +198,10 @@ async def _humanise_script(lecture_script: str) -> str:
     print(f"[AudioPodcast] Pass 2 narration: {len(raw)} chars")
     return raw
 
-# ── Gemini TTS → WAV bytes ────────────────────────────────────────────────────
-def _tts_sync(text: str) -> bytes:
-    """
-    Synthesise speech from text using Gemini TTS.
-    Truncates to 5 000 chars (TTS limit). Returns WAV container bytes.
-    """
-    clean = re.sub(r"<[^>]+>", " ", text)
-    clean = re.sub(r"\s+", " ", clean).strip()[:5000]
-
-    resp = _gemini.models.generate_content(
-        model="gemini-3.1-flash-tts-preview",
-        contents=clean,
-        config=google_genai_types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=google_genai_types.SpeechConfig(
-                voice_config=google_genai_types.VoiceConfig(
-                    prebuilt_voice_config=google_genai_types.PrebuiltVoiceConfig(
-                        voice_name="Kore",
-                    )
-                )
-            ),
-        ),
-    )
-    pcm = resp.candidates[0].content.parts[0].inline_data.data
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(24000)
-        wf.writeframes(pcm)
-    return buf.getvalue()
+# ── Kokoro TTS (OpenRouter) → WAV bytes ───────────────────────────────────────
+async def _tts(text: str) -> bytes:
+    """Synthesise speech with Kokoro-82M. Truncates to 5 000 chars. Returns WAV bytes."""
+    return await synthesize_wav(text[:5000])
 
 # ── Main generation route ──────────────────────────────────────────────────────
 @router.post("/audio-podcast")
@@ -248,7 +211,7 @@ async def generate_audio_podcast(
 ):
     """
     Full audio podcast generation pipeline:
-      RAG retrieval → research-LLM lecture → humanise → Gemini TTS → base64 WAV.
+      RAG retrieval → research-LLM lecture → humanise → Kokoro TTS → base64 WAV.
     Returns: { audio_b64, script, topic, word_count }
     """
     user_id, _ = await _auth(authorization)
@@ -274,7 +237,7 @@ async def generate_audio_podcast(
     topic = doc_names[0] if doc_names else "Research Document"
     print(f"[AudioPodcast] {len(combined)} chars of context for topic: '{topic}'")
 
-    # 4. Pass 1 — research-mode lecture script (gpt-oss-120b)
+    # 4. Pass 1 — long-form lecture script
     try:
         lecture_script = await _generate_lecture_script(combined, topic)
     except Exception as exc:
@@ -284,7 +247,7 @@ async def generate_audio_podcast(
     if not lecture_script.strip():
         raise HTTPException(status_code=500, detail="LLM returned an empty lecture script.")
 
-    # 5. Pass 2 — humanise to warm podcast narration (gpt-oss-20b)
+    # 5. Pass 2 — humanise to warm podcast narration
     try:
         narration = await _humanise_script(lecture_script)
     except Exception as exc:
@@ -293,9 +256,9 @@ async def generate_audio_podcast(
 
     final_script = narration or lecture_script
 
-    # 6. Gemini TTS → WAV bytes
+    # 6. Kokoro TTS → WAV bytes
     try:
-        wav_bytes = await asyncio.to_thread(_tts_sync, final_script)
+        wav_bytes = await _tts(final_script)
     except Exception as exc:
         print(f"[AudioPodcast] TTS error: {exc}")
         raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {exc}")
@@ -323,13 +286,16 @@ async def save_audio_podcast_url(
         oid = ObjectId(notebook_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid notebook ID")
-    await _notebooks.update_one(
-        {"_id": oid, "user_id": user_id},
-        {"$set": {
-            "audio_podcast_url": body.url,
-            "updated_at": datetime.now(timezone.utc),
-        }},
-    )
+    update: dict = {"$set": {
+        "audio_podcast_url": body.url,
+        "updated_at": datetime.now(timezone.utc),
+    }}
+    if body.size is not None:
+        update["$set"]["audio_podcast_size"] = max(body.size, 0)
+    else:
+        update["$unset"] = {"audio_podcast_size": ""}
+    await _notebooks.update_one({"_id": oid, "user_id": user_id}, update)
+    await refresh_storage_used(user_id)
     return {"ok": True}
 
 # ── Delete Firebase URL ───────────────────────────────────────────────────────
@@ -346,8 +312,9 @@ async def delete_audio_podcast_url(
     await _notebooks.update_one(
         {"_id": oid, "user_id": user_id},
         {
-            "$unset": {"audio_podcast_url": ""},
+            "$unset": {"audio_podcast_url": "", "audio_podcast_size": ""},
             "$set":   {"updated_at": datetime.now(timezone.utc)},
         },
     )
+    await refresh_storage_used(user_id)
     return {"ok": True}

@@ -17,10 +17,10 @@ Mindpad AI is a full-stack AI research workspace. You create isolated notebooks,
 - **Notion Integration** — import Notion pages directly into a notebook via OAuth 2.0; pages are indexed into Pinecone with an AI-generated summary
 - **Live Web Search** — Serper.dev-powered Google search injected into the prompt
 - **Deep Research Mode** — Serper → Firecrawl scraping → dual-namespace Pinecone RAG (top 3 web chunks + top 2 PDF chunks)
-- **AI Image Generation** — Gemini image model, persisted to Firebase Storage
-- **Voice Input / TTS** — Groq Whisper STT and Gemini TTS
+- **AI Image Generation** — `openai/gpt-image-2` via OpenRouter, persisted to Firebase Storage
+- **Voice Input / TTS** — Groq Whisper STT and Kokoro-82M TTS (OpenRouter)
 - **Mind Map Generator** — D3-powered interactive mind map from your PDFs
-- **Video Suggestions** — AI Studio feature that reads your PDF summaries from MongoDB, uses GPT-OSS-20B to craft 4 focused YouTube search queries via Serper.dev, and surfaces relevant educational videos in an in-app player (persists per notebook across page reloads)
+- **Video Suggestions** — AI Studio feature that reads your PDF summaries from MongoDB, uses Qwen 3.7 Flash to craft 4 focused YouTube search queries via Serper.dev, and surfaces relevant educational videos in an in-app player (persists per notebook across page reloads)
 - **Flashcards** — AI-generated Q&A flip cards from your PDFs; persists per notebook
 - **Quiz Mode** — AI Studio feature that generates configurable multiple-difficulty quizzes (1–10 questions, Easy/Medium/Hard) from PDF summaries + Pinecone chunks. Users type **or speak** (Whisper) answers; each is evaluated by the LLM for score/10, strengths, and areas to improve. Full session — questions, answers, evaluations, and progress — is persisted to MongoDB so reopening the modal resumes exactly where the user left off. Results panel shows per-question breakdown with delete option.
 - **Multilingual Responses** — 12 Indian and global languages
@@ -64,7 +64,7 @@ npm run dev                    # http://localhost:3000
 |---|---|
 | Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion, Clerk |
 | Backend | Python 3.11+, FastAPI, Uvicorn |
-| LLM / STT / TTS | Groq (GPT-OSS 20B/120B, Whisper), Google Gemini |
+| LLM / STT / TTS | OpenRouter (Qwen 3.7 Flash text + vision, `gpt-image-2` images, Kokoro-82M TTS), Groq (Whisper STT only) |
 | Vector DB | Pinecone — `multilingual-e5-large` (1024-dim), dual namespaces |
 | Database | MongoDB Atlas (motor 3.x async driver) |
 | Auth | Clerk (RS256 JWT + webhooks + Backend API) |
@@ -91,7 +91,7 @@ mindpad_ai/
 │   ├── notion.py            # Notion OAuth 2.0 + sync + RAG + summary
 │   ├── storage.py           # Storage usage & deletion API (GET /storage/usage, DELETE /storage/pdf|canvas)
 │   ├── video_suggestions.py # Video Suggestions router — fetches PDF summaries from MongoDB,
-│   │                        #   generates YouTube search queries via GPT-OSS-20B + Serper.dev /videos
+│   │                        #   generates YouTube search queries via Qwen 3.7 Flash + Serper.dev /videos
 │   ├── flashcards.py        # Flashcards router — PDF summary + Pinecone → LLM → Q&A cards
 │   ├── quiz.py              # Quiz Mode router — generates difficulty-aware questions from PDF
 │   │                        #   summaries + Pinecone chunks; evaluates typed/spoken answers
@@ -141,8 +141,8 @@ Payments are processed by **Razorpay** (live keys). On successful payment, the p
 ### Backend (`.env`)
 
 ```env
-GROQ_API_KEY=
-GEMINI_API_KEY=
+OPENROUTER_API_KEY=
+GROQ_API_KEY=            # Whisper speech-to-text only
 PINECONE_API_KEY=
 PINECONE_INDEX_NAME=mindpad-ai
 MONGODB_URI=

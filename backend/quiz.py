@@ -27,7 +27,7 @@ from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from groq import AsyncGroq
+from llm import llm_complete
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
@@ -36,7 +36,6 @@ load_dotenv()
 router = APIRouter()
 
 # ── Clients ───────────────────────────────────────────────────────────────────
-_groq = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", ""))
 
 # ── MongoDB ───────────────────────────────────────────────────────────────────
 _mongo = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
@@ -177,8 +176,7 @@ async def _generate_questions(context: str, num_q: int, difficulty: str) -> List
         "DOCUMENT CONTENT:\n" + context
     )
 
-    completion = await _groq.chat.completions.create(
-        model="openai/gpt-oss-20b",
+    completion = await llm_complete(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
@@ -244,8 +242,7 @@ async def _evaluate_answer(
         "Evaluate the student's answer against the source context."
     )
 
-    completion = await _groq.chat.completions.create(
-        model="openai/gpt-oss-20b",
+    completion = await llm_complete(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},

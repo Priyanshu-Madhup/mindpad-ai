@@ -97,7 +97,7 @@ export default function AudioPodcastModal({
       await fetch(`${BACKEND_URL}/notebooks/${notebookId}/audio-podcast`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ url: firebaseUrl }),
+        body:    JSON.stringify({ url: firebaseUrl, size: blob.size }),
       });
       setSavedUrl(firebaseUrl);
       onSaved?.(notebookId, firebaseUrl);

@@ -160,4 +160,4 @@ Q: What is the storage limit?
 A: There is a 200 MB cap for Firebase Storage (PDFs and Insight Canvas images combined). You can view your usage and delete files in the Preferences panel (Storage Usage Dashboard).
 
 Q: What is Research Mode?
-A: Research Mode switches the AI to a more powerful model (openai/gpt-oss-120b) and increases document retrieval depth. It produces longer, more analytical responses with cited sources. Toggle it in the Settings panel.
+A: Research Mode switches the AI to extended reasoning with a larger output budget and increases document retrieval depth. It produces longer, more analytical responses with cited sources. Toggle it in the Settings panel.

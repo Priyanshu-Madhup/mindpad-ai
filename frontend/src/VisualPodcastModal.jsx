@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const SECS_PER_SLIDE = 22;
+const SECS_PER_SLIDE = 60; // text + image-edit + TTS for one slide
+const PARALLEL_SLIDES = 4;  // keep in sync with VISUAL_PODCAST_PARALLEL on the backend
+// Slide 1 runs alone (sets the style), the rest run in parallel batches, then ~20s to combine.
+const estMinutes = (n) => Math.ceil((SECS_PER_SLIDE + Math.ceil(Math.max(n - 1, 0) / PARALLEL_SLIDES) * SECS_PER_SLIDE + 20) / 60);
 
 export default function VisualPodcastModal({
   result      = null,
@@ -106,7 +109,7 @@ export default function VisualPodcastModal({
                       onClick={() => setNumSlides(n => Math.min(8, n + 1))} disabled={numSlides >= 8}
                       className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     ><Plus className="w-4 h-4" /></button>
-                    <span className="text-xs text-slate-400 dark:text-slate-500">≈ {Math.ceil(numSlides * SECS_PER_SLIDE / 60)} min</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">≈ {estMinutes(numSlides)} min</span>
                   </div>
                   {/* Dot indicator */}
                   <div className="flex gap-1.5 mt-3">
@@ -136,7 +139,7 @@ export default function VisualPodcastModal({
                   Generate Visual Podcast
                 </button>
                 <p className="text-center text-[11px] text-slate-400 dark:text-slate-500 -mt-2">
-                  Generation runs in the background (~{Math.ceil(numSlides * SECS_PER_SLIDE / 60)} min). Watch progress in AI Studio.
+                  Generation runs in the background (~{estMinutes(numSlides)} min). Watch progress in AI Studio.
                 </p>
               </div>
             )}

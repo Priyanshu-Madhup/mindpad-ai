@@ -170,6 +170,47 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
   );
 };
 
+// Greyish fluid that flows left → right to `pct` (0-100) behind a card's content.
+// The leading (right) edge is a rippling liquid front built from two drifting wave
+// layers; a soft shimmer keeps travelling through the body so it always looks alive.
+// One tile = 600 units tall (= one card height). Irregular lobes, same x at both ends so
+// two stacked tiles loop seamlessly when the strip slides by exactly one tile.
+const fluidTile = (o) =>
+  `C28,${o + 70} 3,${o + 125} 15,${o + 190} S27,${o + 265} 11,${o + 330} ` +
+  `S2,${o + 400} 17,${o + 465} S26,${o + 545} 14,${o + 600} `;
+const FLUID_EDGE_PATH = `M0,0 H14 ${fluidTile(0)}${fluidTile(600)}H0 Z`;
+const FluidEdge = ({ color, left, dir, duration }) => (
+  <div className="absolute top-0 h-full overflow-hidden" style={{ width: 30, left }}>
+    <svg
+      className={`absolute left-0 top-0 w-full ${color} ${dir === 'up' ? 'fluid-flow-up' : 'fluid-flow-down'}`}
+      style={{ height: '200%', animationDuration: duration }}
+      viewBox="0 0 30 1200"
+      preserveAspectRatio="none"
+    >
+      <path d={FLUID_EDGE_PATH} fill="currentColor" />
+    </svg>
+  </div>
+);
+const FluidFill = ({ pct }) => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[inherit]" aria-hidden="true">
+    <div
+      className="absolute inset-y-0 left-0"
+      style={{ width: `${pct}%`, transition: 'width 2.2s cubic-bezier(0.22, 1, 0.36, 1)' }}
+    >
+      <div className="fluid-sway absolute inset-0">
+        {/* back swell: sits behind and a little ahead of the front, drifts the other way */}
+        <FluidEdge color="text-slate-200/80 dark:text-slate-600/50" left="calc(100% - 4px)" dir="down" duration="6.5s" />
+        {/* body: solid, so no translucent overlap seams */}
+        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }}>
+          <div className="fluid-shimmer absolute inset-y-0 w-2/5 bg-gradient-to-r from-transparent via-white/60 dark:via-white/10 to-transparent" />
+        </div>
+        {/* front edge, same colour as the body so it blends into it */}
+        <FluidEdge color="text-slate-200 dark:text-slate-700" left="calc(100% - 15px)" dir="up" duration="4.2s" />
+      </div>
+    </div>
+  </div>
+);
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 
@@ -1429,7 +1470,7 @@ export default function App() {
       fetch(`${BACKEND_URL}/notebooks/${notebookId}/insight-canvas`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
-        body: JSON.stringify({ url: firebaseUrl }),
+        body: JSON.stringify({ url: firebaseUrl, size: blob.size }),
       }).catch(e => console.warn('[Insight Canvas] Failed to persist URL:', e));
     } catch (err) {
       console.error('[Insight Canvas]', err);
@@ -1724,7 +1765,7 @@ export default function App() {
     const selectedPdfIds = (notebookPdfs[notebookId] || [])
       .filter(p => p.selected).map(p => p.doc_id).filter(Boolean);
     setIsGeneratingVisualPodcast(true);
-    setVisualPodcastProgress(prev => ({ ...prev, [notebookId]: { slide: 0, total: numSlides, heading: 'Starting…' } }));
+    setVisualPodcastProgress(prev => ({ ...prev, [notebookId]: { slide: 0, total: numSlides, heading: 'Getting started…' } }));
     try {
       const token = await getToken();
       const res = await fetch(`${BACKEND_URL}/visual-podcast/generate`, {
@@ -1784,7 +1825,7 @@ export default function App() {
           await fetch(`${BACKEND_URL}/notebooks/${notebookId}/visual-podcast`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
-            body: JSON.stringify({ url: doneData.url }),
+            body: JSON.stringify({ url: doneData.url, size: doneData.size }),
           });
           console.log('[VisualPodcast] Saved Firebase URL to MongoDB:', notebookId);
         } catch (saveErr) {
@@ -1860,7 +1901,7 @@ export default function App() {
           await fetch(`${BACKEND_URL}/notebooks/${notebookId}/audio-podcast`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${saveToken}` },
-            body: JSON.stringify({ url: firebaseUrl }),
+            body: JSON.stringify({ url: firebaseUrl, size: blob.size }),
           });
           setAudioPodcastData(prev => ({ ...prev, [notebookId]: firebaseUrl }));
           console.log('[AudioPodcast] Auto-saved to Firebase:', notebookId);
@@ -2912,7 +2953,15 @@ export default function App() {
               className="fixed md:absolute inset-y-0 left-0 z-50 md:z-50 shrink-0 flex flex-col w-64 bg-slate-50 dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 overflow-hidden">
               <div
                 className="w-64 shrink-0 flex flex-col h-full py-6 px-4">
-                <div className="flex items-center justify-end mb-6 px-2">
+                <div className="flex items-center gap-2 mb-8">
+                  <button
+                    data-tour="new-notebook"
+                    onClick={() => createNotebook()}
+                    className="flex-1 py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    New Notebook
+                  </button>
                   <button
                     className="md:hidden p-2 text-slate-400 hover:bg-slate-200 rounded-lg transition-colors"
                     onClick={() => setSidebarOpen(false)}
@@ -2921,18 +2970,10 @@ export default function App() {
                   </button>
                 </div>
 
-                <button
-                  data-tour="new-notebook"
-                  onClick={() => createNotebook()}
-                  className="mb-8 w-full py-3 px-4 bg-primary text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
-                >
-                  <Plus className="w-5 h-5" />
-                  New Notebook
-                </button>
+                <span className="px-2 text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-600 mb-3 block shrink-0">Notebooks</span>
 
                 <nav className="flex-1 overflow-y-auto">
-                  <div className="px-2 py-3">
-                    <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 dark:text-slate-600 mb-3 block">Notebooks</span>
+                  <div className="px-2 pb-3">
                     <div className="space-y-1.5">
                       {notebooks.map(nb => {
                         const isActive = activeNotebookId === nb.id;
@@ -3263,7 +3304,7 @@ export default function App() {
                                 <div className="relative group">
                                   <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
                                   <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-44 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                                    GPT-OSS 120B · top-5 chunks · detailed answers
+                                    Qwen 3.7 Flash · top-5 chunks · detailed answers
                                   </div>
                                 </div>
                               </div>
@@ -3311,7 +3352,7 @@ export default function App() {
                                 <div className="relative group">
                                   <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500 text-[9px] font-bold cursor-default leading-none select-none">i</span>
                                   <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-48 rounded-lg bg-slate-800 dark:bg-slate-900 text-white text-[10px] leading-snug px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg">
-                                    Extracts &amp; indexes PDF images via Llama 4 Scout
+                                    Extracts &amp; indexes PDF images via Qwen 3.7 Flash
                                   </div>
                                 </div>
                               </div>
@@ -3780,13 +3821,14 @@ export default function App() {
 
 
 
-              <div ref={chatEndRef} />
+              {/* Spacer so the last message can scroll clear of the floating input */}
+              <div ref={chatEndRef} className="h-40 md:h-48" />
             </div>
           </div>
 
-          {/* Input Area */}
+          {/* Input Area — floats over the scroll area; messages scroll beneath the glass box */}
           <div
-            className="p-3 md:p-8 md:pb-12 border-t border-slate-100 dark:border-slate-800 md:border-none bg-white dark:bg-slate-950">
+            className="absolute bottom-0 inset-x-0 z-20 p-3 md:p-8 md:pb-10 pointer-events-none">
             {/* Hidden file input — images and PDFs */}
             <input
               ref={fileInputRef}
@@ -3867,7 +3909,7 @@ export default function App() {
                 reader.readAsDataURL(file);
               }}
             />
-            <div className="w-full relative group">
+            <div className="w-full relative group pointer-events-auto">
               {/* Image preview above the input */}
               {attachedImage && (
                 <div className="mb-2 flex items-center gap-2 px-1">
@@ -4142,9 +4184,8 @@ export default function App() {
                 className="w-80 h-full flex flex-col shrink-0">
                 <div data-tour="ai-studio" className="p-6 border-b border-slate-200 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight">AI Studio</h3>
+                    <h3 className="studio-pill font-display font-bold text-lg text-primary dark:text-slate-100 tracking-tight cursor-default">AI Studio</h3>
                     <div className="flex items-center gap-2">
-                      <span className="bg-primary text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest">Pro</span>
                       {/* Mobile close button */}
                       <button
                         className="lg:hidden p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
@@ -4368,7 +4409,7 @@ export default function App() {
                           <button
                             disabled={isGeneratingAudioPodcast}
                             onClick={() => { if (!isGeneratingAudioPodcast) setShowAudioPodcastModal(true); }}
-                            className="flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
+                            className="relative z-10 flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
                           >
                             <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                               <Podcast className="w-5 h-5 text-primary dark:text-slate-300" />
@@ -4406,13 +4447,19 @@ export default function App() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all text-left group"
                         >
+                          {/* Fluid fill: 0→90% across slides, 90% while combining */}
+                          {isGeneratingVisualPodcast && (() => {
+                            const vp = visualPodcastProgress[activeNotebookId];
+                            const pct = vp ? Math.min(90, Math.max(6, (vp.slide / Math.max(vp.total, 1)) * 90)) : 6;
+                            return <FluidFill pct={pct} />;
+                          })()}
                           {/* Clickable main area */}
                           <button
                             disabled={isGeneratingVisualPodcast}
                             onClick={() => { if (!isGeneratingVisualPodcast) setShowVisualPodcastModal(true); }}
-                            className="flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
+                            className="relative z-10 flex items-center gap-3 flex-1 min-w-0 disabled:cursor-default text-left"
                           >
                             <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                               <Video className="w-5 h-5 text-primary dark:text-slate-300" />
@@ -4421,13 +4468,11 @@ export default function App() {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Visual Podcast</p>
-                              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
-                              {isGeneratingVisualPodcast ? (
-                                visualPodcastProgress[activeNotebookId]?.slide > 0
-                                  ? `Slide ${visualPodcastProgress[activeNotebookId].slide} / ${visualPodcastProgress[activeNotebookId].total} — ${visualPodcastProgress[activeNotebookId].heading}`
-                                  : 'Starting…'
-                              ) : 'Tap to play'}
+                              <p className={`text-[11px] font-bold uppercase tracking-widest ${isGeneratingVisualPodcast ? 'text-slate-800 dark:text-slate-50' : 'text-slate-600 dark:text-slate-300'}`}>Visual Podcast</p>
+                              <p className={`text-[10px] mt-0.5 leading-tight ${isGeneratingVisualPodcast ? 'font-medium text-slate-700 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}`}>
+                              {isGeneratingVisualPodcast
+                                ? (visualPodcastProgress[activeNotebookId]?.heading || 'Getting started…')
+                                : 'Tap to play'}
                               </p>
                             </div>
                           </button>

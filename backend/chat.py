@@ -4,8 +4,6 @@ import base64 as b64_lib
 import uuid
 import smtplib
 import threading
-import wave
-import io
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -16,9 +14,9 @@ from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
-from groq import AsyncGroq, Groq
-from google import genai as google_genai
-from google.genai import types as google_genai_types
+from groq import Groq
+from llm import llm_complete, generate_image_bytes, synthesize_wav
+from storage import refresh_storage_used
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from jose import jwt as jose_jwt, JWTError
@@ -90,10 +88,12 @@ app.include_router(audio_podcast_router)
 from quiz import router as quiz_router
 app.include_router(quiz_router)
 
+# Mount the landing-page support chatbot (/support-chat, /support-chat/warm)
+from support_chat import router as support_chat_router
+app.include_router(support_chat_router)
+
 # ── Clients ────────────────────────────────────────────────────────────────────
-groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
-groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # sync client for audio transcription
-gemini_client = google_genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))  # shared client — reused per process
+groq_sync = Groq(api_key=os.environ.get("GROQ_API_KEY"))  # Whisper transcription only; all LLM calls go through llm.py (OpenRouter)
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
 
 mongo_client = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
@@ -324,27 +324,10 @@ def is_image_request(text: str) -> bool:
         return True
     return bool(_IMAGE_VERB_RE.search(text))
 
-async def generate_image_gemini(prompt: str) -> tuple:
-    """Call Gemini image generation model. Returns (filename, base64_data_url)."""
-    def _sync_generate():
-        return gemini_client.models.generate_content(
-            model="gemini-3-pro-image-preview",
-            contents=[prompt],
-        )
-
-    print(f"[Gemini Image] Sending request with prompt: {prompt[:80]}...")
-    response = await asyncio.to_thread(_sync_generate)
-
-    img_bytes: bytes = b""
-    mime_type: str = "image/png"
-    for part in response.parts:
-        if part.inline_data is not None:
-            img_bytes = part.inline_data.data
-            mime_type = part.inline_data.mime_type or "image/png"
-            break
-
-    if not img_bytes:
-        raise ValueError("No image data in Gemini response")
+async def generate_image(prompt: str) -> tuple:
+    """Call the OpenRouter image generation model. Returns (filename, base64_data_url)."""
+    print(f"[Image] Sending request with prompt: {prompt[:80]}...")
+    img_bytes, mime_type = await generate_image_bytes(prompt)
 
     img_b64 = b64_lib.b64encode(img_bytes).decode()
     ext = "png" if "png" in mime_type else "jpg"
@@ -589,7 +572,7 @@ async def clerk_webhook(request: Request):
 # ── Text-to-Speech ─────────────────────────────────────────────────────────────
 @app.post("/tts")
 async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Header(None)):
-    """Convert text to speech using Google Gemini TTS. Returns base64 WAV data URL."""
+    """Convert text to speech using Kokoro-82M via OpenRouter. Returns base64 WAV data URL."""
     await get_current_user(authorization)  # auth check only
 
     text = body.text.strip()
@@ -605,32 +588,7 @@ async def text_to_speech(body: SpeechRequest, authorization: Optional[str] = Hea
         clean_text = clean_text[:5000] + "..."
 
     try:
-        def _synthesize():
-            response = gemini_client.models.generate_content(
-                model="gemini-3.1-flash-tts-preview",
-                contents=clean_text,
-                config=google_genai_types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=google_genai_types.SpeechConfig(
-                        voice_config=google_genai_types.VoiceConfig(
-                            prebuilt_voice_config=google_genai_types.PrebuiltVoiceConfig(
-                                voice_name="Kore",
-                            )
-                        )
-                    ),
-                ),
-            )
-            pcm_data = response.candidates[0].content.parts[0].inline_data.data
-            # Wrap raw PCM (16-bit, mono, 24 kHz) in a WAV container
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(24000)
-                wf.writeframes(pcm_data)
-            return buf.getvalue()
-
-        audio_bytes = await asyncio.to_thread(_synthesize)
+        audio_bytes = await synthesize_wav(clean_text)
         audio_b64 = b64_lib.b64encode(audio_bytes).decode("utf-8")
         data_url = f"data:audio/wav;base64,{audio_b64}"
         return JSONResponse({"audio": data_url})
@@ -1007,6 +965,7 @@ async def rename_notebook(notebook_id: str, body: NotebookUpdate, authorization:
 
 class InsightCanvasUrlUpdate(BaseModel):
     url: str
+    size: Optional[int] = None   # bytes of the uploaded file; feeds the tracked storage usage
 
 
 @app.patch("/notebooks/{notebook_id}/insight-canvas")
@@ -1021,10 +980,13 @@ async def save_insight_canvas_url(
         oid = ObjectId(notebook_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid notebook ID")
-    await notebooks_col.update_one(
-        {"_id": oid, "user_id": user_id},
-        {"$set": {"insight_canvas_url": body.url, "updated_at": datetime.now(timezone.utc)}}
-    )
+    update: dict = {"$set": {"insight_canvas_url": body.url, "updated_at": datetime.now(timezone.utc)}}
+    if body.size is not None:
+        update["$set"]["insight_canvas_size"] = max(body.size, 0)
+    else:
+        update["$unset"] = {"insight_canvas_size": ""}   # unknown → storage tracker backfills once
+    await notebooks_col.update_one({"_id": oid, "user_id": user_id}, update)
+    await refresh_storage_used(user_id)
     return {"status": "ok"}
 
 
@@ -1036,7 +998,7 @@ async def generate_mind_map(
     """
     Generate an interactive mind map JSON tree from selected PDFs.
     1. Retrieves top-5 RAG chunks with a comprehensive topic-extraction query.
-    2. Feeds context to Gemini Flash to produce a hierarchical JSON tree.
+    2. Feeds context to Qwen to produce a hierarchical JSON tree.
     Returns the tree JSON for the frontend to render with D3.
     """
     import json as _json
@@ -1102,8 +1064,7 @@ RESEARCH CONTENT:
 {rag_context}"""
 
     try:
-        completion = await groq_client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+        completion = await llm_complete(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user",   "content": USER_PROMPT},
@@ -1253,6 +1214,7 @@ async def delete_notebook(notebook_id: str, authorization: Optional[str] = Heade
 
     # 2. Delete the notebook document itself (chat history etc.)
     await notebooks_col.delete_one({"_id": oid, "user_id": user_id})
+    await refresh_storage_used(user_id)
 
     return {"status": "deleted", "firebase_pdf_urls": firebase_urls}
 
@@ -1403,7 +1365,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     last_user_text = next((m.content for m in reversed(messages) if m.role == "user"), "")
     if is_image_request(last_user_text) and not request.image_base64:
         try:
-            filename, data_url = await generate_image_gemini(last_user_text)
+            filename, data_url = await generate_image(last_user_text)
             # Return base64 data URL to frontend — frontend will upload to Firebase
             # and then call /notebooks/{id}/save-image to persist the Firebase URL
             return JSONResponse({"type": "image", "url": data_url, "prompt": last_user_text})
@@ -1631,37 +1593,23 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                         "Do NOT give a short or summarised answer.]"
                     )
 
-        # Vision model for images, reasoning model for text-only
-        # NOTE: max_completion_tokens is capped at 1500 to stay within Groq's 8000 TPM
-        # budget (input_tokens + max_completion_tokens must be < 8000).
-        if request.image_base64:
-            completion = await groq_client.chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                messages=full_messages,
-                temperature=1,
-                max_completion_tokens=1500,
-                top_p=1,
-                stream=True,
-                stop=None,
-            )
-        else:
-            # Pick model: Research Mode → 120b, default → 20b
-            # Token budget: Detailed Responses → 4000, default → 1500
-            text_model = "openai/gpt-oss-120b" if request.research_mode else "openai/gpt-oss-20b"
-            output_tokens = 2500 if request.research_mode else 1500
-            completion = await groq_client.chat.completions.create(
-                model=text_model,
-                messages=full_messages,
-                temperature=1,
-                max_completion_tokens=output_tokens,
-                top_p=1,
-                reasoning_effort="high" if request.research_mode else "medium",
-                stream=True,
-                stop=None,
-            )
+        # Qwen 3.7 Flash handles both text and vision. Research Mode gets a larger
+        # output budget and keeps reasoning on; everything else runs with it off.
+        output_tokens = 2500 if (request.research_mode and not request.image_base64) else 1500
+        extra = {"extra_body": {"reasoning": {"enabled": True}}} if request.research_mode else {}
+        completion = await llm_complete(
+            messages=full_messages,
+            temperature=1,
+            max_tokens=output_tokens,
+            top_p=1,
+            stream=True,
+            **extra,
+        )
 
         full_response = ""
         async for chunk in completion:
+            if not chunk.choices:
+                continue
             content = chunk.choices[0].delta.content
             if content:
                 full_response += content
@@ -1699,8 +1647,8 @@ async def generate_insight_canvas(
     """
     Generate an AI infographic from selected PDFs.
     1. Retrieves top-5 RAG chunks (research mode) with a predefined summary query.
-    2. Feeds retrieved context to Gemini Pro (text) to craft a detailed infographic prompt.
-    3. Uses Gemini image model to generate the infographic.
+    2. Feeds retrieved context to Qwen (text) to craft a detailed infographic prompt.
+    3. Uses the OpenRouter image model to generate the infographic.
     Returns base64 data URL for the frontend to upload to Firebase.
     """
     user_id, _ = await get_current_user(authorization)
@@ -1732,12 +1680,12 @@ async def generate_insight_canvas(
 
     print(f"[InsightCanvas] Retrieved {len(rag_context)} chars of context for user {user_id[:8]}…")
 
-    # Step 2 — Use Gemini Pro to craft a detailed infographic image prompt
-    def _generate_image_prompt():
-        prompt_response = gemini_client.models.generate_content(
-            model="gemini-3.1-pro-preview",
-            contents=[
-                f"""You are an expert visual designer and prompt engineer specializing in educational infographics.
+    # Step 2 — Use Qwen to craft a detailed infographic image prompt
+    async def _generate_image_prompt():
+        prompt_response = await llm_complete(
+            max_tokens=2048,
+            temperature=0.7,
+            messages=[{"role": "user", "content": f"""You are an expert visual designer and prompt engineer specializing in educational infographics.
 
 TASK: Analyze the research content below and write an extremely detailed image generation prompt for a professional infographic that visually summarizes all key information.
 
@@ -1762,19 +1710,18 @@ The prompt must be at least 300 words and extremely descriptive so the image mod
 RESEARCH CONTENT:
 {rag_context}
 
-OUTPUT: Only the image generation prompt text, nothing else. Start directly with the visual description."""
-            ],
+OUTPUT: Only the image generation prompt text, nothing else. Start directly with the visual description."""}],
         )
-        return prompt_response.text
+        return (prompt_response.choices[0].message.content or "").strip()
 
     try:
-        image_prompt = await asyncio.to_thread(_generate_image_prompt)
+        image_prompt = await _generate_image_prompt()
         print(f"[InsightCanvas] Generated image prompt ({len(image_prompt)} chars): {image_prompt[:120]}…")
     except Exception as e:
         print(f"[InsightCanvas] Prompt generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate infographic prompt: {str(e)}")
 
-    # Step 3 — Generate the infographic image via Gemini image model
+    # Step 3 — Generate the infographic image via the OpenRouter image model
     # Prepend a hard landscape constraint so the image model honours the aspect ratio
     landscape_image_prompt = (
         "ASPECT RATIO: wide landscape 16:9 (horizontal, wider than tall). "
@@ -1782,7 +1729,7 @@ OUTPUT: Only the image generation prompt text, nothing else. Start directly with
         + image_prompt
     )
     try:
-        _, data_url = await generate_image_gemini(landscape_image_prompt)
+        _, data_url = await generate_image(landscape_image_prompt)
     except Exception as e:
         print(f"[InsightCanvas] Image generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Infographic generation failed: {str(e)}")

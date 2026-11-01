@@ -210,3 +210,56 @@
 /* Settings popover */
 .black .dark\:bg-slate-800 { background-color: #111111 !important; }
 .black .dark\:bg-slate-800.rounded-xl { background-color: #0f0f0f !important; }
+
+/* ── AI Studio pill: moving perimeter line on hover ───────────────────────── */
+@property --studio-pill-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.studio-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(203 213 225);
+}
+.dark .studio-pill { border-color: rgb(51 65 85); }
+.studio-pill::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--studio-pill-angle), transparent 0 65%, var(--color-primary) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.dark .studio-pill::before {
+  background: conic-gradient(from var(--studio-pill-angle), transparent 0 65%, #e2e8f0 100%);
+}
+.studio-pill:hover::before {
+  opacity: 1;
+  animation: studio-pill-spin 1.6s linear infinite;
+}
+@keyframes studio-pill-spin {
+  to { --studio-pill-angle: 360deg; }
+}
+
+/* ── Fluid progress fill (Visual Podcast card) — flows left → right ───────── */
+@keyframes fluid-flow-up   { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
+@keyframes fluid-flow-down { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+@keyframes fluid-sway      { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+@keyframes fluid-shimmer   { from { transform: translateX(-120%); } to { transform: translateX(330%); } }
+.fluid-flow-up   { animation: fluid-flow-up 3.4s linear infinite; }
+.fluid-flow-down { animation: fluid-flow-down 5.2s linear infinite; }
+.fluid-sway    { animation: fluid-sway 2.8s ease-in-out infinite; }
+.fluid-shimmer { animation: fluid-shimmer 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .fluid-flow-up, .fluid-flow-down, .fluid-sway, .fluid-shimmer { animation: none; }
+}
