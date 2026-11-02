@@ -2059,6 +2059,33 @@ export default function App() {
     setAudioPodcastResults(prev => { const n = { ...prev }; delete n[notebookId]; return n; });
   };
 
+  // Remove a generated AI Studio result (canvas / mind map / videos / flashcards / quiz)
+  const deleteStudioItem = async (kind, notebookId) => {
+    const setters = {
+      'canvas': setInsightCanvasImages,
+      'mind-map': setMindMapData,
+      'video-suggestions': setVideoSuggestionsData,
+      'flashcards': setFlashcardsData,
+      'quiz': setQuizData,
+    };
+    try {
+      const token = await getToken();
+      if (kind === 'canvas') {
+        const url = insightCanvasImages[notebookId];
+        if (url && !url.startsWith('data:')) {
+          try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
+        }
+      }
+      await fetch(`${BACKEND_URL}/storage/${kind}/${notebookId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error(`[${kind} delete]`, err);
+    }
+    setters[kind](prev => { const n = { ...prev }; delete n[notebookId]; return n; });
+  };
+
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
     const handler = () => setCanvasIsFullscreen(!!document.fullscreenElement);
@@ -4427,15 +4454,15 @@ export default function App() {
                     {/* ── Insight Canvas result box — per notebook ───────────── */}
                     <AnimatePresence>
                       {(isGeneratingInsight || insightCanvasImages[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`ic-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingInsight}
+                          aria-disabled={isGeneratingInsight}
                           onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingInsight && <AutoFluid tau={40000} />}
                           {/* Icon area */}
@@ -4454,24 +4481,33 @@ export default function App() {
                           </div>
                           {/* Arrow when ready */}
                           {!isGeneratingInsight && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('canvas', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingInsight && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Mind Map result box — per notebook ─────────────────── */}
                     <AnimatePresence>
                       {(isGeneratingMindMap || mindMapData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`mm-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingMindMap}
+                          aria-disabled={isGeneratingMindMap}
                           onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingMindMap && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4487,24 +4523,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingMindMap && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('mind-map', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingMindMap && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Video Suggestions result box — per notebook ────────── */}
                     <AnimatePresence>
                       {(isGeneratingVideos || videoSuggestionsData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`vs-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingVideos}
+                          aria-disabled={isGeneratingVideos}
                           onClick={() => { if (!isGeneratingVideos) setShowVideoModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingVideos && <AutoFluid tau={12000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4520,24 +4565,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingVideos && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('video-suggestions', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingVideos && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Flashcards result box — per notebook ──────────────── */}
                     <AnimatePresence>
                       {(isGeneratingFlashcards || flashcardsData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`fc-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingFlashcards}
+                          aria-disabled={isGeneratingFlashcards}
                           onClick={() => { if (!isGeneratingFlashcards) setShowFlashcardsModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingFlashcards && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4553,24 +4607,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingFlashcards && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('flashcards', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingFlashcards && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Quiz result box — per notebook ────────────────── */}
                     <AnimatePresence>
                       {(isGeneratingQuiz || quizData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`qz-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingQuiz}
+                          aria-disabled={isGeneratingQuiz}
                           onClick={() => { if (!isGeneratingQuiz) setShowQuizModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingQuiz && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4586,9 +4649,18 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingQuiz && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('quiz', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingQuiz && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
