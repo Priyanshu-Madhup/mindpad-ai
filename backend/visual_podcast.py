@@ -39,6 +39,7 @@ import re
 import json
 import base64
 import asyncio
+import time
 import shutil
 import tempfile
 import urllib.parse
@@ -286,14 +287,17 @@ def _make_video_sync(
         img_clip   = img_clip.set_duration(duration).set_audio(audio_clip)
         video_clips.append(img_clip)
 
-    final_video = concatenate_videoclips(video_clips, method="compose")
+    # Slides are still images (all 1280x720): "chain" skips per-frame compositing and a low
+    # frame rate cuts the Python frame loop ~6x. Playback looks identical.
+    final_video = concatenate_videoclips(video_clips, method="chain")
     final_video.write_videofile(
         str(final),
-        fps=24,
+        fps=4,
         codec="libx264",
         audio_codec="aac",
         preset="ultrafast",   # smallest encoder memory footprint (slides are static images)
         threads=2,
+        ffmpeg_params=["-tune", "stillimage", "-pix_fmt", "yuv420p"],
         temp_audiofile=str(final.parent / "temp_audio.m4a"),
         remove_temp=True,
         verbose=False,
@@ -639,7 +643,15 @@ async def generate_visual_podcast(
             # 6. MoviePy → MP4
             yield progress_event(num, "Putting your video together…")
             final_path = tmp / "podcast.mp4"
-            await asyncio.to_thread(_make_video_sync, clips_data, final_path)
+            build = asyncio.create_task(asyncio.to_thread(_make_video_sync, clips_data, final_path))
+            t0 = time.monotonic()
+            while True:
+                done_set, _ = await asyncio.wait({build}, timeout=10)
+                if done_set:
+                    break
+                yield ": keepalive\n\n"   # SSE comment — keeps proxies from closing the idle stream
+            await build                   # re-raises any encoding error
+            print(f"[VisualPodcast] Video encoded in {time.monotonic() - t0:.1f}s")
             mp4_bytes = final_path.read_bytes()
             print(f"[VisualPodcast] MP4 built — {len(mp4_bytes)//1024} KB, {num} slides")
             yield progress_event(num, "Saving your video…")
