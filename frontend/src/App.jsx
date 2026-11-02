@@ -80,6 +80,7 @@ import CouponManagerModal from './CouponManagerModal.jsx';
 import PricingModal from './PricingModal.jsx';
 import PaymentPage from './PaymentPage.jsx';
 import GuidedTour from './GuidedTour.jsx';
+import LoadingScreen from './LoadingScreen.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -220,6 +221,8 @@ export default function App() {
   const { getToken } = useAuth();
   const { openSignIn, openSignUp } = useClerk();
   const [view, setView] = useState('landing');
+  // Cold-start loader for signed-in users: 'loading' → 'ready' (data arrived) → 'gone'
+  const [bootStage, setBootStage] = useState('loading');
 
   const [message, setMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
@@ -807,13 +810,24 @@ export default function App() {
       }
       if (!token) return;
       const userEmail = user?.primaryEmailAddress?.emailAddress || '';
-      const resp = await fetch(`${BACKEND_URL}/notebooks`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ...(userEmail && { 'X-User-Email': userEmail }),
-        },
-      });
-      if (!resp.ok) return;
+      // The hosted backend sleeps when idle: retry network errors / 5xx while it wakes up.
+      let resp = null;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        try {
+          resp = await fetch(`${BACKEND_URL}/notebooks`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...(userEmail && { 'X-User-Email': userEmail }),
+            },
+          });
+          if (resp.status < 500) break;
+        } catch {
+          resp = null;
+        }
+        await new Promise(r => setTimeout(r, 3000));
+        token = (await getToken()) || token; // JWTs are short-lived; refresh while waiting
+      }
+      if (!resp || !resp.ok) return;
       const data = await resp.json();
       const list = data.notebooks || [];
       setNotebooks(list);
@@ -893,6 +907,7 @@ export default function App() {
       console.error('Failed to load notebooks:', err);
     } finally {
       loadingNotebooksRef.current = false;
+      setBootStage(s => (s === 'loading' ? 'ready' : s));
     }
   };
 
@@ -1228,6 +1243,7 @@ export default function App() {
       fetchMyPlan();   // fetch plan badge from MongoDB independently
     } else {
       setView('landing');
+      setBootStage('loading'); // next sign-in shows the loader again
       setChatHistory([]); // Clear stale history on sign-out
       setUserPlan('free'); // reset badge on sign-out
       try { localStorage.setItem('mindpad_user_plan', 'free'); } catch {} // clear cache
@@ -2053,6 +2069,17 @@ export default function App() {
 
   // Show nothing while Clerk loads auth state
   if (!isLoaded) return null;
+
+  // Signed-in users see the branded loader until the backend has answered
+  if (isSignedIn && bootStage !== 'gone') {
+    return (
+      <LoadingScreen
+        colorMode={colorMode}
+        ready={bootStage === 'ready'}
+        onFinished={() => setBootStage('gone')}
+      />
+    );
+  }
 
   // Always show landing page first
   if (view === 'landing') {
