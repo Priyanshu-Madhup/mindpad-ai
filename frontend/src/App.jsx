@@ -81,6 +81,7 @@ import PricingModal from './PricingModal.jsx';
 import PaymentPage from './PaymentPage.jsx';
 import GuidedTour from './GuidedTour.jsx';
 import LoadingScreen from './LoadingScreen.jsx';
+import MediaLoader from './MediaLoader.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -174,7 +175,7 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
 
 // Greyish fluid that flows left → right to `pct` (0-100) behind a card's content.
 // The leading (right) edge is a rippling liquid front built from two drifting wave
-// layers; a soft shimmer keeps travelling through the body so it always looks alive.
+// layers.
 // One tile = 600 units tall (= one card height). Irregular lobes, same x at both ends so
 // two stacked tiles loop seamlessly when the strip slides by exactly one tile.
 const fluidTile = (o) =>
@@ -203,9 +204,7 @@ const FluidFill = ({ pct }) => (
         {/* back swell: sits behind and a little ahead of the front, drifts the other way */}
         <FluidEdge color="text-slate-200/80 dark:text-slate-600/50" left="calc(100% - 4px)" dir="down" duration="6.5s" />
         {/* body: solid, so no translucent overlap seams */}
-        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }}>
-          <div className="fluid-shimmer absolute inset-y-0 w-2/5 bg-gradient-to-r from-transparent via-white/60 dark:via-white/10 to-transparent" />
-        </div>
+        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }} />
         {/* front edge, same colour as the body so it blends into it */}
         <FluidEdge color="text-slate-200 dark:text-slate-700" left="calc(100% - 15px)" dir="up" duration="4.2s" />
       </div>
@@ -276,6 +275,7 @@ export default function App() {
   // insightCanvasImages: { [notebookId]: imageUrl } — persists per notebook while session is active
   const [insightCanvasImages, setInsightCanvasImages] = useState({});
   const [showInsightModal, setShowInsightModal] = useState(false);
+  const [canvasLoadedUrl, setCanvasLoadedUrl] = useState(null); // URL whose image has finished loading
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
   const canvasDragRef = useRef(null); // { startX, startY, originPanX, originPanY }
@@ -2059,6 +2059,33 @@ export default function App() {
     setAudioPodcastResults(prev => { const n = { ...prev }; delete n[notebookId]; return n; });
   };
 
+  // Remove a generated AI Studio result (canvas / mind map / videos / flashcards / quiz)
+  const deleteStudioItem = async (kind, notebookId) => {
+    const setters = {
+      'canvas': setInsightCanvasImages,
+      'mind-map': setMindMapData,
+      'video-suggestions': setVideoSuggestionsData,
+      'flashcards': setFlashcardsData,
+      'quiz': setQuizData,
+    };
+    try {
+      const token = await getToken();
+      if (kind === 'canvas') {
+        const url = insightCanvasImages[notebookId];
+        if (url && !url.startsWith('data:')) {
+          try { await deleteObject(ref(storage, url)); } catch { /* already gone */ }
+        }
+      }
+      await fetch(`${BACKEND_URL}/storage/${kind}/${notebookId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error(`[${kind} delete]`, err);
+    }
+    setters[kind](prev => { const n = { ...prev }; delete n[notebookId]; return n; });
+  };
+
   // Attach non-passive wheel listener to the canvas viewport so preventDefault() works
   useEffect(() => {
     const handler = () => setCanvasIsFullscreen(!!document.fullscreenElement);
@@ -2378,7 +2405,7 @@ export default function App() {
                 <div
                   ref={canvasContainerRef}
                   className="overflow-hidden flex-1 relative bg-slate-50 dark:bg-slate-950"
-                  style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: 0 }}
+                  style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: canvasLoadedUrl === insightCanvasImages[activeNotebookId] ? 0 : '65vh' }}
                   /* ── Mouse scroll wheel zoom handled via non-passive native listener in useEffect ── */
                   /* ── Mouse drag pan ── */
                   onMouseDown={e => {
@@ -2433,11 +2460,16 @@ export default function App() {
                     <img
                       src={insightCanvasImages[activeNotebookId]}
                       alt="Insight Canvas infographic"
+                      onLoad={() => setCanvasLoadedUrl(insightCanvasImages[activeNotebookId])}
+                      onError={() => setCanvasLoadedUrl(insightCanvasImages[activeNotebookId])}
                       draggable={false}
                       className="max-w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700 select-none"
                       style={{ userSelect: 'none', WebkitUserDrag: 'none' }}
                     />
                   </div>
+                  {canvasLoadedUrl !== insightCanvasImages[activeNotebookId] && (
+                    <MediaLoader caption="Loading your infographic…" />
+                  )}
                 </div>
               </motion.div>
             </div>
@@ -4427,15 +4459,15 @@ export default function App() {
                     {/* ── Insight Canvas result box — per notebook ───────────── */}
                     <AnimatePresence>
                       {(isGeneratingInsight || insightCanvasImages[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`ic-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingInsight}
+                          aria-disabled={isGeneratingInsight}
                           onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingInsight && <AutoFluid tau={40000} />}
                           {/* Icon area */}
@@ -4454,24 +4486,33 @@ export default function App() {
                           </div>
                           {/* Arrow when ready */}
                           {!isGeneratingInsight && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('canvas', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingInsight && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Mind Map result box — per notebook ─────────────────── */}
                     <AnimatePresence>
                       {(isGeneratingMindMap || mindMapData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`mm-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingMindMap}
+                          aria-disabled={isGeneratingMindMap}
                           onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingMindMap && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4487,24 +4528,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingMindMap && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('mind-map', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingMindMap && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Video Suggestions result box — per notebook ────────── */}
                     <AnimatePresence>
                       {(isGeneratingVideos || videoSuggestionsData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`vs-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingVideos}
+                          aria-disabled={isGeneratingVideos}
                           onClick={() => { if (!isGeneratingVideos) setShowVideoModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingVideos && <AutoFluid tau={12000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4520,24 +4570,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingVideos && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('video-suggestions', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingVideos && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Flashcards result box — per notebook ──────────────── */}
                     <AnimatePresence>
                       {(isGeneratingFlashcards || flashcardsData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`fc-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingFlashcards}
+                          aria-disabled={isGeneratingFlashcards}
                           onClick={() => { if (!isGeneratingFlashcards) setShowFlashcardsModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingFlashcards && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4553,24 +4612,33 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingFlashcards && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('flashcards', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingFlashcards && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
                     {/* ── Quiz result box — per notebook ────────────────── */}
                     <AnimatePresence>
                       {(isGeneratingQuiz || quizData[activeNotebookId]) && (
-                        <motion.button
+                        <motion.div role="button" tabIndex={0}
                           key={`qz-${activeNotebookId}`}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          disabled={isGeneratingQuiz}
+                          aria-disabled={isGeneratingQuiz}
                           onClick={() => { if (!isGeneratingQuiz) setShowQuizModal(true); }}
-                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer aria-disabled:cursor-default text-left group"
                         >
                           {isGeneratingQuiz && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
@@ -4586,9 +4654,18 @@ export default function App() {
                             </p>
                           </div>
                           {!isGeneratingQuiz && (
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteStudioItem('quiz', activeNotebookId); }}
+                              title="Remove"
+                              className="p-1.5 rounded-lg text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isGeneratingQuiz && (
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
                           )}
-                        </motion.button>
+                        </motion.div>
                       )}
                     </AnimatePresence>
 
