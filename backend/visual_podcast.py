@@ -67,7 +67,7 @@ TEMPLATE_PATH = Path(__file__).parent / "assets" / "ppt_mindpad.png"
 SLIDE_W, SLIDE_H = 1280, 720
 MAX_SLIDES = 8
 # Slides 2..N are built concurrently; this caps simultaneous LLM / image / TTS pipelines.
-MAX_PARALLEL_SLIDES = max(1, int(os.environ.get("VISUAL_PODCAST_PARALLEL", "4")))
+MAX_PARALLEL_SLIDES = max(1, int(os.environ.get("VISUAL_PODCAST_PARALLEL", "2")))
 
 
 _mongo     = AsyncIOMotorClient(os.environ.get("MONGODB_URI"))
@@ -292,6 +292,8 @@ def _make_video_sync(
         fps=24,
         codec="libx264",
         audio_codec="aac",
+        preset="ultrafast",   # smallest encoder memory footprint (slides are static images)
+        threads=2,
         temp_audiofile=str(final.parent / "temp_audio.m4a"),
         remove_temp=True,
         verbose=False,

@@ -213,6 +213,18 @@ const FluidFill = ({ pct }) => (
   </div>
 );
 
+// FluidFill for tasks with no real progress signal: eases from 6 % towards 90 % over roughly
+// `tau` ms and holds there until the card stops generating (the parent unmounts it).
+const AutoFluid = ({ tau = 15000 }) => {
+  const [pct, setPct] = React.useState(6);
+  React.useEffect(() => {
+    const start = Date.now();
+    const t = setInterval(() => setPct(6 + 84 * (1 - Math.exp(-(Date.now() - start) / tau))), 1000);
+    return () => clearInterval(t);
+  }, [tau]);
+  return <FluidFill pct={pct} />;
+};
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 
@@ -4423,8 +4435,9 @@ export default function App() {
                           transition={{ duration: 0.2, ease: 'easeOut' }}
                           disabled={isGeneratingInsight}
                           onClick={() => { if (!isGeneratingInsight) { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }); setShowInsightModal(true); } }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                         >
+                          {isGeneratingInsight && <AutoFluid tau={40000} />}
                           {/* Icon area */}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                             <LayoutDashboard className="w-5 h-5 text-primary" />
@@ -4433,7 +4446,7 @@ export default function App() {
                             )}
                           </div>
                           {/* Text */}
-                          <div className="flex-1 min-w-0">
+                          <div className="relative flex-1 min-w-0">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Insight Canvas</p>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
                               {isGeneratingInsight ? 'Crafting infographic…' : 'Tap to view infographic'}
@@ -4458,15 +4471,16 @@ export default function App() {
                           transition={{ duration: 0.2, ease: 'easeOut' }}
                           disabled={isGeneratingMindMap}
                           onClick={() => { if (!isGeneratingMindMap) setShowMindMapModal(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                         >
+                          {isGeneratingMindMap && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                             <Network className="w-5 h-5 text-primary dark:text-slate-300" />
                             {isGeneratingMindMap && (
                               <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="relative flex-1 min-w-0">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Mind Map</p>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
                               {isGeneratingMindMap ? 'Building mind map…' : 'Tap to explore map'}
@@ -4490,15 +4504,16 @@ export default function App() {
                           transition={{ duration: 0.2, ease: 'easeOut' }}
                           disabled={isGeneratingVideos}
                           onClick={() => { if (!isGeneratingVideos) setShowVideoModal(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                         >
+                          {isGeneratingVideos && <AutoFluid tau={12000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                             <Film className="w-5 h-5 text-primary dark:text-slate-300" />
                             {isGeneratingVideos && (
                               <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="relative flex-1 min-w-0">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Video Suggestions</p>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
                               {isGeneratingVideos ? 'Finding videos…' : `${videoSuggestionsData[activeNotebookId]?.videos?.length || 0} videos ready`}
@@ -4522,15 +4537,16 @@ export default function App() {
                           transition={{ duration: 0.2, ease: 'easeOut' }}
                           disabled={isGeneratingFlashcards}
                           onClick={() => { if (!isGeneratingFlashcards) setShowFlashcardsModal(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                         >
+                          {isGeneratingFlashcards && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                             <Layers className="w-5 h-5 text-primary dark:text-slate-300" />
                             {isGeneratingFlashcards && (
                               <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="relative flex-1 min-w-0">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Flashcards</p>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
                               {isGeneratingFlashcards ? 'Generating cards…' : `${flashcardsData[activeNotebookId]?.cards?.length || 0} cards ready`}
@@ -4554,15 +4570,16 @@ export default function App() {
                           transition={{ duration: 0.2, ease: 'easeOut' }}
                           disabled={isGeneratingQuiz}
                           onClick={() => { if (!isGeneratingQuiz) setShowQuizModal(true); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all disabled:cursor-default text-left group"
                         >
+                          {isGeneratingQuiz && <AutoFluid tau={15000} />}
                           <div className="relative w-10 h-10 rounded-full bg-primary/8 dark:bg-primary/15 flex items-center justify-center shrink-0">
                             <QuizIcon className="w-5 h-5 text-primary dark:text-slate-300" />
                             {isGeneratingQuiz && (
                               <span className="absolute inset-0 rounded-full border-2 border-primary dark:border-slate-300 border-t-transparent animate-spin" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="relative flex-1 min-w-0">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">Quiz Mode</p>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">
                               {isGeneratingQuiz ? 'Generating questions…' : `${quizData[activeNotebookId]?.questions?.length || 0} questions ready`}
@@ -4584,8 +4601,9 @@ export default function App() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.2, ease: 'easeOut' }}
-                          className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all text-left group"
+                          className="relative overflow-hidden w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all text-left group"
                         >
+                          {isGeneratingAudioPodcast && <AutoFluid tau={30000} />}
                           {/* Clickable main area */}
                           <button
                             disabled={isGeneratingAudioPodcast}
