@@ -81,6 +81,7 @@ import PricingModal from './PricingModal.jsx';
 import PaymentPage from './PaymentPage.jsx';
 import GuidedTour from './GuidedTour.jsx';
 import LoadingScreen from './LoadingScreen.jsx';
+import MediaLoader from './MediaLoader.jsx';
 import mindpadLogo from './mindpad_ai_logo.png';
 import mindpadLogoDark from './mindpad_ai_logo_dark.png';
 import { storage } from './firebase.jsx';
@@ -274,6 +275,7 @@ export default function App() {
   // insightCanvasImages: { [notebookId]: imageUrl } — persists per notebook while session is active
   const [insightCanvasImages, setInsightCanvasImages] = useState({});
   const [showInsightModal, setShowInsightModal] = useState(false);
+  const [canvasLoadedUrl, setCanvasLoadedUrl] = useState(null); // URL whose image has finished loading
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
   const canvasDragRef = useRef(null); // { startX, startY, originPanX, originPanY }
@@ -2403,7 +2405,7 @@ export default function App() {
                 <div
                   ref={canvasContainerRef}
                   className="overflow-hidden flex-1 relative bg-slate-50 dark:bg-slate-950"
-                  style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: 0 }}
+                  style={{ cursor: canvasZoom > 1 ? (canvasDragRef.current ? 'grabbing' : 'grab') : 'default', minHeight: canvasLoadedUrl === insightCanvasImages[activeNotebookId] ? 0 : '65vh' }}
                   /* ── Mouse scroll wheel zoom handled via non-passive native listener in useEffect ── */
                   /* ── Mouse drag pan ── */
                   onMouseDown={e => {
@@ -2458,11 +2460,16 @@ export default function App() {
                     <img
                       src={insightCanvasImages[activeNotebookId]}
                       alt="Insight Canvas infographic"
+                      onLoad={() => setCanvasLoadedUrl(insightCanvasImages[activeNotebookId])}
+                      onError={() => setCanvasLoadedUrl(insightCanvasImages[activeNotebookId])}
                       draggable={false}
                       className="max-w-full rounded-2xl shadow-lg border border-slate-100 dark:border-slate-700 select-none"
                       style={{ userSelect: 'none', WebkitUserDrag: 'none' }}
                     />
                   </div>
+                  {canvasLoadedUrl !== insightCanvasImages[activeNotebookId] && (
+                    <MediaLoader caption="Loading your infographic…" />
+                  )}
                 </div>
               </motion.div>
             </div>

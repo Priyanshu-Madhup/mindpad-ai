@@ -260,3 +260,20 @@
 @media (prefers-reduced-motion: reduce) {
   .fluid-flow-up, .fluid-flow-down, .fluid-sway { animation: none; }
 }
+
+/* ── Media loader (logo + name shimmer) ───────────────────────────────────── */
+@keyframes ml-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.ml-shimmer-text {
+  background-image: linear-gradient(100deg, #0D1B2A 35%, #94a3b8 50%, #0D1B2A 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ml-shimmer 2.4s linear infinite;
+}
+.dark .ml-shimmer-text {
+  background-image: linear-gradient(100deg, #f1f5f9 35%, #64748b 50%, #f1f5f9 65%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ml-shimmer-text { animation: none; }
+}

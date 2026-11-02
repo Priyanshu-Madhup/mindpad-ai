@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import MediaLoader from './MediaLoader.jsx';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Podcast, Minus, Plus,
@@ -38,6 +39,7 @@ export default function VisualPodcastModal({
   const [styleNotes, setStyleNotes] = useState('');
   const [videoUrl, setVideoUrl]     = useState(result?.url || existingUrl || null);
   const [expanded, setExpanded]     = useState(null);
+  const [loadedUrl, setLoadedUrl]   = useState(null); // video URL that has its first frame ready
 
   // When a fresh result arrives, use its Firebase URL directly
   useEffect(() => {
@@ -149,8 +151,20 @@ export default function VisualPodcastModal({
               <div className="px-8 py-6 space-y-5">
 
                 {/* Video player */}
-                <div className="rounded-2xl overflow-hidden bg-black border border-slate-200 dark:border-slate-700 shadow-lg">
-                  <video src={videoUrl} controls className="w-full" style={{ maxHeight: '300px' }} />
+                <div
+                  className="relative rounded-2xl overflow-hidden bg-black border border-slate-200 dark:border-slate-700 shadow-lg"
+                  style={loadedUrl === videoUrl ? undefined : { height: 300 }}
+                >
+                  <video
+                    src={videoUrl}
+                    controls
+                    preload="auto"
+                    onLoadedData={() => setLoadedUrl(videoUrl)}
+                    onError={() => setLoadedUrl(videoUrl)}
+                    className="w-full"
+                    style={{ maxHeight: '300px' }}
+                  />
+                  {loadedUrl !== videoUrl && <MediaLoader caption="Loading your video…" />}
                 </div>
 
                 {/* Actions */}
