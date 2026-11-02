@@ -174,7 +174,7 @@ const StudioTool = ({ icon: Icon, label, onClick, loading = false, done = false,
 
 // Greyish fluid that flows left → right to `pct` (0-100) behind a card's content.
 // The leading (right) edge is a rippling liquid front built from two drifting wave
-// layers; a soft shimmer keeps travelling through the body so it always looks alive.
+// layers.
 // One tile = 600 units tall (= one card height). Irregular lobes, same x at both ends so
 // two stacked tiles loop seamlessly when the strip slides by exactly one tile.
 const fluidTile = (o) =>
@@ -203,9 +203,7 @@ const FluidFill = ({ pct }) => (
         {/* back swell: sits behind and a little ahead of the front, drifts the other way */}
         <FluidEdge color="text-slate-200/80 dark:text-slate-600/50" left="calc(100% - 4px)" dir="down" duration="6.5s" />
         {/* body: solid, so no translucent overlap seams */}
-        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }}>
-          <div className="fluid-shimmer absolute inset-y-0 w-2/5 bg-gradient-to-r from-transparent via-white/60 dark:via-white/10 to-transparent" />
-        </div>
+        <div className="absolute inset-y-0 right-0 overflow-hidden bg-slate-200 dark:bg-slate-700" style={{ left: -12 }} />
         {/* front edge, same colour as the body so it blends into it */}
         <FluidEdge color="text-slate-200 dark:text-slate-700" left="calc(100% - 15px)" dir="up" duration="4.2s" />
       </div>

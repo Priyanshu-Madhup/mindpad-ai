@@ -254,11 +254,9 @@
 @keyframes fluid-flow-up   { from { transform: translateY(0); }    to { transform: translateY(-50%); } }
 @keyframes fluid-flow-down { from { transform: translateY(-50%); } to { transform: translateY(0); } }
 @keyframes fluid-sway      { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
-@keyframes fluid-shimmer   { from { transform: translateX(-120%); } to { transform: translateX(330%); } }
 .fluid-flow-up   { animation: fluid-flow-up 3.4s linear infinite; }
 .fluid-flow-down { animation: fluid-flow-down 5.2s linear infinite; }
 .fluid-sway    { animation: fluid-sway 2.8s ease-in-out infinite; }
-.fluid-shimmer { animation: fluid-shimmer 3.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .fluid-flow-up, .fluid-flow-down, .fluid-sway, .fluid-shimmer { animation: none; }
+  .fluid-flow-up, .fluid-flow-down, .fluid-sway { animation: none; }
 }
